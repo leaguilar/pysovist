@@ -66,7 +66,7 @@ def visibility_discretized(segments, origin, max_dist, num_rays, **kwargs):
     dist_per_bin[dist_per_bin>max_dist] = max_dist
     known_pts = (angles*dist_per_bin[:,None])+origin
     polygon = Polygon(known_pts)
-    if kwargs.return_pts == True:
+    if kwargs.get("return_pts", False):
         return (polygon.area, known_pts)
     else:
         return polygon.area

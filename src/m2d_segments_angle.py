@@ -69,10 +69,7 @@ def visibility_area_np(segments, vantage_point, max_distance=100.0, num_rays=360
             hit = ray_endpoint
         hit_pts.append((hit[0], hit[1]))
 
-    if kwargs.return_pts == True:
-        ### Build the visibility polygon (points already in angular order)
-        visibility_poly = Polygon(hit_pts)
-        return (visibility_poly.area, hit_pts)
-
-
+    visibility_poly = Polygon(hit_pts)
+    if kwargs.get("return_pts", False):
+        return (visibility_poly.area, np.asarray(hit_pts, dtype=float))
     return visibility_poly.area

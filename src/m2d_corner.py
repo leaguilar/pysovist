@@ -111,7 +111,7 @@ def visibility_polygon_corner(segments:np.ndarray, origin, max_distance = 100, n
     #area = np.trapz(ys_clipped, xs)
     area = (ys_clipped**2).mean()*np.pi
 
-    if kwargs.return_pts == True:
+    if kwargs.get("return_pts", False):
         r = ys_clipped
         theta = xs
 

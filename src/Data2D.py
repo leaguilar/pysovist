@@ -25,19 +25,12 @@ except ImportError:  # pragma: no cover - fallback for direct script usage
 ArrayKind = Literal["auto", "table", "segments"]
 
 ##TODO: desired metrics
-Core Set
-1. Angular Choice
-2. Angular Integration
-3. Connectivity
-4. Intelligibility
-5. Mean Depth
-
-This combination captures:
-* movement
-* wayfinding
-* hierarchy
-* navigability
-* spatial cognition
+#Core Set
+#1. Angular Choice
+#2. Angular Integration
+#3. Connectivity
+#4. Intelligibility
+#5. Mean Depth
 
 
 @dataclass

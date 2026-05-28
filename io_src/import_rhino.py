@@ -83,10 +83,9 @@ def _extract_segments(geometry: Any) -> list[list[list[float]]]:
 
 
 def from_rhino(
-    filepath: str,
-    layer_name: str | None = None,
-    save_path: str | None = None,
-) -> np.ndarray:
+    filepath: Path,
+    layer_name: str,
+    ) -> np.ndarray:
     """
     Read Rhino geometry and return 2D line segments as a [N,2,2] array.
     """
@@ -116,14 +115,5 @@ def from_rhino(
 
     segments_3d_arr = np.asarray(segments_3d, dtype=float)
     lines_2d = segments_3d_arr[:, :, :2]
-
-    if save_path is not None:
-        output_path = Path(save_path).expanduser()
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        json_entries = [
-            {"start": start.tolist(), "end": end.tolist()}
-            for start, end in segments_3d_arr
-        ]
-        output_path.write_text(json.dumps(json_entries, indent=4), encoding="utf-8")
 
     return lines_2d

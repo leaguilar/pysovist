@@ -11,7 +11,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator, MutableMapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, List, Optional
+from pathlib import Path
 
 import numpy as np
 
@@ -22,6 +23,21 @@ except ImportError:  # pragma: no cover - fallback for direct script usage
 
 
 ArrayKind = Literal["auto", "table", "segments"]
+
+##TODO: desired metrics
+Core Set
+1. Angular Choice
+2. Angular Integration
+3. Connectivity
+4. Intelligibility
+5. Mean Depth
+
+This combination captures:
+* movement
+* wayfinding
+* hierarchy
+* navigability
+* spatial cognition
 
 
 @dataclass
@@ -46,71 +62,38 @@ class Data2D(MutableMapping[str, Any]):
     def __len__(self) -> int:
         return len(self.data)
 
-    def import_array(
-        self,
-        arr: np.ndarray,
-        *,
-        kind: ArrayKind = "auto",
-        columns: Sequence[str] | None = None,
-    ) -> np.ndarray:
-        """
-        Import a NumPy array into the data object.
-        """
-        array = np.asarray(arr, dtype=float)
+    def import_json(self,path:Path|str,delimiter:Optional[List]=None) -> None:
+        '''
+        Import JSON files
+        ---
+        <u>Inputs</u>
 
-        if kind == "auto":
-            if array.ndim == 3 and array.shape[1:] == (2, 2):
-                kind = "segments"
-            elif array.ndim == 2:
-                kind = "table"
-            else:
-                raise ValueError(
-                    "Could not infer array kind. Use kind='table' or kind='segments'."
-                )
+        - **Path to JSON file** | *str, required*
+        - **Delimiter**: start-end points of lines. By default `['start', 'end']` | *list of str (len: 2), optional*
+        '''
+        from io_src.import_json import import_json
+        array = import_json(path,delimiter)
+        self.data['array'] = array
+        return
 
-        if kind == "table":
-            if array.ndim != 2:
-                raise ValueError("kind='table' requires a 2D array shaped [N,C].")
-            if columns is not None and len(columns) != array.shape[1]:
-                raise ValueError("columns length must match the number of table columns.")
-            self.columns = list(columns) if columns is not None else None
-        elif kind == "segments":
-            if array.ndim != 3 or array.shape[1:] != (2, 2):
-                raise ValueError("kind='segments' requires an array shaped [N,2,2].")
-            self.columns = None
-            self.data["segments"] = array
-        else:
-            raise ValueError("kind must be one of: 'auto', 'table', 'segments'.")
+    def import_rhino(self,filepath:Path|str,layer_name:str='Default') -> None:
+        '''
+        Import lines from Rhino document
+        ---
+        <u>Inputs</u>
 
-        self.array = array
-        self.data["array"] = array
-        return array
+        - **Path to Rhino doc** | *str, required*
+        - **Delimiter**: start-end points of lines. By default `['start', 'end']` | *list of str (len: 2), optional*
+        '''
+        from io_src.import_rhino import from_rhino
+        array = from_rhino(filepath,layer_name)
+        self.data['array'] = array
+        return
+    
+    def import_csv() -> None:
+        return
 
-    def row_as_dict(
-        self,
-        index: int = 0,
-        *,
-        columns: Sequence[str] | None = None,
-    ) -> dict[str, Any]:
-        """
-        Return a row from a 2D table as a dictionary.
-        """
-        if self.array is None:
-            raise ValueError("No table imported.")
-        if self.array.ndim != 2:
-            raise ValueError("row_as_dict is only available for 2D table arrays.")
 
-        row = self.array[index]
-        column_names = list(columns) if columns is not None else self.columns
-        if column_names is None:
-            column_names = [f"col_{i}" for i in range(row.shape[0])]
-        if len(column_names) != row.shape[0]:
-            raise ValueError("columns length must match the number of values in the row.")
-
-        return {
-            name: (value.item() if isinstance(value, np.generic) else value)
-            for name, value in zip(column_names, row)
-        }
 
     def calculate_2d(
         self,

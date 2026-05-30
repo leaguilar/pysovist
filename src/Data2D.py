@@ -11,18 +11,13 @@ from __future__ import annotations
 
 from collections.abc import Iterator, MutableMapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal, List, Optional
+from typing import Any, Literal, List, Optional, Tuple
 from pathlib import Path
 
 import numpy as np
 
-try:
-    from .calculate_2d_sp import area_array, boundary, single_point
-except ImportError:  # pragma: no cover - fallback for direct script usage
-    from src.calculate_2d_sp import area_array, boundary, single_point
+from .calculate_2d_sp import area_array, boundary, single_point
 
-
-ArrayKind = Literal["auto", "table", "segments"]
 
 ##TODO: desired metrics
 #Core Set
@@ -36,7 +31,8 @@ ArrayKind = Literal["auto", "table", "segments"]
 @dataclass
 class Data2D(MutableMapping[str, Any]):
     data: dict[str, Any] = field(default_factory=dict)
-    array: np.ndarray | None = None
+    plan: np.ndarray | None = None
+    
     results: list[dict[str, Any]] = field(default_factory=list)
     columns: list[str] | None = None
 
@@ -66,7 +62,7 @@ class Data2D(MutableMapping[str, Any]):
         '''
         from io_src.import_json import import_json
         array = import_json(path,delimiter)
-        self.data['array'] = array
+        self.data['plan'] = array
         return
 
     def import_rhino(self,filepath:Path|str,layer_name:str='Default') -> None:
@@ -80,15 +76,54 @@ class Data2D(MutableMapping[str, Any]):
         '''
         from io_src.import_rhino import from_rhino
         array = from_rhino(filepath,layer_name)
-        self.data['array'] = array
+        self.data['plan'] = array
         return
     
-    def import_csv() -> None:
+    def import_csv(self,filepath:Path|str,start_xy:Tuple|None,end_xy:Tuple|None,delimiter:Optional[str]=',') -> None:
+        '''
+        Import lines from comma-separated values file
+        ---
+        <u>Inputs</u>
+
+        - **Path to CSV file** | *str, required*
+        - **Start**: columns indicating starting point of lines in the XY plane. By default `0,1`; can be int or str | *tuple, optional*
+        - **End**: column indicating starting point of lines in the XY plane. By default `2,3`; can be int or str | *tuple, optional*
+        - **Delimiter**: CSV delimiter. By default `','` | *str, optional*
+        '''
+        from io_src.import_csv import import_csv
+        array = import_csv(filepath,start_xy,end_xy,delimiter)
+        self.data['plan'] = array
         return
 
+    def import_svg(self,filepath:Path|str,pagewidth:float=21,curve_step:float=0.2,crop_extents:Optional[List[str]]=[0,1,0,1]) -> None:
+        '''
+        Import lines from scalable vector graphics file
+        ---
+        <u>Inputs</u>
 
+        - **Path to SVG file** | *str, required*
+        - **Page width**: plan width represented in the full page width. `e.g.` if the plan has `1:100` scale and is printed on portrait `A4` paper, width equals `21`. By default `21`; can be int or str | *float, optional*
+        - **Curve step**: segment length for sampling curves into lines; increase if curvature is high. By default `0.2` | *float, optional*
+        - **Crop extents**: area which will be processed in normalized page coordinates `[W_min,W_max,H_min,H_max]`; any segments with endpoints outside are removed. By default `0,1,0,1` | *list, optional*
+        '''
+        from io_src.import_svg import import_svg
+        array = import_svg(filepath,pagewidth,curve_step)
+        self.data['plan'] = array
+        return
+    
+    def import_pdf() -> None:
+        return
+    
+    def import_image() -> None:
+        return
 
-    def calculate_2d(
+    def visualize() -> None:
+        return
+    
+    def detect_boundaries() -> None:
+        return
+
+    def visibility(
         self,
         dist_max: float,
         N: int,
@@ -121,7 +156,7 @@ class Data2D(MutableMapping[str, Any]):
         )
         return result
 
-    def calculate_array(
+    def visibility_batch(
         self,
         dist_max: float,
         N: int,
@@ -199,5 +234,5 @@ class Data2D(MutableMapping[str, Any]):
         self.results.append(record)
         self.data["last_result"] = record
 
-    area_array = calculate_array
+    area_array = visibility
     boundary = calculate_boundary

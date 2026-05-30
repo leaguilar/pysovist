@@ -10,4 +10,5 @@ scikit-learn              1.7.1
 scipy                     1.16.1
 seaborn                   0.13.2
 shapely                   2.1.1
+svgelements               1.9.6
 trimesh                   3.23.5

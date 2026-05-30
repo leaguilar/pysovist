@@ -107,11 +107,25 @@ class Data2D(MutableMapping[str, Any]):
         - **Crop extents**: area which will be processed in normalized page coordinates `[W_min,W_max,H_min,H_max]`; any segments with endpoints outside are removed. By default `0,1,0,1` | *list, optional*
         '''
         from io_src.import_svg import import_svg
-        array = import_svg(filepath,pagewidth,curve_step)
+        array = import_svg(filepath,pagewidth,curve_step,crop_extents)
         self.data['plan'] = array
         return
     
-    def import_pdf() -> None:
+    def import_pdf(self,filepath:Path|str,pagewidth:float=21,page:int=1,curve_step:float=0.2,crop_extents:Optional[List[str]]=[0,1,0,1]) -> None:
+        '''
+        Import lines from PDF
+        ---
+        <u>Inputs</u>
+
+        - **Path to PDF file** | *str, required*
+        - **Page**: page number, index starts with 1. By default `1` | *int, optional*
+        - **Page width**: plan width represented in the full page width. `e.g.` if the plan has `1:100` scale and is printed on portrait `A4` paper, width equals `21`. By default `21` | *float, optional*
+        - **Curve step**: segment length for sampling curves into lines; increase if curvature is high. By default `0.2` | *float, optional*
+        - **Crop extents**: area which will be processed in normalized page coordinates `[W_min,W_max,H_min,H_max]`; any segments with endpoints outside are removed. By default `0,1,0,1` | *list, optional*
+        '''
+        from io_src.import_pdf import import_pdf
+        array = import_pdf(filepath,pagewidth,page,curve_step,crop_extents)
+        self.data['plan'] = array
         return
     
     def import_image() -> None:

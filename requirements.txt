@@ -5,6 +5,7 @@ open3d                    0.19.0
 pandas                    2.3.2
 plotly                    6.3.0
 pyembree                  0.1.12
+pymupdf                   1.27.2.3
 rhino3dm                  8.17.0
 scikit-learn              1.7.1
 scipy                     1.16.1

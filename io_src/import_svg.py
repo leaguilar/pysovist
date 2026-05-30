@@ -66,6 +66,7 @@ def path_to_segments(path, curve_steps):
 def import_svg(path:Path|str,pagewidth:float,curve_step:float=0.2,crop_extents:Optional[List[str]]=[0,1,0,1]):
     svg = SVG.parse(path)
     scale = pagewidth/svg.width
+    curve_step = curve_step/scale
     segments = []
 
     for element in svg.elements():

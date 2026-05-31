@@ -13,11 +13,8 @@ from collections.abc import Iterator, MutableMapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, List, Optional, Tuple
 from pathlib import Path
-
 import numpy as np
-
 from .calculate_2d_sp import area_array, boundary, single_point
-
 
 ##TODO: desired metrics
 #Core Set
@@ -27,13 +24,12 @@ from .calculate_2d_sp import area_array, boundary, single_point
 #4. Intelligibility
 #5. Mean Depth
 
-
 @dataclass
 class Data2D(MutableMapping[str, Any]):
     data: dict[str, Any] = field(default_factory=dict)
     plan: np.ndarray | None = None
     
-    results: list[dict[str, Any]] = field(default_factory=list)
+    results: dict[str, Any] = field(default_factory=dict)
     columns: list[str] | None = None
 
     def __getitem__(self, key: str) -> Any:
@@ -131,17 +127,42 @@ class Data2D(MutableMapping[str, Any]):
     def import_image() -> None:
         return
 
-    def visualize() -> None:
+    def view_plan(self,dark:bool=False) -> None:
+        from utils.visualize_2d import view_baseplan
+        view_baseplan(self.data['plan'],dark)
         return
     
-    def detect_boundaries() -> None:
+    def detect_boundaries(self,return_dense:bool=False) -> Any:
+        from utils.detect_boundaries_2d import identify_noninf, densify_grid
+        grid, _ = identify_noninf(self.data['plan'])
+        self.results['grid_bounds'] = grid
+        if return_dense == True:
+            dense = densify_grid(grid)
+            self.results['grid_dense'] = dense
+        return
+    
+    def dense_calc(self,grid:np.array|None=None) -> Any:
+        '''
+        Automatically detect grid and calculate metrics
+        ---
+        <u>Inputs</u>
+        '''
+        # if dense grid is available use it automatically
+        if grid == None:
+            grid = self.results['grid_dense']
+            if self.results['grid_dense'].any() == None:
+                if self.results['grid_bounds'].any() == None:
+                    print('No grid found. Run detect_boundaries or modify parameters.')
+                else:
+                    grid = self.results['grid_bounds']
+                    print('Using sparse grid. Run detect_boundaries with return_dense=True for higher resolution.')
+
+        self.visibility_batch(100,3600,grid,self.data['plan'],fov=2*np.pi,method='corner')
+        #TODO: marching squares smoothing/contour lines
         return
 
-    def visibility(
-        self,
-        dist_max: float,
-        N: int,
-        origin: np.ndarray,
+    def visibility(self,dist_max: float,
+        N: int,origin: np.ndarray,
         segments: np.ndarray | None = None,
         FOV: float | None = None,
         view_dir: float | np.ndarray | None = None,
@@ -193,14 +214,10 @@ class Data2D(MutableMapping[str, Any]):
             view_dir=view_dir,
             **kwargs,
         )
-        self._store_result(
-            workflow="area_array",
-            result=result,
-            dist_max=dist_max,
-            N=N,
-            FOV=FOV,
-            method=kwargs.get("method", "segments_angle"),
-        )
+
+        record = {"workflow": area_array, "result": result, 'dist_max':dist_max,
+            'N':N, 'FOV':FOV, 'method':kwargs.get("method", "corner")}
+        self.results['area'] = record
         return result
 
     def calculate_boundary(

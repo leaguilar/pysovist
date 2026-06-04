@@ -127,37 +127,50 @@ class Data2D(MutableMapping[str, Any]):
     def import_image() -> None:
         return
 
-    def view_plan(self,dark:bool=False) -> None:
+    def view_plan(self,dark:bool=False,**kwargs) -> None:
         from utils.visualize_2d import view_baseplan
-        view_baseplan(self.data['plan'],dark)
+        view_baseplan(self.data['plan'],dark,**kwargs)
         return
     
-    def detect_boundaries(self,return_dense:bool=False) -> Any:
+    def view_areas(self,grid:np.array|None=None,show_grid:bool=False,dark:bool=False,**kwargs) -> None:
+        grid = self.get_grid(grid)
+        from utils.visualize_2d import view_areas
+        view_areas(self.data['plan'],grid,dark,show_grid,**kwargs)
+        return
+    
+    def detect_boundaries(self,return_dense:bool=False,res:float=0.5) -> Any:
         from utils.detect_boundaries_2d import identify_noninf, densify_grid
-        grid, _ = identify_noninf(self.data['plan'])
+        grid, grid_value = identify_noninf(self.data['plan'],res)
         self.results['grid_bounds'] = grid
+        self.results['grid_confidence'] = grid_value
         if return_dense == True:
             dense = densify_grid(grid)
             self.results['grid_dense'] = dense
         return
     
-    def dense_calc(self,grid:np.array|None=None) -> Any:
+    def get_grid(self, grid:np.array|None=None) -> np.array:
+        if grid is None:
+            grid = self.results.get('grid_dense')
+            if grid is None:
+                grid = self.results.get('grid_bounds')
+                if grid is not None:
+                    print('Using sparse grid. Run detect_boundaries with return_dense=True for higher resolution.')
+                else:
+                    print('No grid found. Run detect_boundaries or modify parameters.')
+        return grid
+
+    def dense_calc(self,grid:np.array|None=None,reduce_outliers:float|None=2) -> Any:
         '''
         Automatically detect grid and calculate metrics
         ---
         <u>Inputs</u>
         '''
         # if dense grid is available use it automatically
-        if grid == None:
-            grid = self.results['grid_dense']
-            if self.results['grid_dense'].any() == None:
-                if self.results['grid_bounds'].any() == None:
-                    print('No grid found. Run detect_boundaries or modify parameters.')
-                else:
-                    grid = self.results['grid_bounds']
-                    print('Using sparse grid. Run detect_boundaries with return_dense=True for higher resolution.')
+        grid = self.get_grid(grid)
 
         self.visibility_batch(100,3600,grid,self.data['plan'],fov=2*np.pi,method='corner')
+        outlier_mask = np.abs(self.results['area']['result'] - self.results['area']['result'].mean()) <= reduce_outliers * self.results['area']['result'].std()
+        self.results['area'] = {k: v[outlier_mask] if isinstance(v, np.ndarray) and len(v) == len(outlier_mask) else v for k, v in self.results['area'].items()}
         #TODO: marching squares smoothing/contour lines
         return
 
@@ -215,7 +228,7 @@ class Data2D(MutableMapping[str, Any]):
             **kwargs,
         )
 
-        record = {"workflow": area_array, "result": result, 'dist_max':dist_max,
+        record = {"X": origins[:,0], "Y": origins[:,1], "result": result, 'dist_max':dist_max,
             'N':N, 'FOV':FOV, 'method':kwargs.get("method", "corner")}
         self.results['area'] = record
         return result

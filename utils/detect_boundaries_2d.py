@@ -65,7 +65,7 @@ def visibility_valid(segments, vantage_point, max_distance=100.0, num_rays=36):
 
 
 ## 3. Base Method
-def identify_noninf(plan_lines:np.array,res:float=0.5,thr:float=0.7) -> np.array:
+def identify_noninf(plan_lines:np.array,res:float=0.5,thr:float=0.8) -> np.array:
     # sample points from a uniform grid within the boundary
     xmin,xmax,ymin,ymax = plan_lines[...,0].min(), plan_lines[...,0].max(), plan_lines[...,1].min(), plan_lines[...,1].max()
     # res: grid resolution

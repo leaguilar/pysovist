@@ -37,6 +37,7 @@ def view_baseplan(plan_lines:np.array,dark:bool=False,show_grid:bool=True,**kwar
 def view_areas(plan_lines:np.array,grid,dark:bool=False,show_grid:bool=False,**kwargs) -> None:
     clr = '#444433' if not dark else '#ccccbe'
     bg = '#fffffc' if not dark else '#100804'
+    hl = '#77ddaa' if not dark else '#cc0033'
     plt.figure(facecolor=bg)
     plt.tick_params(colors=clr) 
     plt.gca().set_facecolor(bg)
@@ -53,7 +54,8 @@ def view_areas(plan_lines:np.array,grid,dark:bool=False,show_grid:bool=False,**k
     iy = np.searchsorted(yu, grid[:,1])
     Z[iy, ix] = True
     X, Y = np.meshgrid(xu, yu)
-    plt.contourf(X, Y, Z.astype(float), levels=[0.5, 1.5],colors='#77ddaa',alpha=0.4,antialiased=True)
+    plt.contourf(X, Y, Z.astype(float), levels=[0.001, 1.5],colors=hl,alpha=0.4,antialiased=True)
+    #plt.scatter(X, Y,s=0.2)
     for line in plan_lines:
         plt.plot(line[:,0],line[:,1],c=clr,linewidth=lw)
     plt.tight_layout()

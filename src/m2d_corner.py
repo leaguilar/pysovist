@@ -124,5 +124,6 @@ def visibility_polygon_corner(segments:np.ndarray, origin, max_distance = 100, n
     return area
 
 ##TODO:
+#dictionary output, return perimeter
 #add FOV truncation
 #vars: view_center=np.pi,fov_x=2*np.pi

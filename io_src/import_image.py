@@ -26,7 +26,7 @@ from typing import List, Optional
 from pathlib import Path
 
 ## 2. Helper Functions
-##TODO
+##TODO: use Fast Marching Method to extract edges
 
 ## 3. Base Method
 def import_svg(path:Path|str,scale,crop_extents:Optional[List[str]]=[0,1,0,1]):

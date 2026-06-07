@@ -159,7 +159,7 @@ class Data2D(MutableMapping[str, Any]):
                     print('No grid found. Run detect_boundaries or modify parameters.')
         return grid
 
-    def dense_calc(self,grid:np.array|None=None,reduce_outliers:float|None=2) -> Any:
+    def dense_calc(self,grid:np.array|None=None,reduce_outliers:float|None=2,return_perimeter:bool=False) -> Any:
         '''
         Automatically detect grid and calculate metrics
         ---

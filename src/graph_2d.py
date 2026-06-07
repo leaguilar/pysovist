@@ -19,6 +19,7 @@
 import numpy as np
 from scipy.spatial import KDTree
 from collections import defaultdict, deque
+import heapq
 
 ## 2. Graph Generation Helpers
 def knn_graph(grid:np.array,k:int=4):
@@ -28,55 +29,147 @@ def knn_graph(grid:np.array,k:int=4):
     edges = np.unique(np.array(edges).reshape(-1,2),axis=0)
     return edges
 
+def adjacency_matrix(grid:np.array,edges:np.array):
+    edge_weights = np.ones_like(grid[edges[:,1]] - grid[edges[:,0]],axis=1)
+    dists_init = np.full((grid.shape[0],grid.shape[0]),0)
+    dists_init[np.diag_indices(grid.shape[0])] = 0
+    dists_init[edges[:,0],edges[:,1]] = 1
+    return
+
+def adjacency_matrix_w(grid:np.array,edges:np.array):
+    edge_weights = np.linalg.norm(grid[edges[:,1]] - grid[edges[:,0]],axis=1)
+    dists_init = np.full((grid.shape[0],grid.shape[0]),np.inf)
+    dists_init[np.diag_indices(grid.shape[0])] = 0
+    dists_init[edges[:,0],edges[:,1]] = edge_weights
+    return
+
 ## 3. Graph Centrality Helpers
 def shortest_paths(grid:np.array,edges:np.array,weighted=True): # Dijkstra's algorithm
     edge_weights = np.linalg.norm(grid[edges[:,1]] - grid[edges[:,0]])
     if not weighted: # use BFS
-        bfs(edges)
-    else: #TODO: A* algorithm
+        adj = adjacency_matrix(grid,edges)
+        if len(grid) > 10000:
+            closeness = bfs_approx(adj)
+        else:
+            closeness = bfs_exact(adj)
+    else:
+        adj = adjacency_matrix_w(grid,edges)
+        if len(grid) > 10000:
+            closeness = dijkstra_approx(adj)
+        else:
+            closeness = dijkstra_exact(adj)
         return
-        #algorithm by Duan et al.?
 
-    return
+    return closeness
 
-def bfs(edges:np.array, start:int, target:int):
-    graph = defaultdict(list)
+def bfs_approx(adj:np.array,k:int=256):
+    n = len(adj)
+    np.random.seed(0)
+    landmarks = np.random.sample(range(n),min(k,n))
+    dist_sum = np.zeros(n,dtype=np.float64)
+    count = np.zeros(n,dtype=np.int32)
+    for s in landmarks:
+        dist = np.full(n,-1,dtype=np.int32)
+        dist[s] = 0
+        q = deque([s])
+        while q:
+            u = q.popleft()
+            for v in adj[u]:
+                if dist[v] == -1:
+                    dist[v] = dist[u] + 1
+                    q.append(v)
+        mask = dist >= 0
+        dist_sum[mask] += dist[mask]
+        count[mask] += 1
+    mean_dist = dist_sum / np.maximum(count, 1)
+    estimate = 1.0/np.maximum(mean_dist,1e-12)
+    return estimate # (V,1) array
 
-    for parent, child in np.asarray(edges):
-        graph[int(parent)].append(int(child))
-
-    queue = deque([int(start)])
-    parent = {int(start): None}
-    while queue:
-        node = queue.popleft()
-        if node == target:
-            break
-        for child in graph[node]:
-            if child not in parent:
-                parent[child] = node
-                queue.append(child)
+def bfs_exact(adj:np.array):
+    n = len(adj)
+    closeness = np.zeros(n)
     
-    if target not in parent:
-        return None
+    for s in range(n):
+        dist = np.full(n,-1,dtype=np.int32)
+        dist[s] = 0
+        queue = deque([s])
+        while queue:
+            u = queue.popleft()
+            for v in adj[u]:
+                if dist[v] == -1:
+                    dist[v] = dist[u]+1
+                    queue.append(v)
+        reachable = dist >= 0
+        total_dist = dist[reachable].sum()
+        r = reachable.sum()
+        if total_dist > 0:
+            closeness[s] = ((r-1)/total_dist)*((r-1)/(n-1))
+    return closeness # (V,1) array
 
-    path = []
-    node = int(target)
+def dijkstra(adj:np.array,source:int):
+    n = len(adj)
+    dist = np.full(n, np.inf, dtype=np.float64)
+    dist[source] = 0.0
+    heap = [(0.0, source)]
+    while heap:
+        du, u = heapq.heappop(heap)
+        if du > dist[u]:
+            continue
+        for v, w in adj[u]:
+            alt = du + w
+            if alt < dist[v]:
+                dist[v] = alt
+                heapq.heappush(heap, (alt, v))
+    return dist
 
-    while node is not None:
-        path.append(node)
-        node = parent[node]
+def dijkstra_exact(adj:np.array):
+    n = len(adj)
+    closeness = np.zeros(n, dtype=np.float64)
 
-    return queue, path[::-1]
+    for s in range(n):
+        dist = dijkstra(adj, s)
+        reachable = np.isfinite(dist)
+        reachable[s] = False
+        r = reachable.sum()
+        if r == 0:
+            closeness[s] = 0.0
+            continue
+        total_dist = dist[reachable].sum()
+        base = r / total_dist
+        closeness[s] = base
+    return closeness
 
+def dijkstra_approx(adj:np.array, k=256):
+    n = len(adj)
+
+    np.random.seed(0)
+    landmarks = np.random.sample(range(n), min(k, n))
+
+    dist_sum = np.zeros(n, dtype=np.float64)
+    count = np.zeros(n, dtype=np.int32)
+
+    for s in landmarks:
+        dist = dijkstra(adj, s)
+        reachable = np.isfinite(dist)
+        reachable[s] = False
+        dist_sum[reachable] += dist[reachable]
+        count[reachable] += 1
+
+    closeness_est = np.zeros(n, dtype=np.float64)
+    valid = count > 0
+    closeness_est[valid] = count[valid] / dist_sum[valid]
+    return closeness_est
 
 ## 4. Metrics
 def centrality(grid:np.array,edges:np.array,method:str='degree'):
     if method == 'degree':
         cent = [np.argwhere(edges==i).shape[0] for i in edges]
     if method == 'closeness':
-        shortest_paths
+        shortest_paths(grid,edges,weighted=False)
     if method == 'closeness_w':
-        shortest_paths
+        shortest_paths(grid,edges,weighted=True)
+    if method == 'betweenness':
+        return
 
     return cent
 # centrality: betweenness, closeness, eigenvector, degree, harmonic, Katz, Laplacian, harmonic

@@ -70,6 +70,7 @@ def visibility_area_np(segments, vantage_point, max_distance=100.0, num_rays=360
         hit_pts.append((hit[0], hit[1]))
 
     visibility_poly = Polygon(hit_pts)
-    if kwargs.get("return_pts", False):
+    if kwargs.get("return_pts", True):
         return (visibility_poly.area, np.asarray(hit_pts, dtype=float))
     return visibility_poly.area
+#TODO: dictionary output, return perimeter

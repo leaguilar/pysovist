@@ -22,11 +22,31 @@
 ## 1. Imports
 import numpy as np
 import pandas as pd
+import skfmm
 from typing import List, Optional
 from pathlib import Path
+from scipy.ndimage import gaussian_filter, sobel
 
 ## 2. Helper Functions
 ##TODO: use Fast Marching Method to extract edges
+def fmm_edges(img:np.array, sigma:float=1.5,alpha:int=20,p:int=2,percentile:int=95):
+    img = gaussian_filter(img,sigma=sigma)
+    gx = sobel(img,axis=1)
+    gy = sobel(img,axis=0)
+    grad = np.sqrt(gx**2+gy**2)
+    grad_norm = grad/(grad.max()+1e-8)
+    F = 1.0 / (1.0+alpha*grad_norm**p)
+    phi = np.ones_like(img)
+    phi[0,:] = -1
+    phi[-1,:] = -1
+    phi[:,0] = -1
+    phi[:,-1] = -1
+    t = skfmm.travel_time(phi,speed=F)
+    tx = sobel(t,axis=1)
+    ty = sobel(t,axis=0)
+    t_grad = np.sqrt(tx**2+ty**2)
+    edges = t_grad > np.percentile(t_grad,percentile)
+    return edges, t, F
 
 ## 3. Base Method
 def import_svg(path:Path|str,scale,crop_extents:Optional[List[str]]=[0,1,0,1]):

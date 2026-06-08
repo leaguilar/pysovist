@@ -8,6 +8,7 @@ plotly                    6.3.0
 pyembree                  0.1.12
 pymupdf                   1.27.2.3
 rhino3dm                  8.17.0
+scikit-fmm                0.0.1
 scikit-learn              1.7.1
 scipy                     1.16.1
 seaborn                   0.13.2

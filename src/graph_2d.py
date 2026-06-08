@@ -29,6 +29,14 @@ def knn_graph(grid:np.array,k:int=4):
     edges = np.unique(np.array(edges).reshape(-1,2),axis=0)
     return edges
 
+def knn_graph_angular(grid:np.array,k:int=4):
+    tree = KDTree(grid)
+    _, idx = tree.query(grid,k+1) # 4 nearest neighbors by default, excluding self
+    edges = [[(s,j[i]),(j[i],s)] for s,j in zip(idx[:,0],idx[:,1:]) for i in range(j.shape[0])]
+    edges = np.unique(np.array(edges).reshape(-1,2),axis=0)
+    #TODO: edge weights based on anglular change
+    return edges, edge_weights
+
 def adjacency_matrix(grid:np.array,edges:np.array):
     edge_weights = np.ones_like(grid[edges[:,1]] - grid[edges[:,0]],axis=1)
     dists_init = np.full((grid.shape[0],grid.shape[0]),0)
@@ -44,7 +52,7 @@ def adjacency_matrix_w(grid:np.array,edges:np.array):
     return
 
 ## 3. Graph Centrality Helpers
-def shortest_paths(grid:np.array,edges:np.array,weighted=True): # Dijkstra's algorithm
+def closeness(grid:np.array,edges:np.array,weighted=True): # Dijkstra's algorithm
     edge_weights = np.linalg.norm(grid[edges[:,1]] - grid[edges[:,0]])
     if not weighted: # use BFS
         adj = adjacency_matrix(grid,edges)
@@ -59,7 +67,6 @@ def shortest_paths(grid:np.array,edges:np.array,weighted=True): # Dijkstra's alg
         else:
             closeness = dijkstra_exact(adj)
         return
-
     return closeness
 
 def bfs_approx(adj:np.array,k:int=256):
@@ -160,15 +167,109 @@ def dijkstra_approx(adj:np.array, k=256):
     closeness_est[valid] = count[valid] / dist_sum[valid]
     return closeness_est
 
+def betweenness(grid:np.array,edges:np.array,weighted:bool=True):
+    if not weighted: # use BFS
+        adj = adjacency_matrix(grid,edges)
+        betweenness = brandes_exact_unw(adj)
+    else:
+        adj = adjacency_matrix_w(grid,edges)
+        betweenness = brandes_exact()
+    return betweenness
+        
+def brandes_exact_unw(adj:np.array,normalized:bool=True):
+    n = len(adj)
+    betweenness = np.zeros(n, dtype=np.float64)
+
+    for s in range(n):
+        stack = []
+        pred = [[] for _ in range(n)]
+        sigma = np.zeros(n, dtype=np.float64)   # number of shortest paths
+        sigma[s] = 1.0
+        dist = np.full(n, -1, dtype=np.int32)
+        dist[s] = 0
+        queue = deque([s])
+        # Forward BFS pass
+        while queue:
+            u = queue.popleft()
+            stack.append(u)
+            for v in adj[u]:
+                if dist[v] == -1:
+                    dist[v] = dist[u] + 1
+                    queue.append(v)
+                if dist[v] == dist[u] + 1:
+                    sigma[v] += sigma[u]
+                    pred[v].append(u)
+        # Backward dependency accumulation
+        delta = np.zeros(n, dtype=np.float64)
+        while stack:
+            w = stack.pop()
+            for v in pred[w]:
+                delta[v] += (sigma[v] / sigma[w]) * (1.0 + delta[w])
+            if w != s:
+                betweenness[w] += delta[w]
+    betweenness *= 1.0 / ((n - 1) * (n - 2))
+    if normalized and n > 2:
+        betweenness *= 2.0 / ((n - 1) * (n - 2))
+    return betweenness
+
+def brandes_exact(adj:np.array,normalized:bool=True):
+    import numpy as np
+import heapq
+
+def dijkstra_betweenness_exact(adj: np.ndarray, normalized: bool = True):
+    n = len(adj)
+    betweenness = np.zeros(n, dtype=np.float64)
+    for s in range(n):
+        stack = []
+        pred = [[] for _ in range(n)]
+        sigma = np.zeros(n, dtype=np.float64)
+        sigma[s] = 1.0
+        dist = np.full(n, np.inf, dtype=np.float64)
+        dist[s] = 0.0
+        pq = [(0.0, s)]
+        # Forward Dijkstra pass
+        while pq:
+            dist_u, u = heapq.heappop(pq)
+            if dist_u > dist[u]:
+                continue
+            stack.append(u)
+            for v, weight in adj[u]:
+                alt = dist[u] + weight
+                if alt < dist[v]:
+                    dist[v] = alt
+                    heapq.heappush(pq, (alt, v))
+                    sigma[v] = sigma[u]
+                    pred[v] = [u]
+                elif alt == dist[v]:
+                    sigma[v] += sigma[u]
+                    pred[v].append(u)
+        # Backward dependency accumulation
+        delta = np.zeros(n, dtype=np.float64)
+        while stack:
+            w = stack.pop()
+            if sigma[w] == 0:
+                continue
+            for v in pred[w]:
+                delta[v] += (sigma[v] / sigma[w]) * (1.0 + delta[w])
+            if w != s:
+                betweenness[w] += delta[w]
+    # Directed-graph normalization
+    if normalized and n > 2:
+        betweenness *= 1.0 / ((n - 1) * (n - 2))
+
+    return betweenness
+
 ## 4. Metrics
-def centrality(grid:np.array,edges:np.array,method:str='degree'):
-    if method == 'degree':
+def centrality(grid:np.array,edges:np.array,metric:str='degree'):
+    if metric == 'degree':
         cent = [np.argwhere(edges==i).shape[0] for i in edges]
-    if method == 'closeness':
-        shortest_paths(grid,edges,weighted=False)
-    if method == 'closeness_w':
-        shortest_paths(grid,edges,weighted=True)
-    if method == 'betweenness':
+    if metric == 'closeness':
+        cent = closeness(grid,edges,weighted=False)
+    if metric == 'closeness_w':
+        cent = closeness(grid,edges,weighted=True)
+    if metric == 'betweenness':
+        cent = betweenness(grid,edges,weighted=False)
+    if metric == 'betweenness_w':
         return
 
     return cent

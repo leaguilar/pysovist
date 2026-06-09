@@ -26,9 +26,10 @@ import skfmm
 from typing import List, Optional
 from pathlib import Path
 from scipy.ndimage import gaussian_filter, sobel
+import cv2
 
 ## 2. Helper Functions
-##TODO: use Fast Marching Method to extract edges
+##use Fast Marching Method to extract edges
 def fmm_edges(img:np.array, sigma:float=1.5,alpha:int=20,p:int=2,percentile:int=95):
     img_f = gaussian_filter(img,sigma=sigma)
     gx = sobel(img_f,axis=1)
@@ -50,12 +51,15 @@ def fmm_edges(img:np.array, sigma:float=1.5,alpha:int=20,p:int=2,percentile:int=
 
 
 ## 3. Base Method
-def import_img(path:Path|str,scale,crop_extents:Optional[List[str]]=[0,1,0,1]):
-    lines_df = pd.read_json(path)
-    lines_2d = []
-    for row in lines_df.iterrows():
-        start = row[1][delimiter[0]][:2]
-        end = row[1][delimiter[1]][:2]
-        lines_2d.append([start,end])
-    lines_2d = np.array(lines_2d)
-    return lines_2d # [N,2,2] array
+def import_img(path:Path|str,scale,crop_extents:Optional[List[str]]=[0,1,0,1],res:float=50,thr:float=0.7):
+    img = cv2.imread(path,cv2.IMREAD_GRAYSCALE)
+    # res is based on true scale. 100 -> 100 pixels per m
+    W = scale*res
+    H = img.shape[0]*(W/img.shape[1])
+    img = cv2.resize(img,(int(W),int(H)),interpolation=cv2.INTER_CUBIC)
+    img = img[int(H*crop_extents[0]):int(H*crop_extents[1]),int(W*crop_extents[0]):int(W*crop_extents[1])]
+    _, _, edges = fmm_edges(img)
+    mask = edges > thr
+    edges[mask] = 0
+    edges_pts = np.argwhere(edges)
+    return edges_pts # [N,N] array

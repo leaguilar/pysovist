@@ -124,10 +124,11 @@ class Data2D(MutableMapping[str, Any]):
         self.data['plan'] = array
         return
     
-    def import_image(self,filepath:Path|str,pagewidth:float=21,crop_extents:Optional[List[str]]=[0,1,0,1]) -> None:
+    def import_image(self,filepath:Path|str,pagewidth:float=21,crop_extents:Optional[List[str]]=[0,1,0,1],res:float=50,thr:float=0.7) -> None:
         from io_src.import_image import import_img
-        fmm_edges(img)
-        self.data['raster'] = True #TODO: process raster with discretized method
+        raster = import_img(filepath,pagewidth,crop_extents,res,thr)
+        self.data['raster'] = raster #process raster with discretized method
+        self.data['raster_res'] = res
         return
 
     def view_plan(self,dark:bool=False,**kwargs) -> None:
@@ -172,13 +173,15 @@ class Data2D(MutableMapping[str, Any]):
         grid = self.get_grid(grid)
 
         if self.data['raster'] == True:
-            method = 'discretized'
+            m = 'discretized'
         else:
-            method = 'corner'
+            m = 'corner'
 
-        self.visibility_batch(100,3600,grid,self.data['plan'],fov=2*np.pi,method=method)
+        self.visibility_batch(100,3600,grid,self.data['plan'],fov=2*np.pi,method=m)
         outlier_mask = np.abs(self.results['area']['result'] - self.results['area']['result'].mean()) <= reduce_outliers * self.results['area']['result'].std()
         self.results['area'] = {k: v[outlier_mask] if isinstance(v, np.ndarray) and len(v) == len(outlier_mask) else v for k, v in self.results['area'].items()}
+        if self.data['res'] != None:
+            self.results['area']/self.data['res']**2
         #TODO: area calculation also returns:
         # perimeter
         # closed perimeter

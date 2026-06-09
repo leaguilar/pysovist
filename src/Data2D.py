@@ -124,7 +124,10 @@ class Data2D(MutableMapping[str, Any]):
         self.data['plan'] = array
         return
     
-    def import_image() -> None:
+    def import_image(self,filepath:Path|str,pagewidth:float=21,crop_extents:Optional[List[str]]=[0,1,0,1]) -> None:
+        from io_src.import_image import import_img
+        fmm_edges(img)
+        self.data['raster'] = True #TODO: process raster with discretized method
         return
 
     def view_plan(self,dark:bool=False,**kwargs) -> None:
@@ -168,10 +171,20 @@ class Data2D(MutableMapping[str, Any]):
         # if dense grid is available use it automatically
         grid = self.get_grid(grid)
 
-        self.visibility_batch(100,3600,grid,self.data['plan'],fov=2*np.pi,method='corner')
+        if self.data['raster'] == True:
+            method = 'discretized'
+        else:
+            method = 'corner'
+
+        self.visibility_batch(100,3600,grid,self.data['plan'],fov=2*np.pi,method=method)
         outlier_mask = np.abs(self.results['area']['result'] - self.results['area']['result'].mean()) <= reduce_outliers * self.results['area']['result'].std()
         self.results['area'] = {k: v[outlier_mask] if isinstance(v, np.ndarray) and len(v) == len(outlier_mask) else v for k, v in self.results['area'].items()}
-        #TODO: area calculation also returns perimeter
+        #TODO: area calculation also returns:
+        # perimeter
+        # closed perimeter
+        # compactness
+        # occlusivity
+        # vista length
         return
     
 

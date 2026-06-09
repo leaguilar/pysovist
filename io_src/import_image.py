@@ -30,13 +30,13 @@ from scipy.ndimage import gaussian_filter, sobel
 ## 2. Helper Functions
 ##TODO: use Fast Marching Method to extract edges
 def fmm_edges(img:np.array, sigma:float=1.5,alpha:int=20,p:int=2,percentile:int=95):
-    img = gaussian_filter(img,sigma=sigma)
-    gx = sobel(img,axis=1)
-    gy = sobel(img,axis=0)
+    img_f = gaussian_filter(img,sigma=sigma)
+    gx = sobel(img_f,axis=1)
+    gy = sobel(img_f,axis=0)
     grad = np.sqrt(gx**2+gy**2)
     grad_norm = grad/(grad.max()+1e-8)
     F = 1.0 / (1.0+alpha*grad_norm**p)
-    phi = np.ones_like(img)
+    phi = np.ones_like(img,dtype=int)
     phi[0,:] = -1
     phi[-1,:] = -1
     phi[:,0] = -1
@@ -48,8 +48,9 @@ def fmm_edges(img:np.array, sigma:float=1.5,alpha:int=20,p:int=2,percentile:int=
     edges = t_grad > np.percentile(t_grad,percentile)
     return edges, t, F
 
+
 ## 3. Base Method
-def import_svg(path:Path|str,scale,crop_extents:Optional[List[str]]=[0,1,0,1]):
+def import_img(path:Path|str,scale,crop_extents:Optional[List[str]]=[0,1,0,1]):
     lines_df = pd.read_json(path)
     lines_2d = []
     for row in lines_df.iterrows():

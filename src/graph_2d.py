@@ -18,7 +18,7 @@
 ## 1. Imports
 import numpy as np
 from scipy.spatial import KDTree
-from collections import defaultdict, deque
+from collections import deque
 import heapq
 
 ## 2. Graph Generation Helpers
@@ -29,50 +29,40 @@ def knn_graph(grid:np.array,k:int=4):
     edges = np.unique(np.array(edges).reshape(-1,2),axis=0)
     return edges
 
-def knn_graph_angular(grid:np.array,k:int=4):
-    tree = KDTree(grid)
-    _, idx = tree.query(grid,k+1) # 4 nearest neighbors by default, excluding self
-    edges = [[(s,j[i]),(j[i],s)] for s,j in zip(idx[:,0],idx[:,1:]) for i in range(j.shape[0])]
-    edges = np.unique(np.array(edges).reshape(-1,2),axis=0)
-    #TODO: edge weights based on anglular change
-    return edges, edge_weights
-
 def adjacency_matrix(grid:np.array,edges:np.array):
-    edge_weights = np.ones_like(grid[edges[:,1]] - grid[edges[:,0]],axis=1)
-    dists_init = np.full((grid.shape[0],grid.shape[0]),0)
-    dists_init[np.diag_indices(grid.shape[0])] = 0
-    dists_init[edges[:,0],edges[:,1]] = 1
-    return
+    adj = [[] for _ in range(grid.shape[0])]
+    for u, v in edges:
+        adj[u].append(v)
+    return adj
 
 def adjacency_matrix_w(grid:np.array,edges:np.array):
     edge_weights = np.linalg.norm(grid[edges[:,1]] - grid[edges[:,0]],axis=1)
-    dists_init = np.full((grid.shape[0],grid.shape[0]),np.inf)
-    dists_init[np.diag_indices(grid.shape[0])] = 0
-    dists_init[edges[:,0],edges[:,1]] = edge_weights
-    return
+    adj = [[] for _ in range(grid.shape[0])]
+    for (u, v), w in zip(edges, edge_weights):
+        adj[u].append((v, w))
+    return adj
 
 ## 3. Graph Centrality Helpers
 def closeness(grid:np.array,edges:np.array,weighted=True): # Dijkstra's algorithm
-    edge_weights = np.linalg.norm(grid[edges[:,1]] - grid[edges[:,0]])
+    #edge_weights = np.linalg.norm(grid[edges[:,1]] - grid[edges[:,0]])
     if not weighted: # use BFS
         adj = adjacency_matrix(grid,edges)
-        if len(grid) > 10000:
+        if len(grid) > 1000:
             closeness = bfs_approx(adj)
         else:
             closeness = bfs_exact(adj)
     else:
         adj = adjacency_matrix_w(grid,edges)
-        if len(grid) > 10000:
+        if len(grid) > 1000:
             closeness = dijkstra_approx(adj)
         else:
             closeness = dijkstra_exact(adj)
-        return
     return closeness
 
 def bfs_approx(adj:np.array,k:int=256):
     n = len(adj)
     np.random.seed(0)
-    landmarks = np.random.sample(range(n),min(k,n))
+    landmarks = np.random.choice(n,min(k,n),replace=False)
     dist_sum = np.zeros(n,dtype=np.float64)
     count = np.zeros(n,dtype=np.int32)
     for s in landmarks:
@@ -142,15 +132,14 @@ def dijkstra_exact(adj:np.array):
             closeness[s] = 0.0
             continue
         total_dist = dist[reachable].sum()
-        base = r / total_dist
-        closeness[s] = base
+        closeness[s] = (r / total_dist) * (r / (n - 1))
     return closeness
 
 def dijkstra_approx(adj:np.array, k=256):
     n = len(adj)
 
     np.random.seed(0)
-    landmarks = np.random.sample(range(n), min(k, n))
+    landmarks = np.random.choice(n, min(k, n), replace=False)
 
     dist_sum = np.zeros(n, dtype=np.float64)
     count = np.zeros(n, dtype=np.int32)
@@ -173,7 +162,7 @@ def betweenness(grid:np.array,edges:np.array,weighted:bool=True):
         betweenness = brandes_exact_unw(adj)
     else:
         adj = adjacency_matrix_w(grid,edges)
-        betweenness = brandes_exact()
+        betweenness = brandes_exact(adj)
     return betweenness
         
 def brandes_exact_unw(adj:np.array,normalized:bool=True):
@@ -207,16 +196,11 @@ def brandes_exact_unw(adj:np.array,normalized:bool=True):
                 delta[v] += (sigma[v] / sigma[w]) * (1.0 + delta[w])
             if w != s:
                 betweenness[w] += delta[w]
-    betweenness *= 1.0 / ((n - 1) * (n - 2))
     if normalized and n > 2:
-        betweenness *= 2.0 / ((n - 1) * (n - 2))
+        betweenness *= 1.0 / ((n - 1) * (n - 2))
     return betweenness
 
 def brandes_exact(adj:np.array,normalized:bool=True):
-    import numpy as np
-import heapq
-
-def dijkstra_betweenness_exact(adj: np.ndarray, normalized: bool = True):
     n = len(adj)
     betweenness = np.zeros(n, dtype=np.float64)
     for s in range(n):
@@ -262,7 +246,10 @@ def dijkstra_betweenness_exact(adj: np.ndarray, normalized: bool = True):
 ## 4. Metrics
 def centrality(grid:np.array,edges:np.array,metric:str='degree'):
     if metric == 'degree':
-        cent = [np.argwhere(edges==i).shape[0] for i in edges]
+        in_degree = [np.argwhere(edges[:,1]==i).shape[0] for i,_ in enumerate(grid)]
+        out_degree = [np.argwhere(edges[:,0]==i).shape[0] for i,_ in enumerate(grid)]
+        cent_u = np.array(in_degree)+np.array(out_degree)
+        cent = cent_u/grid.shape[0]
     if metric == 'closeness':
         cent = closeness(grid,edges,weighted=False)
     if metric == 'closeness_w':
@@ -270,10 +257,10 @@ def centrality(grid:np.array,edges:np.array,metric:str='degree'):
     if metric == 'betweenness':
         cent = betweenness(grid,edges,weighted=False)
     if metric == 'betweenness_w':
-        return
+        cent = betweenness(grid,edges,weighted=True)
 
     return cent
-# centrality: betweenness, closeness, eigenvector, degree, harmonic, Katz, Laplacian, harmonic
+# centrality: eigenvector, harmonic, Katz, Laplacian
 # view_depth
 # view_integration
 #1. Angular Choice

@@ -172,7 +172,7 @@ class Data2D(MutableMapping[str, Any]):
         # if dense grid is available use it automatically
         grid = self.get_grid(grid)
 
-        if self.data['raster'] == True:
+        if self.data['raster'] != None:
             m = 'discretized'
         else:
             m = 'corner'

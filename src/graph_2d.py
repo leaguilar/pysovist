@@ -44,6 +44,7 @@ def adjacency_matrix_w(grid:np.array,edges:np.array):
     return adj
 
 def delaunay():
+    #TODO: use SciPy delaunay triangulation to make graph
     return
 
 def segment_intersection_mask(a, b, idx, eps=1e-12):
@@ -63,7 +64,7 @@ def segment_intersection_mask(a, b, idx, eps=1e-12):
         return False
 
 def disconnect_walls(grid:np.array,edges:np.array,plan:np.array,raster:bool=False):
-    #TODO: cut graph connection coincident with any wall
+    # cut graph edges coincident with any wall
     if raster == False:
         #vectorized workflow: edges as lines, find intersections, remove if intersection
         # bounding boxes: bb-edge/wall-x/y-lower/upper
@@ -89,6 +90,7 @@ def disconnect_walls(grid:np.array,edges:np.array,plan:np.array,raster:bool=Fals
         edges_d = np.delete(edges,masks,axis=0)
         return edges_d
     else:
+        #TODO: implement for rasterized image
         return
 
     #rasterized workflow: find sparse intersections, remove

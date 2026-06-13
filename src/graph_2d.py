@@ -19,6 +19,7 @@
 import numpy as np
 from scipy.spatial import KDTree
 from collections import deque
+from functools import reduce
 import heapq
 
 ## 2. Graph Generation Helpers
@@ -41,6 +42,56 @@ def adjacency_matrix_w(grid:np.array,edges:np.array):
     for (u, v), w in zip(edges, edge_weights):
         adj[u].append((v, w))
     return adj
+
+def delaunay():
+    return
+
+def segment_intersection_mask(a, b, idx, eps=1e-12):
+    p = a[0]
+    r = a[1]-a[0]
+    q = b[0]
+    s = b[1]-b[0]
+    denom = r[0]*s[1]-r[1]*s[0]
+    if abs(denom)<eps:
+        return False  # collinear
+    qp = q-p
+    t = (qp[0]*s[1]-qp[1]*s[0])/denom
+    u = (qp[0]*r[1]-qp[1]*r[0])/denom
+    if (0<=t<=1) and (0<=u<=1): #intersection in segment bounds
+        return int(idx)
+    else:
+        return False
+
+def disconnect_walls(grid:np.array,edges:np.array,plan:np.array,raster:bool=False):
+    #TODO: cut graph connection coincident with any wall
+    if raster == False:
+        #vectorized workflow: edges as lines, find intersections, remove if intersection
+        # bounding boxes: bb-edge/wall-x/y-lower/upper
+        bb_e_x_l = grid[edges,0].min(axis=1)
+        bb_e_x_u = grid[edges,0].max(axis=1)
+        bb_e_y_l = grid[edges,1].min(axis=1)
+        bb_e_y_u = grid[edges,1].max(axis=1)
+        bb_w_x_l = plan[...,0].min(axis=1)
+        bb_w_x_u = plan[...,0].max(axis=1)
+        bb_w_y_l = plan[...,1].min(axis=1)
+        bb_w_y_u = plan[...,1].max(axis=1)
+        # prune edges outside corresponding bounding boxes
+        w_ex_x_l = [np.where(bb_e_x_u<i) for i in bb_w_x_l]
+        w_ex_x_u = [np.where(bb_e_x_l>i) for i in bb_w_x_u]
+        w_ex_y_l = [np.where(bb_e_y_u<i) for i in bb_w_y_l]
+        w_ex_y_u = [np.where(bb_e_y_l>i) for i in bb_w_y_u]
+        sets_u = [reduce(np.union1d,arrays) for arrays in zip(w_ex_x_l,w_ex_x_u,w_ex_y_l,w_ex_y_u)]
+        sets = [reduce(np.setdiff1d,arrays) for arrays in zip(np.tile(np.arange(edges.shape[0]),len(sets_u)).reshape(len(sets_u),edges.shape[0]),sets_u)]
+        # solve intersections for curves within bounding boxes
+        masks = [segment_intersection_mask(grid[edges[q]],plan[st],q) for st,i in enumerate(sets) for q in i]
+        masks = np.array([element if type(element)==int else -1 for element in masks])
+        masks = masks[masks>=0]
+        edges_d = np.delete(edges,masks,axis=0)
+        return edges_d
+    else:
+        return
+
+    #rasterized workflow: find sparse intersections, remove
 
 ## 3. Graph Centrality Helpers
 def closeness(grid:np.array,edges:np.array,weighted=True): # Dijkstra's algorithm
@@ -159,10 +210,59 @@ def dijkstra_approx(adj:np.array, k=256):
 def betweenness(grid:np.array,edges:np.array,weighted:bool=True):
     if not weighted: # use BFS
         adj = adjacency_matrix(grid,edges)
-        betweenness = brandes_exact_unw(adj)
+        if len(grid) > 1000:
+            betweenness = brandes_approx_unw(adj)
+        else:
+            betweenness = brandes_exact_unw(adj)
     else:
         adj = adjacency_matrix_w(grid,edges)
-        betweenness = brandes_exact(adj)
+        if len(grid) > 1000:
+            betweenness = brandes_approx(adj)
+        else:
+            betweenness = brandes_exact(adj)
+    return betweenness
+
+def brandes_approx_unw(adj:np.array,k:int=256,normalized:bool=True):
+    n = len(adj)
+    betweenness = np.zeros(n, dtype=np.float64)
+
+    np.random.seed(0)
+    landmarks = np.random.choice(n, min(k, n), replace=False)
+
+    for s in landmarks:
+        stack = []
+        pred = [[] for _ in range(n)]
+        sigma = np.zeros(n, dtype=np.float64)   # number of shortest paths
+        sigma[s] = 1.0
+        dist = np.full(n, -1, dtype=np.int32)
+        dist[s] = 0
+        queue = deque([s])
+        # Forward BFS pass
+        while queue:
+            u = queue.popleft()
+            stack.append(u)
+            for v in adj[u]:
+                if dist[v] == -1:
+                    dist[v] = dist[u] + 1
+                    queue.append(v)
+                if dist[v] == dist[u] + 1:
+                    sigma[v] += sigma[u]
+                    pred[v].append(u)
+        # Backward dependency accumulation
+        delta = np.zeros(n, dtype=np.float64)
+        while stack:
+            w = stack.pop()
+            if sigma[w] == 0:
+                continue
+            for v in pred[w]:
+                delta[v] += (sigma[v] / sigma[w]) * (1.0 + delta[w])
+            if w != s:
+                betweenness[w] += delta[w]
+
+    if len(landmarks) > 0:
+        betweenness *= n / len(landmarks)
+    if normalized and n > 2:
+        betweenness *= 1.0 / ((n - 1) * (n - 2))
     return betweenness
         
 def brandes_exact_unw(adj:np.array,normalized:bool=True):
@@ -243,8 +343,58 @@ def brandes_exact(adj:np.array,normalized:bool=True):
 
     return betweenness
 
+def brandes_approx(adj:np.array,k:int=256,normalized:bool=True):
+    n = len(adj)
+    betweenness = np.zeros(n, dtype=np.float64)
+
+    np.random.seed(0)
+    landmarks = np.random.choice(n, min(k, n), replace=False)
+
+    for s in landmarks:
+        stack = []
+        pred = [[] for _ in range(n)]
+        sigma = np.zeros(n, dtype=np.float64)
+        sigma[s] = 1.0
+        dist = np.full(n, np.inf, dtype=np.float64)
+        dist[s] = 0.0
+        pq = [(0.0, s)]
+        # Forward Dijkstra pass
+        while pq:
+            dist_u, u = heapq.heappop(pq)
+            if dist_u > dist[u]:
+                continue
+            stack.append(u)
+            for v, weight in adj[u]:
+                alt = dist[u] + weight
+                if alt < dist[v]:
+                    dist[v] = alt
+                    heapq.heappush(pq, (alt, v))
+                    sigma[v] = sigma[u]
+                    pred[v] = [u]
+                elif alt == dist[v]:
+                    sigma[v] += sigma[u]
+                    pred[v].append(u)
+        # Backward dependency accumulation
+        delta = np.zeros(n, dtype=np.float64)
+        while stack:
+            w = stack.pop()
+            if sigma[w] == 0:
+                continue
+            for v in pred[w]:
+                delta[v] += (sigma[v] / sigma[w]) * (1.0 + delta[w])
+            if w != s:
+                betweenness[w] += delta[w]
+
+    if len(landmarks) > 0:
+        betweenness *= n / len(landmarks)
+    # Directed-graph normalization
+    if normalized and n > 2:
+        betweenness *= 1.0 / ((n - 1) * (n - 2))
+
+    return betweenness
+
 ## 4. Metrics
-def centrality(grid:np.array,edges:np.array,metric:str='degree'):
+def centrality(grid:np.array,edges:np.array,metric:str='degree',scale:str='linear',percentile:float=95):
     if metric == 'degree':
         in_degree = [np.argwhere(edges[:,1]==i).shape[0] for i,_ in enumerate(grid)]
         out_degree = [np.argwhere(edges[:,0]==i).shape[0] for i,_ in enumerate(grid)]
@@ -259,7 +409,22 @@ def centrality(grid:np.array,edges:np.array,metric:str='degree'):
     if metric == 'betweenness_w':
         cent = betweenness(grid,edges,weighted=True)
 
-    return cent
+    # eliminate values outside percentile
+    up = np.percentile(cent,percentile)
+    lp = np.percentile(cent,100-percentile)
+    cent = np.clip(cent,lp,up)
+
+    #normalize centrality
+    # scale: 'linear', 'log', 'sqrt'
+    if scale == 'linear':
+        return (cent-cent.min())/(cent.max()-cent.min())
+    if scale == 'log':
+        cent = cent-(cent.min()-1)
+        cent = np.log(cent)
+        return (cent-cent.min())/(cent.max()-cent.min())
+    if scale == 'sqrt':
+        cent = np.sqrt(cent)
+        return (cent-cent.min())/(cent.max()-cent.min())
 # centrality: eigenvector, harmonic, Katz, Laplacian
 # view_depth
 # view_integration

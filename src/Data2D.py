@@ -133,23 +133,36 @@ class Data2D(MutableMapping[str, Any]):
 
     def view_plan(self,dark:bool=False,**kwargs) -> None:
         from utils.visualize_2d import view_baseplan
-        view_baseplan(self.data['plan'],dark,**kwargs)
+        if 'raster' in self.data.keys():
+            view_baseplan(self.data['raster'],dark,raster=True,res=self.data['raster_res'],**kwargs)
+        else:
+            view_baseplan(self.data['plan'],dark,**kwargs)
         return
     
     def view_areas(self,grid:np.array|None=None,show_grid:bool=False,dark:bool=False,**kwargs) -> None:
         grid = self.get_grid(grid)
         from utils.visualize_2d import view_areas
-        view_areas(self.data['plan'],grid,dark,show_grid,**kwargs)
+        if 'raster' in self.data.keys():
+            view_areas(self.data['raster'],grid,dark,show_grid,raster=True,res=self.data['raster_res'],**kwargs)
+        else:
+            view_areas(self.data['plan'],grid,dark,show_grid,**kwargs)
         return
     
     def detect_boundaries(self,return_dense:bool=False,res:float=0.5) -> Any:
-        from utils.detect_boundaries_2d import identify_noninf, densify_grid
-        grid, grid_value = identify_noninf(self.data['plan'],res)
+        if 'raster' in self.data.keys():
+            from utils.detect_boundaries_fmm import fmm_edges, identify_noninf, densify_grid
+
+        else:
+            from utils.detect_boundaries_2d import identify_noninf, densify_grid
+            grid, grid_value = identify_noninf(self.data['plan'],res)
         self.results['grid_bounds'] = grid
         self.results['grid_confidence'] = grid_value
         if return_dense == True:
             dense = densify_grid(grid)
             self.results['grid_dense'] = dense
+        return
+    
+    def img_to_vec():
         return
     
     def get_grid(self, grid:np.array|None=None) -> np.array:
@@ -172,8 +185,8 @@ class Data2D(MutableMapping[str, Any]):
         # if dense grid is available use it automatically
         grid = self.get_grid(grid)
 
-        if self.data['raster'] != None:
-            m = 'discretized'
+        if 'raster' not in self.data.keys():
+            m = 'discretized_img'
         else:
             m = 'corner'
 
@@ -181,17 +194,21 @@ class Data2D(MutableMapping[str, Any]):
         outlier_mask = np.abs(self.results['area']['result'] - self.results['area']['result'].mean()) <= reduce_outliers * self.results['area']['result'].std()
         self.results['area'] = {k: v[outlier_mask] if isinstance(v, np.ndarray) and len(v) == len(outlier_mask) else v for k, v in self.results['area'].items()}
         if self.data['res'] != None:
-            self.results['area']/self.data['res']**2
+            self.results['area'] = self.results['area']/self.data['res']**2
         #TODO: area calculation also returns:
         # perimeter
         # closed perimeter
         # compactness
         # occlusivity
         # vista length
+        # drift
+        # average radial
+        # variance
+        # skewness
         return
     
-
     def get_graph() -> Any:
+
         return
     
     def graph_centrality(self, **kwargs) -> Any:

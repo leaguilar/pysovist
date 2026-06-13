@@ -71,6 +71,36 @@ def visibility_discretized(segments, origin, max_dist, num_rays, **kwargs):
     else:
         return polygon.area
 
+def visibility_rasterized(plan, origin, max_dist, num_rays, **kwargs):
+    ### set point grid resolution --> change if units are too large/small
+    resolution = 15/num_rays 
+    
+    valid_pts = np.argwhere(plan>0)
+
+    ### raycasting directions
+    angles = np.linspace(0,2*np.pi,num_rays)
+    angles = np.vstack([np.sin(angles),np.cos(angles)]).T.astype(np.float32)
+    
+    ### k-d tree query
+    tree = KDTree(angles,leafsize=8)
+    rel_positions = valid_pts-origin
+    distances = np.linalg.norm(rel_positions,axis=1,keepdims=True)
+    rel_dirs = rel_positions/(distances+1e-6)
+    dist_mask = (distances[:,0] <= max_dist)
+    rel_dirs = rel_dirs[dist_mask]
+    rel_positions = rel_positions[dist_mask]
+    distances = distances[dist_mask]
+    _, idx = tree.query(rel_dirs, k=1)
+    dist_per_bin = np.full(num_rays, 1e3) 
+    np.minimum.at(dist_per_bin, idx, distances[:,0])
+    dist_per_bin[dist_per_bin>max_dist] = max_dist
+    known_pts = (angles*dist_per_bin[:,None])+origin
+    polygon = Polygon(known_pts)
+    if kwargs.get("return_pts", False):
+        return (polygon.area, known_pts)
+    else:
+        return polygon.area
+
 ##TODO: adaptive higher resolution on closer curves, knn5 interpolation
 #number of rays increases -> res increases, spacing decreases
 #number of rays increases -> maximum distance increases

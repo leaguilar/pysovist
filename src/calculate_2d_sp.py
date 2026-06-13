@@ -20,11 +20,11 @@ try:
     from .m2d_segments_angle import visibility_area_np
 except ImportError:  # pragma: no cover - fallback for direct script usage
     from m2d_corner import visibility_polygon_corner
-    from m2d_discretized import visibility_discretized
+    from m2d_discretized import visibility_discretized, visibility_rasterized
     from m2d_segments_angle import visibility_area_np
 
 
-VALID_METHODS = {"corner", "discretized", "segments_angle"}
+VALID_METHODS = {"corner", "discretized", "segments_angle", "discretized_img"}
 
 
 def _as_segments(segments: np.ndarray) -> np.ndarray:
@@ -116,6 +116,14 @@ def _dispatch_method(
         )
     if method == "discretized":
         return visibility_discretized(
+            segments,
+            origin,
+            max_dist=dist_max,
+            num_rays=num_rays,
+            **kernel_kwargs,
+        )
+    if method == "discretized_img":
+        return visibility_rasterized(
             segments,
             origin,
             max_dist=dist_max,

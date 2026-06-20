@@ -62,4 +62,4 @@ def import_img(path:Path|str,scale,crop_extents:Optional[List[str]]=[0,1,0,1],re
     mask = edges > thr
     edges[mask] = 0
     edges_pts = np.argwhere(edges)
-    return edges_pts # [N,N] array
+    return edges_pts # [N,2] array

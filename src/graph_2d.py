@@ -63,6 +63,15 @@ def segment_intersection_mask(a, b, idx, eps=1e-12):
     else:
         return False
 
+def line_fill(a:np.array,b:np.array)->np.array:
+    xrange = max(a[0],b[0])-min(a[0],b[0])
+    yrange = max(a[1],b[1])-min(a[1],b[1])
+    xincrs = np.arange(xrange)/xrange
+    yincrs = np.arange(yrange)/yrange
+    xs = np.stack([np.array(np.ones(yrange)*a[1]+yincrs*(b[0]-a[0])),np.array(np.ones(yrange)*a[1]+yincrs*(b[1]-a[1]))],axis=1)
+    ys = np.stack([np.array(np.ones(xrange)*a[0]+xincrs*(b[0]-a[0])),np.array(np.ones(xrange)*a[0]+xincrs*(b[1]-a[1]))],axis=1)
+    return np.unique(np.row_stack([xs.astype(int),ys.astype(int)]),axis=0)
+
 def disconnect_walls(grid:np.array,edges:np.array,plan:np.array,raster:bool=False):
     # cut graph edges coincident with any wall
     if raster == False:
@@ -89,8 +98,10 @@ def disconnect_walls(grid:np.array,edges:np.array,plan:np.array,raster:bool=Fals
         masks = masks[masks>=0]
         edges_d = np.delete(edges,masks,axis=0)
         return edges_d
-    else:
+    elif raster == True:
         #TODO: implement for rasterized image
+        # find overlapping pixels, delete
+        
         return
 
     #rasterized workflow: find sparse intersections, remove

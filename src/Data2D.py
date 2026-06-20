@@ -151,7 +151,12 @@ class Data2D(MutableMapping[str, Any]):
     def detect_boundaries(self,return_dense:bool=False,res:float=0.5) -> Any:
         if 'raster' in self.data.keys():
             from utils.detect_boundaries_fmm import fmm_edges, identify_noninf, densify_grid
-
+            #by default; fast marching method
+            #TODO: add option for raycasting-based grid generation
+            arr_img = np.zeros((self.data['raster'][:,0].max()-self.data['raster'][:,0].min(),self.data['raster'][:,1].max(),self.data['raster'][:,1].min()))
+            arr_img[self.data['raster']] = 1
+            td = fmm_edges(arr_img)
+            grid, grid_value = identify_noninf(td,self.data['raster_res'],res)
         else:
             from utils.detect_boundaries_2d import identify_noninf, densify_grid
             grid, grid_value = identify_noninf(self.data['plan'],res)
@@ -207,8 +212,10 @@ class Data2D(MutableMapping[str, Any]):
         # skewness
         return
     
-    def get_graph() -> Any:
-
+    def get_graph(self) -> Any:
+        from src.graph_2d import knn_graph, adjacency_matrix, adjacency_matrix_w, segment_intersection_mask
+        grid = self.get_grid(grid)
+        graph = knn_graph(self.results['grid_bounds'])
         return
     
     def graph_centrality(self, **kwargs) -> Any:

@@ -24,7 +24,7 @@ import skfmm
 
 ## 2. Helper Functions
 #TODO: detect boundaries with FMM and generate grid in valid area
-def fmm_edges(img:np.array, sigma:float=20,alpha:int=1,p:int=0.5,percentile:int=95):
+def fmm_edges(img:np.array, sigma:float=5,alpha:int=250,p:float=0.3,percentile:int=50):
     img_f = gaussian_filter(img,sigma=sigma)
     gx = sobel(img_f,axis=1)
     gy = sobel(img_f,axis=0)
@@ -37,18 +37,18 @@ def fmm_edges(img:np.array, sigma:float=20,alpha:int=1,p:int=0.5,percentile:int=
     phi[:,0] = -1
     phi[:,-1] = -1
     t = skfmm.travel_time(phi,speed=F)
-    td = np.log(np.linalg.norm(np.diff(np.diff(t)),axis=-1))
+    td = np.log(np.diff(np.diff(t),axis=-1))
     tf = np.isfinite(td)
-    td[~tf] = -1
+    td[~tf] = -1e-2
+    td[td<np.percentile(td,percentile)] = -1e-2
     return td
 
 
 ## 3. Base Method
-def identify_noninf(plan_lines:np.array,global_res:float,res:float=0.5) -> np.array:
-    # global_res: global upscaling factor --> scale accordingly
-    
+def identify_noninf(td:np.array,global_res:float,res:float=0.5,percentile:int=90) -> np.array:
+    # global_res: global upscaling factor --> scale accordingly [pixels/m]
     # sample points from a uniform grid within the boundary
-    plan_lines = np.argwhere(td>-50)
+    plan_lines = np.argwhere(td[1:-1,1:-1]>-1e2)
     xmin,xmax,ymin,ymax = plan_lines[...,0].min(), plan_lines[...,0].max(), plan_lines[...,1].min(), plan_lines[...,1].max()
     xspace = np.linspace(xmin,xmax,int((xmax-xmin)/(global_res*res))) 
     yspace = np.linspace(ymin,ymax,int((ymax-ymin)/(global_res*res)))
@@ -61,8 +61,8 @@ def identify_noninf(plan_lines:np.array,global_res:float,res:float=0.5) -> np.ar
     valid_vals = td[plan_lines[idx,0],plan_lines[idx,1]]
     tree = KDTree(valid_grid)
     # filter points with distant neighbors
-    dists, _ = tree.query(valid_grid, k=3)
-    dist_mask = dists[:, -1] <= np.percentile(dists[:, -1], 90)
+    dists, _ = tree.query(valid_grid, k=5)
+    dist_mask = dists.max(axis=-1) <= np.percentile(dists.max(axis=-1), percentile)
 
     return valid_grid[dist_mask], valid_vals[dist_mask]
 

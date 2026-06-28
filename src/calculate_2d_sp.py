@@ -265,21 +265,13 @@ def area_array(
             **kwargs,
         )
 
-        if return_pts and return_stats:
-            area_value, hit_points, stats = result
-            areas.append(area_value)
-            points.append(hit_points)
-            stats_list.append(stats)
-        elif return_pts:
+        #returns stats by default (cheap calculation)
+        if return_pts:
             area_value, hit_points = result
-            areas.append(area_value)
+            areas.append(area_value['area'])
             points.append(hit_points)
-        elif return_stats:
-            area_value, stats = result
-            areas.append(area_value)
-            stats_list.append(stats)
         else:
-            areas.append(result)
+            areas.append(result['area'])
 
     areas_arr = np.asarray(areas, dtype=float)
     if return_pts and return_stats:

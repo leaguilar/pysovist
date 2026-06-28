@@ -1,7 +1,7 @@
 # /------------------------------------------------------------/
 # **2D Data Class**
 # -----
-# *pysovist-dev* under MIT License
+# *pysovist* under MIT License
 # -----
 # This module defines the dictionary-like data class used for
 # 2D visibility calculations and their related workflows.
@@ -125,10 +125,26 @@ class Data2D(MutableMapping[str, Any]):
         return
     
     def import_image(self,filepath:Path|str,pagewidth:float=21,crop_extents:Optional[List[str]]=[0,1,0,1],res:float=50,thr:float=0.7) -> None:
+        '''
+        Import plans from image files
+        ---
+        <u>Inputs</u>
+
+        - **Path to image file**. Supported formats: `{PNG, JPG, TIF, BMP}` | *str, required*
+        - **Page width**: plan width represented in the full image width. `e.g.` if the plan has `1:100` scale and is printed on portrait `A4` paper, width equals `21`. By default `21` | *float, optional*
+        - **Crop extents**: area which will be processed in normalized pixel coordinates `[W_min,W_max,H_min,H_max]`; any segments with endpoints outside are removed. By default `0,1,0,1` | *list, optional*
+        - **Resolution**: scale factor by which to upscale the image for processing. `e.g.` if resolution is selected as `50`, `1 m` is going to be represented by `50` pixels. By default `50` | *float, optional*
+        - **Threshold**: sensitivity threshold for edge detection. By default `0.7` | *float, optional*
+        '''
         from io_src.import_image import import_img
         raster = import_img(filepath,pagewidth,crop_extents,res,thr)
         self.data['raster'] = raster #process raster with discretized method
         self.data['raster_res'] = res
+        return
+    
+    def import_pcd():
+        #TODO: flattened point cloud with filtering - use rasterized methods for processing
+        
         return
 
     def view_plan(self,dark:bool=False,**kwargs) -> None:
@@ -200,16 +216,18 @@ class Data2D(MutableMapping[str, Any]):
         self.results['area'] = {k: v[outlier_mask] if isinstance(v, np.ndarray) and len(v) == len(outlier_mask) else v for k, v in self.results['area'].items()}
         if self.data['res'] != None:
             self.results['area'] = self.results['area']/self.data['res']**2
-        #TODO: area calculation also returns:
-        # perimeter
-        # closed perimeter
-        # compactness
-        # occlusivity
-        # vista length
-        # drift
-        # average radial
-        # variance
-        # skewness
+        #TODO: area calculation returns dictionary with stats
+        #TODO: isovist stats:
+        # directed visibility
+        # co-visibility
+        # overt control
+        # covert control
+        # choice
+        # counterpoint
+        # metric depth
+        # visual depth
+        # integration
+        # angular depth
         return
     
     def get_graph(self) -> Any:
@@ -279,6 +297,7 @@ class Data2D(MutableMapping[str, Any]):
         record = {"X": origins[:,0], "Y": origins[:,1], "result": result, 'dist_max':dist_max,
             'N':N, 'FOV':FOV, 'method':kwargs.get("method", "corner")}
         self.results['area'] = record
+        
         return result
 
     def calculate_boundary(

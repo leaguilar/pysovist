@@ -72,7 +72,7 @@ def line_fill(a:np.array,b:np.array)->np.array:
     ys = np.stack([np.array(np.ones(xrange)*a[0]+xincrs*(b[0]-a[0])),np.array(np.ones(xrange)*a[0]+xincrs*(b[1]-a[1]))],axis=1)
     return np.unique(np.row_stack([xs.astype(int),ys.astype(int)]),axis=0)
 
-def disconnect_walls(grid:np.array,edges:np.array,plan:np.array,raster:bool=False):
+def disconnect_walls(grid:np.array|None,edges:np.array,plan:np.array|None,img:np.array|None,raster:bool=False):
     # cut graph edges coincident with any wall
     if raster == False:
         #vectorized workflow: edges as lines, find intersections, remove if intersection
@@ -99,10 +99,17 @@ def disconnect_walls(grid:np.array,edges:np.array,plan:np.array,raster:bool=Fals
         edges_d = np.delete(edges,masks,axis=0)
         return edges_d
     elif raster == True:
-        #TODO: implement for rasterized image
+        #implementation for rasterized image
+        #img: sparse sections from plan
+        tree_lines = KDTree(img)
+        edges_grid = [line_fill(grid[edge[0]],grid[edge[1]]) for edge in edges]
+        intersection = np.array([[e_g[0],e_g[1],i,0] for i,e in enumerate(edges_grid) for e_g in e])
         # find overlapping pixels, delete
-        
-        return
+        dists,_ = tree_lines.query(intersection[:,:2])
+        int_overlap = intersection[dists<1.5] #approx. ≤√2
+        int_edges = np.unique(int_overlap[:,2])
+        edges_d = np.delete(edges,int_edges,axis=0)
+        return edges_d
 
     #rasterized workflow: find sparse intersections, remove
 

@@ -66,6 +66,21 @@ def visibility_discretized(segments, origin, max_dist, num_rays, **kwargs):
     dist_per_bin[dist_per_bin>max_dist] = max_dist
     known_pts = (angles*dist_per_bin[:,None])+origin
     polygon = Polygon(known_pts)
+    compactness = 4*polygon.area/polygon.length**2
+
+    results_dict = {
+        'area':polygon.area,
+        'perimeter':polygon.length,
+        'closed_perimeter':None,
+        'compactness':compactness,
+        'occlusivity':None,
+        'vista_length':None,
+        'drift':None,
+        'average_radial':None,
+        'variance':None,
+        'skewness':None
+        }
+
     if kwargs.get("return_pts", False):
         return (polygon.area, known_pts)
     else:
@@ -96,6 +111,20 @@ def visibility_rasterized(plan, origin, max_dist, num_rays, **kwargs):
     dist_per_bin[dist_per_bin>max_dist] = max_dist
     known_pts = (angles*dist_per_bin[:,None])+origin
     polygon = Polygon(known_pts)
+
+    results_dict = {
+        'area':polygon.area,
+        'perimeter':polygon.length,
+        'closed_perimeter':None,
+        'compactness':None,
+        'occlusivity':None,
+        'vista_length':None,
+        'drift':None,
+        'average_radial':None,
+        'variance':None,
+        'skewness':None
+        }
+
     if kwargs.get("return_pts", False):
         return (polygon.area, known_pts)
     else:

@@ -110,6 +110,24 @@ def visibility_polygon_corner(segments:np.ndarray, origin, max_distance = 100, n
     ys_clipped = np.clip(ys, 0, None)
     #area = np.trapz(ys_clipped, xs)
     area = (ys_clipped**2).mean()*np.pi
+    perimeter = (ys_clipped).mean()*2*np.pi
+    compactness = 4*area/perimeter**2
+
+    cg_r = np.linspace(0,2*np.pi,num_samples,endpoint=False)
+    cg = np.linalg.norm([(np.cos(cg_r)*ys_clipped).mean(),(np.sin(cg_r)*ys_clipped).mean()])
+
+    results_dict = {
+        'area':area,
+        'perimeter':perimeter,
+        'closed_perimeter':None, #requires semantic information
+        'compactness':compactness,
+        'occlusivity':None, #requires semantic information
+        'vista_length':max(ys_clipped),
+        'drift':cg,
+        'average_radial':ys_clipped.mean(),
+        'variance':((ys_clipped-ys_clipped.mean())**2).mean()**0.5,
+        'skewness':((ys_clipped-ys_clipped.mean())**3).mean()**(1/3)
+        }
 
     if kwargs.get("return_pts", False):
         r = ys_clipped
@@ -119,11 +137,10 @@ def visibility_polygon_corner(segments:np.ndarray, origin, max_distance = 100, n
         y = origin[1] + r * np.sin(theta)
 
         hit_pts_calc = np.column_stack([x, y])
-        return (area, hit_pts_calc)
-
-    return area
+        return (results_dict, hit_pts_calc)
+    return results_dict
 
 ##TODO:
-#dictionary output, return perimeter
+#dictionary output
 #add FOV truncation
 #vars: view_center=np.pi,fov_x=2*np.pi

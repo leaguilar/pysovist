@@ -70,6 +70,21 @@ def visibility_area_np(segments, vantage_point, max_distance=100.0, num_rays=360
         hit_pts.append((hit[0], hit[1]))
 
     visibility_poly = Polygon(hit_pts)
+    compactness = 4*visibility_poly.area/visibility_poly.length**2
+
+    results_dict = {
+        'area':visibility_poly.area,
+        'perimeter':visibility_poly.length,
+        'closed_perimeter':None, # requires semantic information
+        'compactness':compactness, 
+        'occlusivity':None, # requires semantic information
+        'vista_length':None, 
+        'drift':None,
+        'average_radial':None,
+        'variance':None,
+        'skewness':None
+        }
+
     if kwargs.get("return_pts", True):
         return (visibility_poly.area, np.asarray(hit_pts, dtype=float))
     return visibility_poly.area

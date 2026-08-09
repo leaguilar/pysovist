@@ -83,7 +83,7 @@ class Data2D(MutableMapping[str, Any]):
 
         - **Path to CSV file** | *str, required*
         - **Start**: columns indicating starting point of lines in the XY plane. By default `0,1`; can be int or str | *tuple, optional*
-        - **End**: column indicating starting point of lines in the XY plane. By default `2,3`; can be int or str | *tuple, optional*
+        - **End**: column indicating ending point of lines in the XY plane. By default `2,3`; can be int or str | *tuple, optional*
         - **Delimiter**: CSV delimiter. By default `','` | *str, optional*
         '''
         from io_src.import_csv import import_csv

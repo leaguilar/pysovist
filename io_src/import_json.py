@@ -31,3 +31,24 @@ def import_json(path:Path|str,delimiter:Optional[List[str]]=None):
         lines_2d.append([start,end])
     lines_2d = np.array(lines_2d)
     return lines_2d # [N,2,2] array
+
+def import_json_3d(path:Path|str,delimiter:Optional[List[str]]=None,delimiter_color:Optional[List[str]]=None):
+    if delimiter is None:
+        delimiter = ['x','y','z']
+    if delimiter_color is None:
+        delimiter_color = ['r','g','b']
+    pts_df = pd.read_json(path)
+    pts_3d = []
+    for row in pts_df.iterrows():
+        xvals = row[1][delimiter[0]]
+        yvals = row[1][delimiter[1]]
+        zvals = row[1][delimiter[2]]
+        pts_3d.append([xvals,yvals,zvals])
+        if delimiter_color is not None:
+            rvals = row[1][delimiter_color[0]]
+            gvals = row[1][delimiter_color[1]]
+            bvals = row[1][delimiter_color[2]]
+            pts_3d.append([xvals,yvals,zvals,rvals,gvals,bvals])
+
+    pts_3d = np.array(pts_3d)
+    return pts_3d # [N,3] or [N,6] array

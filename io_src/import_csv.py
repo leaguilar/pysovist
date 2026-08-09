@@ -29,3 +29,13 @@ def import_csv(path:Path|str,start:Optional[Tuple]=(0,1),end:Optional[Tuple]=(3,
         lines_2d.append([start_val,end_val])
     lines_2d = np.array(lines_2d)
     return lines_2d # [N,2,2] array
+
+def import_csv_3d(path:Path|str,delimiter:Optional[str]=',',xyz_columns:Optional[tuple]=(0,1,2),color_cols:Optional[tuple]=(3,4,5)):
+    pts = pd.read_csv(path, delimiter=delimiter).to_numpy()
+    pts_xyz = pts[xyz_columns]
+    if color_cols != None:
+        pts_rgb = pts[color_cols]
+        pts_3d = np.stack(pts_xyz,pts_rgb,axis=1)
+    else:
+        pts_3d = pts_xyz
+    return pts_3d # [N,3] or [N,6] array

@@ -215,6 +215,7 @@ def _odtp_argv(env) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Run the ``pysovist`` command with the arguments ``argv``, by default ``sys.argv[1:]``."""
     ap = _parser()
     a = ap.parse_args(sys.argv[1:] if argv is None else argv)
     if a.command == "odtp":

@@ -23,11 +23,24 @@ SPACING_SAMPLE = 200_000
 class PointCloud:
     """Points (n, 3) in metres, each standing for a ball of radius ``radius``.
 
+    Ray casting needs the ``pointcloud`` extra (numba).
+
     Parameters
     ----------
-    points : array-like, shape (n, 3)
+    points : array_like of shape (n, 3)
+        Point coordinates in metres. They are copied.
     radius : float
-        Splat radius in metres. Default 0.05.
+        Ball (splat) radius in metres.
+
+    Attributes
+    ----------
+    points : ndarray of shape (n, 3)
+        Point coordinates, read-only.
+    radius : float
+        Ball radius in metres.
+    block_flag : str
+        The flag set for an eye inside a ball or within ``eps`` of one,
+        ``"inside_occluder"``.
     """
 
     def __init__(self, points, radius: float = 0.05):
@@ -37,7 +50,8 @@ class PointCloud:
             raise ValueError("radius must be positive")
         self.points: np.ndarray = pts
         self.radius: float = float(radius)
-        # Search structures depend only on the points, so radius variants share them.
+        # Search structures, shared with the radius variants made by with_radius. The k-d tree
+        # depends only on the points. Ball grids are stored per radius and cell size.
         self._cache: dict = {}
 
     def __len__(self) -> int:
@@ -52,7 +66,12 @@ class PointCloud:
         return self.points.min(axis=0), self.points.max(axis=0)
 
     def with_radius(self, radius: float) -> PointCloud:
-        """The same points with another splat radius (search structures are shared)."""
+        """The same points with another ball radius, without copying them.
+
+        The new cloud shares the points, the k-d tree and the cache of ball
+        grids with this one. A ball grid depends on the radius, so the first
+        ray cast at a new radius builds a grid for it.
+        """
         out = PointCloud.__new__(PointCloud)
         out.points, out.radius, out._cache = self.points, float(radius), self._cache
         if out.radius <= 0:
@@ -63,11 +82,31 @@ class PointCloud:
 
     @classmethod
     def read(cls, path, radius: float = 0.05) -> PointCloud:
-        """Read ``.pts``, ``.las``/``.laz``, ``.e57``, ``.ply`` or ``.pcd``.
+        """Read a ``.pts``, ``.las``, ``.laz``, ``.e57``, ``.ply`` or ``.pcd`` file.
 
         ``.pts`` is the Leica text format: an optional first line with the
         point count, then one point per line starting with ``x y z``. E57
         files may hold several scans, each placed by its own pose.
+
+        Each format needs one optional extra:
+
+        - ``.pts``: none.
+        - ``.las``, ``.laz``: ``pointcloud`` (laspy). ``.laz`` also needs a
+          LAZ backend for laspy, such as lazrs.
+        - ``.e57``: ``e57`` (pye57).
+        - ``.ply``, ``.pcd``: ``mesh`` (open3d).
+
+        Parameters
+        ----------
+        path : str or os.PathLike
+            Point cloud file. The extension selects the reader.
+        radius : float
+            Ball radius in metres.
+
+        Returns
+        -------
+        PointCloud
+            The points of the file, as balls of radius ``radius``.
         """
         path = Path(path)
         ext = path.suffix.lower()
@@ -80,7 +119,10 @@ class PointCloud:
     # --- geometry ---------------------------------------------------------------------------
 
     def transform(self, matrix) -> PointCloud:
-        """Apply an affine 4 x 4 matrix to the points (homogeneous, column vectors)."""
+        """Apply an affine 4 x 4 matrix to the points (homogeneous, column vectors).
+
+        The radius is kept.
+        """
         m = np.asarray(matrix, dtype=float)
         if m.shape != (4, 4) or not np.allclose(m[3], [0, 0, 0, 1]):
             raise ValueError("matrix must be an affine 4 x 4 matrix")
@@ -91,9 +133,10 @@ class PointCloud:
 
         Parameters
         ----------
-        region : sequence or array-like
-            ``(xmin, ymin, xmax, ymax)``, ``(xmin, ymin, zmin, xmax, ymax, zmax)``
-            or a polygon ring of shape (k, 2), k >= 3, applied in plan.
+        region : array_like
+            A plan box ``(xmin, ymin, xmax, ymax)``, a 3D box
+            ``(xmin, ymin, zmin, xmax, ymax, zmax)`` or a polygon ring of shape
+            (k, 2) with k >= 3, applied in plan.
         z : (zmin, zmax), optional
             Extra height interval.
         """
@@ -130,7 +173,10 @@ class PointCloud:
         return {"median": float(q[0]), "p90": float(q[1]), "p99": float(q[2])}
 
     def clearance(self, origins, radius: float | None = None) -> np.ndarray:
-        """Distance from each origin (m, 3) to the nearest ball surface (negative inside a ball)."""
+        """Distance from each origin (m, 3) to the nearest ball surface (negative inside a ball).
+
+        ``radius`` overrides the cloud's own radius.
+        """
         o = np.asarray(origins, dtype=float).reshape(-1, 3)
         r = self.radius if radius is None else float(radius)
         if len(self) == 0:

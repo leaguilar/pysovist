@@ -15,16 +15,25 @@ class Plan:
 
     Parameters
     ----------
-    segments : array-like, shape (n, 2, 2)
+    segments : array_like of shape (n, 2, 2)
         Segment endpoints ``[[x0, y0], [x1, y1]]``. A third coordinate, if
         present, is dropped. Zero-length segments are removed.
+    eps : float
+        Length below which a segment counts as zero-length. It is also the
+        tolerance of the search for crossing points.
+
+    Attributes
+    ----------
+    segments : ndarray of shape (n, 2, 2)
+        The segments that remain.
+    vertices : ndarray of shape (k, 2)
+        Every segment endpoint and every crossing point, without duplicates.
 
     Notes
     -----
-    The plan also stores its *vertices*: every segment endpoint plus every
-    point where two segments cross. Between the viewing angles of these
-    vertices, no two walls change their order of depth as seen from any
-    observer, which is what makes the exact isovist kernel exact.
+    Between the viewing angles of the vertices, no two walls change their
+    order of depth as seen from any observer, which is what makes the exact
+    isovist kernel exact.
     """
 
     def __init__(self, segments, *, eps: float = 1e-12):
@@ -44,7 +53,10 @@ class Plan:
 
     @classmethod
     def from_json(cls, path, keys=("start", "end")) -> Plan:
-        """Read a list of ``{"start": [x, y(, z)], "end": [x, y(, z)]}`` records."""
+        """Read a list of ``{"start": [x, y(, z)], "end": [x, y(, z)]}`` records.
+
+        ``keys`` names the two endpoint fields of a record.
+        """
         records = json.loads(Path(path).read_text())
         return cls([[r[keys[0]][:2], r[keys[1]][:2]] for r in records])
 
@@ -55,7 +67,11 @@ class Plan:
         return (*p.min(axis=0), *p.max(axis=0))
 
     def grid(self, spacing: float, domain=None) -> np.ndarray:
-        """Regular grid of points, shape (m, 2), over ``domain`` or the plan bounds."""
+        """Regular grid of points, shape (m, 2), over ``domain`` or the plan bounds.
+
+        ``domain`` is ``(xmin, ymin, xmax, ymax)``. The points lie ``spacing``
+        apart, starting half a ``spacing`` inside the lower corner.
+        """
         xmin, ymin, xmax, ymax = self.bounds if domain is None else domain
         xs = np.arange(xmin + spacing / 2, xmax, spacing)
         ys = np.arange(ymin + spacing / 2, ymax, spacing)

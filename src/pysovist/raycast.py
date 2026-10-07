@@ -170,7 +170,7 @@ def build_ball_grid(points, radius: float, cell_size: float | None = None,
 
     Parameters
     ----------
-    points : array-like, shape (n, 3)
+    points : array_like of shape (n, 3)
         Ball centres in metres.
     radius : float
         Ball radius in metres.
@@ -178,6 +178,8 @@ def build_ball_grid(points, radius: float, cell_size: float | None = None,
         Cell edge. Default ``2 * radius``. The result does not depend on it,
         only the speed does. The grid coarsens when it would exceed
         ``max_cells`` cells.
+    max_cells : int
+        Largest number of grid cells.
     """
     _require_numba()
     pts = np.ascontiguousarray(np.asarray(points, dtype=float).reshape(-1, 3))
@@ -325,9 +327,10 @@ def cast_balls(grid: BallGrid, origins, directions, *, max_distance: float = np.
     ----------
     grid : BallGrid
         Balls from ``build_ball_grid``.
-    origins : array-like, shape (m, 3)
-    directions : array-like, shape (n, 3)
-        Normalised internally.
+    origins : array_like of shape (m, 3)
+        Ray origins in metres.
+    directions : array_like of shape (n, 3)
+        Ray directions, normalised internally.
     max_distance : float
         Hits farther than this are reported as misses.
     near_clip : float
@@ -337,7 +340,7 @@ def cast_balls(grid: BallGrid, origins, directions, *, max_distance: float = np.
 
     Returns
     -------
-    ndarray, shape (m, n)
+    ndarray of shape (m, n)
         Distance to the first ball, ``0`` for a ray that starts inside a ball,
         ``inf`` when no ball is hit within ``max_distance``.
     """
@@ -594,8 +597,33 @@ class SectionIsovist:
     """Isovist of the horizontal section of a ball model at eye height ``z_eye``.
 
     ``depths[i]`` is the depth along ``angles[i]`` (radians from +x),
-    clipped to ``max_distance``. ``area`` is ``(dtheta / 2) sum depths^2``
-    with the escape and inside policies applied.
+    clipped to ``max_distance``. ``area`` is ``(dtheta / 2) sum depths^2``,
+    with ``dtheta = 2 pi / n`` and the escape and inside policies applied.
+
+    Attributes
+    ----------
+    origin : ndarray of shape (2,)
+        Eye position in plan.
+    z_eye : float
+        Eye height in metres.
+    angles : ndarray of shape (n,)
+        Ray angles ``2 pi k / n``, in radians counter-clockwise from +x.
+    depths : ndarray of shape (n,)
+        Distance along each ray to the first disk, clipped to
+        ``max_distance``. It is ``inf`` where a ray escapes with no range
+        limit. The escape policy does not change it.
+    hit : ndarray of shape (n,)
+        True where a disk is hit within ``max_distance``.
+    max_distance : float
+        Range limit R in metres, ``inf`` for none.
+    clearance : float
+        Distance in the section plane from the eye to the nearest disk edge.
+        Negative inside a disk, ``inf`` when the plane cuts no ball.
+    flags : Flags
+        ``inside_occluder`` when the clearance is below ``eps``, and
+        ``unbounded`` when a ray escapes with no range limit.
+    area : float
+        Isovist area of the section in square metres.
     """
 
     origin: np.ndarray
@@ -622,7 +650,8 @@ def section_isovist_area(pointcloud, origin_xy, z_eye: float, *, n_rays: int = 3
 
     Parameters
     ----------
-    pointcloud : PointCloud or array-like of shape (n, 3)
+    pointcloud : PointCloud or array_like of shape (n, 3)
+        The scan. An array is read as points of a cloud of radius 0.05 m.
     origin_xy : (x, y)
         Eye position in plan.
     z_eye : float
@@ -630,9 +659,22 @@ def section_isovist_area(pointcloud, origin_xy, z_eye: float, *, n_rays: int = 3
     n_rays : int
         Number of equiangular rays, starting along +x.
     radius : float, optional
-        Ball radius. Default: the cloud's own radius (0.05 m for raw arrays).
-    max_distance, escape, inside, eps
-        As in ``pysovist.volume3d.view_volume``.
+        Ball radius in metres. Default: the cloud's own radius.
+    max_distance : float
+        Range limit R in metres. Each depth is clipped to R.
+    escape : {"clip", "zero", "nan"}
+        Depth counted for a ray that hits no disk within R: R, 0 or NaN. With
+        ``"clip"`` and no range limit, one escaping ray makes the area
+        ``inf``. With ``"nan"``, it makes the area NaN.
+    inside : {"nan", "zero"}
+        Area of an eye inside a disk or closer than ``eps`` to one: NaN or 0.
+    eps : float
+        Clearance in metres below which the eye counts as inside.
+
+    Returns
+    -------
+    SectionIsovist
+        Depths, flags and area of the section.
     """
     from .pointcloud import PointCloud
 

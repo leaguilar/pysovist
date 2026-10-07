@@ -65,6 +65,11 @@ VOLUME_METRIC_NAMES = (
     "volume", "r_mean", "r_std", "r_min", "r_max", "equivalent_radius", "escape_fraction",
     "volume_up", "volume_down",
 )
+"""Names of the view-volume metrics, in order.
+
+They are the keys of [`ViewVolume.metrics`][pysovist.ViewVolume.metrics] and
+the metric columns of [`view_volume_field`][pysovist.view_volume_field].
+"""
 ESCAPE_POLICIES = ("clip", "zero", "nan")
 INSIDE_POLICIES = ("nan", "zero")
 DIRECTION_SETS = ("fibonacci", "random")
@@ -80,6 +85,33 @@ class ViewVolume:
     ``distances[i]`` is the depth along ``directions[i]``, clipped to
     ``max_distance``, and ``hit[i]`` tells whether an occluder was hit within
     ``max_distance``. Each direction carries the solid angle ``weights[i]``.
+
+    Attributes
+    ----------
+    origin : ndarray of shape (3,)
+        Eye position in metres.
+    directions : ndarray of shape (n, 3)
+        Unit ray directions.
+    weights : ndarray of shape (n,)
+        Solid angle of each direction, ``4 pi / n``.
+    distances : ndarray of shape (n,)
+        Depth along each direction, clipped to ``max_distance``. It is ``inf``
+        where a ray escapes with no range limit. The escape policy does not
+        change it.
+    hit : ndarray of shape (n,)
+        True where an occluder is hit within ``max_distance``.
+    max_distance : float
+        Range limit R in metres, ``inf`` for none.
+    clearance : float
+        Distance from the eye to the nearest occluder surface, negative inside
+        a ball of a point cloud.
+    flags : Flags
+        Conditions under which the metrics are not ordinary numbers.
+    near_clipped : bool
+        True when ``near_clip`` is positive and the clearance lies below it.
+    metrics : dict
+        The metrics, keyed by the names of
+        [`VOLUME_METRIC_NAMES`][pysovist.VOLUME_METRIC_NAMES].
     """
 
     origin: np.ndarray
@@ -95,10 +127,12 @@ class ViewVolume:
 
     @property
     def volume(self) -> float:
+        """View volume in cubic metres, the same as ``metrics["volume"]``."""
         return self.metrics["volume"]
 
     @property
     def n_rays(self) -> int:
+        """Number of ray directions."""
         return len(self.directions)
 
     def points(self) -> np.ndarray:
@@ -130,23 +164,36 @@ def view_volume(
         Eye position in metres.
     n_rays : int
         Number of directions, ignored when ``directions`` is an array.
-    directions : {"fibonacci", "random"} or array-like of shape (n, 3)
-        Direction set. An array is normalised and each row weighted 4 pi / n,
-        so it should be an equal-area design.
-    seed : int, optional
+    directions : str or array_like of shape (n, 3)
+        Direction set: ``"fibonacci"`` (an equal-area spiral), ``"random"``
+        (independent uniform directions) or an array. An array is normalised
+        and each row weighted 4 pi / n, so it should be an equal-area design.
+    seed : int or numpy.random.Generator, optional
         Seed for ``directions="random"``.
     max_distance : float
-        Range limit R in metres.
+        Range limit R in metres. Each depth is clipped to R.
     near_clip : float
-        Ignore occluders closer than this to the eye (see the module notes).
+        Distance in metres below which occluders are ignored. For a point
+        cloud, the balls whose centre lies within ``near_clip`` of the eye are
+        ignored. For a mesh, each ray starts at distance ``near_clip`` from
+        the eye.
     escape : {"clip", "zero", "nan"}
-        Depth counted for a ray that hits nothing within R.
+        Depth counted for a ray that hits nothing within R: R, 0 or NaN. With
+        ``"clip"`` and no range limit, one escaping ray makes the volume
+        ``inf``. With ``"nan"``, it makes every metric but ``escape_fraction``
+        NaN.
     inside : {"nan", "zero"}
-        Metrics of an eye inside an occluder or closer than ``eps`` to one.
+        Metrics of an eye inside an occluder or closer than ``eps`` to one:
+        NaN or 0.
     eps : float
-        Clearance below which the eye counts as inside.
+        Clearance in metres below which the eye counts as inside.
     radius : float, optional
         Ball radius for a point cloud, overriding the cloud's own radius.
+
+    Returns
+    -------
+    ViewVolume
+        Depths, flags and metrics of the eye.
     """
     occ = _occluder(occluders3d, radius)
     d = _directions(directions, n_rays, seed)
@@ -173,20 +220,25 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
     Parameters
     ----------
     occluders3d : Mesh or PointCloud
-    origins : array-like of shape (m, 3), or a DataFrame with columns x, y, z
+        The scene.
+    origins : array_like of shape (m, 3) or DataFrame
+        Eye positions in metres. A DataFrame gives them in its columns
+        ``x, y, z``.
     n_jobs : int
         Threads for ray casting, ``-1`` for all cores. Both back ends are
         multi-threaded (numba for point clouds, Embree for meshes), so the
         observers are batched into one kernel call per chunk.
     **kw
-        Keyword arguments of ``view_volume``. Every origin uses the same
-        directions.
+        Keyword arguments of [`view_volume`][pysovist.view_volume]. Every
+        origin uses the same directions.
 
     Returns
     -------
     DataFrame
-        Columns ``x, y, z``, the metrics, ``clearance`` and the flags
-        ``on_wall, inside_occluder, unbounded, near_clipped``.
+        One row per origin, in order. The columns are ``x, y, z``, the metrics
+        in the order of [`VOLUME_METRIC_NAMES`][pysovist.VOLUME_METRIC_NAMES],
+        ``clearance`` and the flags ``on_wall``, ``inside_occluder``,
+        ``unbounded`` and ``near_clipped``.
     """
     unknown = set(kw) - _FIELD_KEYS
     if unknown:

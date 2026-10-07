@@ -26,10 +26,30 @@ def _rows(plan: Plan, origins: np.ndarray, kw: dict) -> list[list]:
 
 
 def isovist_field(occluders, origins, *, n_jobs: int = 1, chunk: int = 256, **kw) -> pd.DataFrame:
-    """Exact isovist metrics for every observer in ``origins``, shape (m, 2).
+    """Exact isovist metrics for many observers, one row per observer.
 
-    Keyword arguments go to :func:`pysovist.isovist`. ``n_jobs`` processes share
-    the work (``-1``: all cores). Rows keep the order of ``origins``.
+    Parameters
+    ----------
+    occluders : Plan or array_like of shape (n, 2, 2)
+        Wall segments.
+    origins : array_like of shape (m, 2)
+        Observer positions. Columns after the second are ignored.
+    n_jobs : int
+        Worker processes that share the observers. ``-1`` uses all cores, and
+        1 runs in the calling process.
+    chunk : int
+        Observers per task sent to a worker process. With no more than
+        ``chunk`` observers the field runs in the calling process.
+    **kw
+        Keyword arguments of [`isovist`][pysovist.isovist], applied to every observer.
+
+    Returns
+    -------
+    DataFrame
+        One row per observer, in the order of ``origins``. The columns are
+        ``x, y``, the metrics in the order of
+        [`METRIC_NAMES`][pysovist.METRIC_NAMES], ``clearance`` (the distance to
+        the nearest wall) and the flags ``on_wall`` and ``unbounded``.
     """
     plan = occluders if isinstance(occluders, Plan) else Plan(occluders)
     origins = np.asarray(origins, dtype=float)[:, :2]

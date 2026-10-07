@@ -44,7 +44,7 @@ def random_sphere(n: int, seed=None) -> np.ndarray:
     ----------
     n : int
         Number of directions.
-    seed : int, numpy.random.Generator or None
+    seed : int or numpy.random.Generator, optional
         Seed of the generator. The same seed gives the same directions.
     """
     n = int(n)

@@ -29,11 +29,24 @@ CLOSE_OPTIONS = ("hull", None)
 class Mesh:
     """Triangle mesh in metres, z up.
 
+    Ray casting, clearances and reading files need the ``mesh`` extra (open3d).
+
     Parameters
     ----------
-    vertices : array-like, shape (n, 3)
-    triangles : array-like of int, shape (m, 3)
-        Vertex indices. Orientation does not matter for ray casting.
+    vertices : array_like of shape (n, 3)
+        Vertex coordinates in metres. They are copied.
+    triangles : array_like of shape (m, 3)
+        Integer vertex indices of each triangle. Orientation does not matter
+        for ray casting.
+
+    Attributes
+    ----------
+    vertices : ndarray of shape (n, 3)
+        Vertex coordinates, read-only.
+    triangles : ndarray of shape (m, 3)
+        Vertex indices of each triangle, read-only.
+    block_flag : str
+        The flag set for an eye closer than ``eps`` to a surface, ``"on_wall"``.
     """
 
     block_flag = "on_wall"
@@ -79,11 +92,13 @@ class Mesh:
 
         Parameters
         ----------
-        plan : Plan or array-like of shape (n, 2, 2)
+        plan : Plan or array_like of shape (n, 2, 2)
             Wall segments.
-        floor, ceiling : float
-            Heights of the floor and ceiling planes in metres.
-        close : "hull", None or array-like of shape (k, 2)
+        floor : float
+            Height of the floor plane in metres.
+        ceiling : float
+            Height of the ceiling plane in metres, above ``floor``.
+        close : "hull", None or array_like of shape (k, 2)
             Close the sides along the convex hull, not at all, or along the
             given polygon (vertices in order, the last joins the first).
         """
@@ -137,6 +152,7 @@ class Mesh:
 
     @property
     def bounds(self) -> tuple[np.ndarray, np.ndarray]:
+        """Lower and upper corner of the vertices' bounding box."""
         return self.vertices.min(axis=0), self.vertices.max(axis=0)
 
     def _raycasting_scene(self):

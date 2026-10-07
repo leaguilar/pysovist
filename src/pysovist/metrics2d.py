@@ -13,14 +13,17 @@ Definitions (``Theta`` is the field-of-view measure, ``2 pi`` for a full turn):
 - ``occlusivity``: total length of occluding radial edges, where the boundary
   jumps in depth (Benedikt 1979).
 - ``r_min``, ``r_max``, ``r_mean``: extremes and mean of r over the field of
-  view. ``r_var``, ``r_std``, ``r_skew``: central moments of r. ``r_mad``:
-  mean absolute deviation of r. ``dispersion``: r_std / r_mean.
+  view. ``r_var``: second central moment of r (the population variance).
+  ``r_std``: its square root. ``r_skew``: standardised third central moment,
+  the third central moment divided by r_std^3, and 0 when r_std = 0.
+  ``r_mad``: mean absolute deviation of r. ``dispersion``: r_std / r_mean.
 - ``compactness``: 4 pi A / P^2, equal to 1 for a disc (Turner et al. 2001).
 - ``jaggedness``: P^2 / A (Wiener and Franz 2005).
 - ``drift``, ``drift_angle``: distance and direction from the observer to the
   centroid of the isovist (Conroy Dalton 2001).
-- ``elongation``: sqrt(l1 / l2) of the principal second moments of area about
-  the centroid. Equal to the aspect ratio for a rectangle.
+- ``elongation``: sqrt(l1 / l2), where l1 >= l2 are the principal second
+  moments of area about the centroid, so it is at least 1. Equal to the aspect
+  ratio for a rectangle, and ``inf`` when l2 = 0.
 - ``convex_deficiency``: (A_hull - A) / A_hull. Range arcs enter the hull as
   polygons with a step of 0.5 degrees.
 """
@@ -37,6 +40,11 @@ METRIC_NAMES = (
     "r_skew", "r_mad", "dispersion", "compactness", "jaggedness", "drift", "drift_angle",
     "elongation", "convex_deficiency",
 )
+"""Names of the exact 2D isovist metrics, in order.
+
+They are the keys of [`Isovist.metrics`][pysovist.Isovist.metrics] and the
+metric columns of [`isovist_field`][pysovist.isovist_field].
+"""
 
 
 def nan_metrics(**known) -> dict:
@@ -139,7 +147,7 @@ def wedge_metrics(theta0, theta1, kind, p, phi, R, fov, full) -> dict:
     cxx = ixx.sum() - area * centroid[0] ** 2
     cyy = iyy.sum() - area * centroid[1] ** 2
     cxy = ixy.sum() - area * centroid[0] * centroid[1]
-    lam = np.linalg.eigvalsh(np.array([[cxx, cxy], [cxy, cyy]]))
+    lam = np.linalg.eigvalsh(np.array([[cxx, cxy], [cxy, cyy]]))  # ascending: l2, l1
     elongation = np.sqrt(lam[1] / lam[0]) if lam[0] > 0 else np.inf
 
     return {

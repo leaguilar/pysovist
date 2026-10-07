@@ -35,7 +35,7 @@ def isovist(
 
     Parameters
     ----------
-    occluders : Plan or array-like of shape (n, 2, 2)
+    occluders : Plan or array_like of shape (n, 2, 2)
         Wall segments.
     origin : (x, y)
         Observer position.
@@ -46,11 +46,19 @@ def isovist(
     fov : float
         Field of view in radians, centred on ``direction``. Default: full turn.
     direction : float
-        Viewing direction in radians, counter-clockwise from +x.
+        Viewing direction in radians, counter-clockwise from +x. Used only when
+        ``fov`` is below a full turn.
     on_wall : {"nan", "raise"}
-        What to do when the observer is closer than ``eps`` to a wall.
+        What to do when the observer is closer than ``eps`` to a wall: return
+        an isovist with NaN metrics and ``flags.on_wall`` set, or raise a
+        ``ValueError``.
     eps : float
         Distance below which the observer counts as standing on a wall.
+
+    Returns
+    -------
+    Isovist
+        Wedges, flags and metrics of the observer.
     """
     if on_wall not in _ON_WALL_POLICIES:
         raise ValueError(f"on_wall must be one of {_ON_WALL_POLICIES}")

@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pysovist"
+dynamic = ["version"]
+description = "Exact isovists and view volumes from floor plans, meshes and raw point clouds"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "pysovist contributors" }]
+keywords = ["isovist", "visibility", "space syntax", "point cloud", "view volume", "architecture"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "pandas>=2.0",
+]
+
+[project.optional-dependencies]
+pointcloud = ["numba>=0.59", "laspy>=2.4"]
+e57 = ["pye57>=0.4"]
+mesh = ["open3d>=0.18"]
+rhino = ["rhino3dm>=8"]
+plot = ["matplotlib>=3.7"]
+all = ["pysovist[pointcloud,e57,mesh,rhino,plot]"]
+
+[project.scripts]
+pysovist = "pysovist.cli:main"
+
+[project.urls]
+Source = "https://github.com/leaguilar/pysovist"
+Issues = "https://github.com/leaguilar/pysovist/issues"
+
+[dependency-groups]
+test = ["pytest>=8", "pytest-cov", "pytest-xdist", "hypothesis>=6", "shapely>=2"]
+lint = ["ruff", "mypy"]
+docs = ["mkdocs-material", "mkdocstrings[python]"]
+
+[tool.hatch.version]
+path = "src/pysovist/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pysovist"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = ["slow: convergence and parity checks that take more than a few seconds"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "NPY"]

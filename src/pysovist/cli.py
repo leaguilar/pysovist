@@ -104,7 +104,7 @@ def _isovist(a: argparse.Namespace) -> None:
         plan = Plan(np.concatenate([plan.segments, closing]))
     pts = _read_points(a.points, None, 2)
     df = isovist_field(plan, pts, max_distance=a.max_distance, n_jobs=a.n_jobs)
-    _write(df, a.out, "isovist", {"max_distance": a.max_distance},
+    _write(df, a.out, "isovist", {"max_distance": a.max_distance, "n_jobs": a.n_jobs},
            {"plan": a.plan, "close": a.close, "points": a.points}, t0)
 
 
@@ -134,11 +134,11 @@ def _volume(a: argparse.Namespace) -> None:
     pts = _read_points(a.points, a.eye_height, 3)
     df = view_volume_field(occ, pts, n_rays=a.n_rays, max_distance=a.max_distance, escape=a.escape,
                            inside=a.inside, near_clip=a.near_clip,
-                           n_jobs=a.n_jobs if a.n_jobs != 1 else -1, **kw)
+                           n_jobs=a.n_jobs, **kw)
     params = {"n_rays": a.n_rays, "max_distance": a.max_distance, "escape": a.escape,
               "inside": a.inside, "near_clip": a.near_clip, "radius": a.radius,
               "floor": a.floor, "ceiling": a.ceiling, "eye_height": a.eye_height,
-              "directions": "fibonacci"}
+              "directions": "fibonacci", "n_jobs": a.n_jobs}
     _write(df, a.out, "volume", params,
            {"cloud": a.cloud, "mesh": a.mesh, "plan": a.plan, "close": a.close,
             "points": a.points}, t0)

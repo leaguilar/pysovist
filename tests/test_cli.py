@@ -70,3 +70,12 @@ def test_odtp_mode_rejects_an_unknown_task(monkeypatch, tmp_path):
     monkeypatch.setenv("TASK", "teleport")
     with pytest.raises(SystemExit):
         main(["odtp"])
+
+
+def test_volume_command_keeps_a_single_thread_request(square_plan, points, tmp_path):
+    pytest.importorskip("open3d")
+    out = tmp_path / "vol.csv"
+    main(["volume", "--plan", str(square_plan), "--points", str(points), "--n-rays", "1024",
+          "--n-jobs", "1", "--out", str(out)])
+    meta = json.loads(out.with_suffix(".json").read_text())
+    assert meta["parameters"]["n_jobs"] == 1

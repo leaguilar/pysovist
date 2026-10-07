@@ -150,19 +150,62 @@ def _circle_crossings(a, d, R):
     return np.concatenate(out) if out else np.empty((0, 2))
 
 
+_DIRECT_WORK = 200_000  # rays x segments below which every ray tests every segment
+
+
 def _first_hit(u, a, d):
     """Nearest positive hit of rays ``t u`` with segments ``a + s d``.
 
     Returns the distance ``t`` (``inf`` when nothing is hit) and the segment index.
+    Large scenes use an angular index, so that each ray only tests the segments
+    whose angular extent, seen from the origin, contains the ray.
     """
     k = len(u)
     if len(a) == 0:
         return np.full(k, np.inf), np.zeros(k, dtype=int)
-    denom = u[:, None, 0] * d[None, :, 1] - u[:, None, 1] * d[None, :, 0]
+    if k * len(a) <= _DIRECT_WORK:
+        cand = np.broadcast_to(np.arange(len(a)), (k, len(a)))
+    else:
+        cand = _angular_candidates(np.arctan2(u[:, 1], u[:, 0]), a, d)
+    aa, dd = a[np.maximum(cand, 0)], d[np.maximum(cand, 0)]
+    denom = u[:, None, 0] * dd[..., 1] - u[:, None, 1] * dd[..., 0]
     with np.errstate(divide="ignore", invalid="ignore"):
-        t = _cross(a, d)[None, :] / denom
-        s = (a[None, :, 0] * u[:, None, 1] - a[None, :, 1] * u[:, None, 0]) / denom
-    valid = (np.abs(denom) > 1e-300) & (t > 0) & (s >= -1e-12) & (s <= 1 + 1e-12)
+        t = _cross(aa, dd) / denom
+        s = (aa[..., 0] * u[:, None, 1] - aa[..., 1] * u[:, None, 0]) / denom
+    valid = (cand >= 0) & (np.abs(denom) > 1e-300) & (t > 0) & (s >= -1e-12) & (s <= 1 + 1e-12)
     t = np.where(valid, t, np.inf)
-    j = np.argmin(t, axis=1)
-    return t[np.arange(k), j], j
+    col = np.argmin(t, axis=1)
+    rows = np.arange(k)
+    return t[rows, col], np.asarray(cand)[rows, col]
+
+
+def _angular_candidates(ray_angle, a, d, max_bins=4096):
+    """For each ray, the indices of segments that can contain its direction (-1 pads).
+
+    The full turn is cut into equal bins. Each segment is listed in every bin its
+    angular extent touches. A ray inside a segment's extent falls in one of those
+    bins, so no candidate is ever missed.
+    """
+    n = len(a)
+    bins = int(min(max_bins, max(16, 2 * len(ray_angle))))
+    scale = bins / TWO_PI
+    th0 = np.mod(np.arctan2(a[:, 1], a[:, 0]), TWO_PI)
+    th1 = np.mod(np.arctan2(a[:, 1] + d[:, 1], a[:, 0] + d[:, 0]), TWO_PI)
+    span = np.mod(th1 - th0, TWO_PI)
+    flip = span > np.pi
+    lo = np.where(flip, th1, th0)
+    span = np.where(flip, TWO_PI - span, span)
+    b0 = np.floor(lo * scale).astype(np.int64)
+    count = np.floor((lo + span) * scale).astype(np.int64) - b0 + 1
+    seg_id = np.repeat(np.arange(n), count)
+    offs = np.arange(count.sum()) - np.repeat(np.cumsum(count) - count, count)
+    seg_bin = np.mod(np.repeat(b0, count) + offs, bins)
+    order = np.argsort(seg_bin, kind="stable")
+    seg_bin, seg_id = seg_bin[order], seg_id[order]
+    per_bin = np.bincount(seg_bin, minlength=bins)
+    width = max(int(per_bin.max()), 1)
+    table = np.full((bins, width), -1, dtype=np.int64)
+    slot = np.arange(len(seg_bin)) - np.repeat(np.cumsum(per_bin) - per_bin, per_bin)
+    table[seg_bin, slot] = seg_id
+    ray_bin = np.mod(np.floor(np.mod(ray_angle, TWO_PI) * scale).astype(np.int64), bins)
+    return table[ray_bin]

@@ -168,3 +168,24 @@ def test_area_grows_with_range_and_stays_inside_the_disc(scene, r1, r2):
     assume(not a.flags.on_wall)
     assert a.area <= b.area * (1 + 1e-9)
     assert a.area <= math.pi * lo * lo * (1 + 1e-9)
+
+
+def test_angular_index_gives_the_same_isovists_as_direct_search(monkeypatch):
+    import pysovist.isovist2d as kernel
+
+    rng = np.random.default_rng(7)
+    start = rng.uniform(0.5, 29.5, size=(800, 2))
+    walls = np.stack([start, start + rng.normal(0, 0.8, size=(800, 2))], axis=1)
+    walls = np.clip(walls, 0.1, 29.9)
+    plan = Plan(np.concatenate([rect(0, 0, 30, 30), walls]))
+    origins = rng.uniform(0.5, 29.5, size=(25, 2))
+    results = {}
+    for name, work in (("direct", 10**12), ("indexed", 0)):
+        monkeypatch.setattr(kernel, "_DIRECT_WORK", work)
+        results[name] = [isovist(plan, o, max_distance=12.0) for o in origins]
+    for a, b in zip(results["direct"], results["indexed"], strict=True):
+        if a.flags.on_wall:
+            assert b.flags.on_wall
+            continue
+        assert b.area == pytest.approx(a.area, rel=1e-12)
+        assert b.perimeter == pytest.approx(a.perimeter, rel=1e-12)

@@ -79,3 +79,18 @@ def test_open_plan_without_hull_walls_escapes():
         Mesh.from_plan(plan, close="box")
     with pytest.raises(ValueError):
         Mesh.from_plan(plan, floor=2.0, ceiling=1.0)
+
+
+FOOTPRINT_L = np.array([(0, 0), (10, 0), (10, 4), (4, 4), (4, 9), (0, 9)], dtype=float)
+
+
+@pytest.mark.parametrize("eye", [(1.5, 1.2), (2.0, 6.5), (8.0, 2.0)])
+def test_footprint_closure_keeps_the_identity_in_a_concave_building(eye):
+    # Interior walls only (no outer walls): the footprint polygon closes the domain.
+    # A convex-hull closure would add the empty corner (4..10, 4..9) to the visible area.
+    inner = Plan(np.array([[(2.5, 2.0), (2.5, 3.5)], [(6.0, 1.0), (7.5, 1.0)]], dtype=float))
+    closed = Plan(np.concatenate([inner.segments, polygon_walls(FOOTPRINT_L)]))
+    mesh = Mesh.from_plan(inner, floor=0.0, ceiling=H, close=FOOTPRINT_L)
+    vv = view_volume(mesh, (*eye, 1.6), n_rays=N)
+    assert vv.metrics["escape_fraction"] == 0.0
+    assert vv.volume == pytest.approx(H * isovist(closed, eye).area, rel=REL)

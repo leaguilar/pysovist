@@ -67,13 +67,15 @@ class Mesh:
 
     @classmethod
     def from_plan(cls, plan, floor: float = 0.0, ceiling: float = 2.5,
-                  close: str | None = "hull") -> Mesh:
+                  close="hull") -> Mesh:
         """Extrude a floor plan into a prism.
 
         Every wall segment becomes a vertical rectangle from ``floor`` to
         ``ceiling``. A floor and a ceiling cover the convex hull of the plan.
         With ``close="hull"`` vertical walls also run along the convex hull,
-        so the domain is closed and no ray escapes.
+        so the domain is closed and no ray escapes. A polygon (for example
+        the building footprint) closes the domain along its own outline
+        instead, which keeps concave buildings concave.
 
         Parameters
         ----------
@@ -81,20 +83,30 @@ class Mesh:
             Wall segments.
         floor, ceiling : float
             Heights of the floor and ceiling planes in metres.
-        close : {"hull", None}
-            Whether to close the sides along the convex hull.
+        close : "hull", None or array-like of shape (k, 2)
+            Close the sides along the convex hull, not at all, or along the
+            given polygon (vertices in order, the last joins the first).
         """
         from .plan import Plan
 
-        if close not in CLOSE_OPTIONS:
-            raise ValueError(f"close must be one of {CLOSE_OPTIONS}")
+        ring_close = None
+        if not isinstance(close, str) and close is not None:
+            ring_close = np.asarray(close, dtype=float).reshape(-1, 2)
+            if len(ring_close) < 3:
+                raise ValueError("a closing polygon needs at least three vertices")
+        elif close not in CLOSE_OPTIONS:
+            raise ValueError(f"close must be one of {CLOSE_OPTIONS} or a polygon")
         if not ceiling > floor:
             raise ValueError("ceiling must lie above floor")
         segs = (plan if isinstance(plan, Plan) else Plan(plan)).segments
-        ring = segs.reshape(-1, 2)
-        ring = ring[ConvexHull(ring).vertices]  # counter-clockwise
+        pts = segs.reshape(-1, 2)
+        if ring_close is not None:
+            pts = np.vstack([pts, ring_close])
+        ring = pts[ConvexHull(pts).vertices]  # counter-clockwise, floor and ceiling cover it
         walls = [segs]
-        if close == "hull":
+        if ring_close is not None:
+            walls.append(np.stack([ring_close, np.roll(ring_close, -1, axis=0)], axis=1))
+        elif close == "hull":
             walls.append(np.stack([ring, np.roll(ring, -1, axis=0)], axis=1))
         walls = np.concatenate(walls)
         verts, tris = [], []

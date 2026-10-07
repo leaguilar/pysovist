@@ -29,7 +29,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-pointcloud = ["numba>=0.59", "laspy>=2.4"]
+pointcloud = ["numba>=0.59", "laspy[lazrs]>=2.4"]
 e57 = ["pye57>=0.4"]
 mesh = ["open3d>=0.18"]
 all = ["pysovist[pointcloud,e57,mesh]"]

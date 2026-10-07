@@ -45,7 +45,7 @@ Four parameters decide what a view volume counts.
 :   The range limit R. Each depth is clipped to R.
 
 `escape`
-:   The depth counted for a ray that hits nothing within R. `"clip"` (the default) counts R, so with `max_distance=inf` a single escaping ray makes the volume infinite. `"zero"` counts 0, as the [Unity estimator](unity.md) does. `"nan"` makes the metrics NaN. `flags.unbounded` is set whenever a ray escapes with R infinite, whatever the policy.
+:   The depth counted for a ray that hits nothing within R. `"clip"` (the default) counts R, so with `max_distance=inf` a single escaping ray makes the volume infinite. `"zero"` counts 0, as the [Unity estimator](unity.md) does. `"nan"` makes every metric NaN except `escape_fraction`, which stays a number. `flags.unbounded` is set whenever a ray escapes with R infinite, whatever the policy.
 
 `inside`
 :   The metrics of an eye inside a ball of a point cloud or closer than `eps` to an occluder. `"nan"` (the default) makes them NaN, and `"zero"` sets them to 0.

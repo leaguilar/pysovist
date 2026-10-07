@@ -32,9 +32,7 @@ dependencies = [
 pointcloud = ["numba>=0.59", "laspy>=2.4"]
 e57 = ["pye57>=0.4"]
 mesh = ["open3d>=0.18"]
-rhino = ["rhino3dm>=8"]
-plot = ["matplotlib>=3.7"]
-all = ["pysovist[pointcloud,e57,mesh,rhino,plot]"]
+all = ["pysovist[pointcloud,e57,mesh]"]
 
 [project.scripts]
 pysovist = "pysovist.cli:main"

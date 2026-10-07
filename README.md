@@ -13,7 +13,7 @@ An isovist is the region visible from one point. pysovist computes it in two set
 pip install pysovist                    # 2D isovists
 pip install "pysovist[pointcloud]"      # point clouds (numba, laspy)
 pip install "pysovist[mesh]"            # meshes (open3d)
-pip install "pysovist[all]"             # everything, including e57 and Rhino files
+pip install "pysovist[all]"             # everything, including e57 files
 ```
 
 Python 3.10 or newer.

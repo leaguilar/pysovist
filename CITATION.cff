@@ -1,0 +1,57 @@
+cff-version: 1.2.0
+message: "If you use pysovist, please cite the software and the methods paper below."
+title: "pysovist: exact isovists and view volumes from floor plans, meshes and point clouds"
+type: software
+authors:
+  - family-names: Aguilar
+    given-names: Leonel
+    email: aleonel@ethz.ch
+  - family-names: Tuncay
+    given-names: Bartu
+license: MIT
+repository-code: "https://github.com/leaguilar/pysovist"
+version: 0.1.0
+keywords:
+  - isovist
+  - visibility analysis
+  - view volume
+  - point cloud
+  - space syntax
+references:
+  - type: article
+    status: in-preparation
+    title: "Exact isovists and view volumes from raw point clouds"
+    authors:
+      - {family-names: Aguilar, given-names: Leonel}
+      - {family-names: Baur, given-names: Raphaël}
+      - {family-names: Wheele, given-names: Theresa}
+      - {family-names: Tuncay, given-names: Bartu}
+      - {family-names: Ladouce, given-names: Simon}
+      - {family-names: Li, given-names: Chenyang}
+      - {family-names: Schmutz, given-names: Jan}
+      - {family-names: Sailer, given-names: Kerstin}
+      - {family-names: Grübel, given-names: Jascha}
+      - {family-names: Slankamenac, given-names: Ksenija}
+      - {family-names: Honegger, given-names: Patrik}
+      - {family-names: Conroy-Dalton, given-names: Ruth}
+      - {family-names: Sax, given-names: Hugo}
+      - {family-names: Hölscher, given-names: Christoph}
+      - {family-names: Gath-Morad, given-names: Michal}
+  - type: article
+    status: in-preparation
+    title: "Visibility and staff occupancy in an emergency department"
+    authors:
+      - {family-names: Aguilar, given-names: Leonel}
+      - {family-names: Baur, given-names: Raphaël}
+      - {family-names: Wheele, given-names: Theresa}
+      - {family-names: Ladouce, given-names: Simon}
+      - {family-names: Li, given-names: Chenyang}
+      - {family-names: Schmutz, given-names: Jan}
+      - {family-names: Sailer, given-names: Kerstin}
+      - {family-names: Grübel, given-names: Jascha}
+      - {family-names: Slankamenac, given-names: Ksenija}
+      - {family-names: Honegger, given-names: Patrik}
+      - {family-names: Conroy-Dalton, given-names: Ruth}
+      - {family-names: Sax, given-names: Hugo}
+      - {family-names: Hölscher, given-names: Christoph}
+      - {family-names: Gath-Morad, given-names: Michal}

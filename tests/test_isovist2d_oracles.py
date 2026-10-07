@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 import pytest
-from hypothesis import assume, given, settings
+from hypothesis import assume, example, given, settings
 from hypothesis import strategies as st
 
 from pysovist import Plan, isovist
@@ -74,16 +74,24 @@ def _visilibity_area(w, h, pillars, o):
 
 
 def _shadow_area(room, walls, o):
-    """Area of the room hidden behind the walls, by polygon subtraction."""
+    """Area of the room hidden behind the walls, by polygon subtraction.
+
+    Each shadow runs from the wall out to a far arc that spans the wall's angular
+    extent. A wall seen from close by can span almost half a turn, so the far edge is
+    traced along the arc rather than as one straight chord.
+    """
     far = 1e4
     shadows = []
     for a, b in walls:
         da, db = a - o, b - o
-        if abs(da[0] * db[1] - da[1] * db[0]) < 1e-12:
+        cross = da[0] * db[1] - da[1] * db[0]
+        if abs(cross) < 1e-12:
             continue  # wall seen edge-on hides nothing of positive area
-        fa = a + far * da / np.linalg.norm(da)
-        fb = b + far * db / np.linalg.norm(db)
-        shadows.append(Polygon([a, b, fb, fa]).buffer(0))
+        ta, tb = np.arctan2(da[1], da[0]), np.arctan2(db[1], db[0])
+        span = np.mod(tb - ta, 2 * np.pi) if cross > 0 else -np.mod(ta - tb, 2 * np.pi)
+        arc = ta + span * np.linspace(0, 1, 65)
+        far_pts = o + far * np.c_[np.cos(arc), np.sin(arc)]
+        shadows.append(Polygon(np.vstack([a, far_pts, b])).buffer(0))
     if not shadows:
         return 0.0
     return room.intersection(unary_union(shadows)).area
@@ -102,7 +110,9 @@ def test_matches_visilibity_in_rooms_with_pillars(scene):
 
 @SETTINGS
 @given(room_with_free_walls())
+@example((17.0, np.array([[[1.875, 10.875], [16.0, 14.9375]]]), np.array([10.4375, 13.34375])))
 def test_matches_shadow_subtraction_with_crossing_walls(scene):
+    # The pinned example: the observer stands 6 mm from a wall that fills 179.9 degrees.
     size, walls, o = scene
     plan = Plan(np.concatenate([rect(0, 0, size, size), walls]))
     iso = isovist(plan, o)

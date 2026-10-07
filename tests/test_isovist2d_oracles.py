@@ -12,7 +12,6 @@ from pysovist import Plan, isovist
 from .geometry import rect
 
 shapely = pytest.importorskip("shapely")
-visilibity = pytest.importorskip("visilibity")
 
 from shapely.geometry import Polygon  # noqa: E402
 from shapely.ops import unary_union  # noqa: E402
@@ -65,7 +64,7 @@ def _scene(w, h, pillars):
 
 
 def _visilibity_area(w, h, pillars, o):
-    vis = visilibity
+    vis = pytest.importorskip("visilibity")
     outer = vis.Polygon([vis.Point(0, 0), vis.Point(w, 0), vis.Point(w, h), vis.Point(0, h)])
     holes = [vis.Polygon([vis.Point(x0, y0), vis.Point(x0, y1),
                           vis.Point(x1, y1), vis.Point(x1, y0)])

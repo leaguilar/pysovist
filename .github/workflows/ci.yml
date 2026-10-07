@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main, rewrite]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check src tests
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install swig (visilibity reference, Linux only)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y swig
+      - name: Install pysovist with point-cloud and mesh support
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[pointcloud,mesh]" pytest pytest-cov hypothesis shapely
+      - name: Install the visilibity reference
+        if: runner.os == 'Linux'
+        run: pip install visilibity
+      - name: Test
+        run: pytest -q -W error --cov=pysovist --cov-report=term-missing
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check dist/*

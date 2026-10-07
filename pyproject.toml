@@ -32,9 +32,6 @@ rhino = ["rhino3dm>=8"]
 plot = ["matplotlib>=3.7"]
 all = ["pysovist[pointcloud,e57,mesh,rhino,plot]"]
 
-[project.scripts]
-pysovist = "pysovist.cli:main"
-
 [project.urls]
 Source = "https://github.com/leaguilar/pysovist"
 Issues = "https://github.com/leaguilar/pysovist/issues"

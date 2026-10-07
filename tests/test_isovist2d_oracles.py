@@ -37,7 +37,8 @@ def room_with_pillars(draw):
             fx0, fx1 = sorted(draw(st.lists(st.floats(0.15, 0.85), min_size=2, max_size=2)))
             fy0, fy1 = sorted(draw(st.lists(st.floats(0.15, 0.85), min_size=2, max_size=2)))
             assume(fx1 - fx0 > 0.05 and fy1 - fy0 > 0.05)
-            pillars.append((i * cw + fx0 * cw, j * ch + fy0 * ch, i * cw + fx1 * cw, j * ch + fy1 * ch))
+            pillars.append((i * cw + fx0 * cw, j * ch + fy0 * ch,
+                            i * cw + fx1 * cw, j * ch + fy1 * ch))
     ox = draw(st.floats(0.01, 0.99)) * w
     oy = draw(st.floats(0.01, 0.99)) * h
     for x0, y0, x1, y1 in pillars:
@@ -51,7 +52,8 @@ def room_with_free_walls(draw):
     size = draw(st.floats(5, 20))
     n = draw(st.integers(1, 10))
     coords = st.floats(0.05 * size, 0.95 * size)
-    walls = np.array([[[draw(coords), draw(coords)], [draw(coords), draw(coords)]] for _ in range(n)])
+    walls = np.array([[[draw(coords), draw(coords)], [draw(coords), draw(coords)]]
+                      for _ in range(n)])
     walls = walls[np.linalg.norm(walls[:, 1] - walls[:, 0], axis=1) > 1e-2]
     o = np.array([draw(coords), draw(coords)])
     return size, walls, o
@@ -65,7 +67,8 @@ def _scene(w, h, pillars):
 def _visilibity_area(w, h, pillars, o):
     vis = visilibity
     outer = vis.Polygon([vis.Point(0, 0), vis.Point(w, 0), vis.Point(w, h), vis.Point(0, h)])
-    holes = [vis.Polygon([vis.Point(x0, y0), vis.Point(x0, y1), vis.Point(x1, y1), vis.Point(x1, y0)])
+    holes = [vis.Polygon([vis.Point(x0, y0), vis.Point(x0, y1),
+                          vis.Point(x1, y1), vis.Point(x1, y0)])
              for x0, y0, x1, y1 in pillars]
     env = vis.Environment([outer, *holes])
     return vis.Visibility_Polygon(vis.Point(*o), env, 1e-9).area()
@@ -113,7 +116,8 @@ def test_matches_shadow_subtraction_with_crossing_walls(scene):
 # --- invariants -------------------------------------------------------------------------------
 
 @SETTINGS
-@given(room_with_free_walls(), st.floats(-1e3, 1e3), st.floats(-1e3, 1e3), st.floats(0, 2 * math.pi))
+@given(room_with_free_walls(), st.floats(-1e3, 1e3), st.floats(-1e3, 1e3),
+       st.floats(0, 2 * math.pi))
 def test_rigid_motion_invariance(scene, dx, dy, angle):
     size, walls, o = scene
     seg = np.concatenate([rect(0, 0, size, size), walls])

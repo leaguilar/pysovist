@@ -1,5 +1,6 @@
 """Metric definitions on scenes with known values, and against fine numerical integration."""
 
+import json
 import math
 
 import numpy as np
@@ -70,8 +71,10 @@ def test_polygon_ring_has_the_isovist_area():
 
 def test_plan_from_json(tmp_path):
     path = tmp_path / "walls.json"
-    path.write_text('[{"start": [0, 0, 0], "end": [10, 0, 0]}, {"start": [10, 0, 0], "end": [10, 10, 0]},'
-                    ' {"start": [10, 10, 0], "end": [0, 10, 0]}, {"start": [0, 10, 0], "end": [0, 0, 0]}]')
+    corners = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    pairs = zip(corners, corners[1:] + corners[:1], strict=True)
+    records = [{"start": [*a, 0], "end": [*b, 0]} for a, b in pairs]
+    path.write_text(json.dumps(records))
     plan = Plan.from_json(path)
     assert len(plan) == 4
     assert isovist(plan, (5, 5)).area == pytest.approx(100.0)

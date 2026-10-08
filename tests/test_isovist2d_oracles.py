@@ -127,6 +127,9 @@ def test_matches_shadow_subtraction_with_crossing_walls(scene):
 @SETTINGS
 @given(room_with_free_walls(), st.floats(-1e3, 1e3), st.floats(-1e3, 1e3),
        st.floats(0, 2 * math.pi))
+# The pinned example: a denormal angle makes the crossing denominators of parallel walls
+# denormal, and their quotients overflow.
+@example((5.0, np.empty((0, 2, 2)), np.array([1.0, 1.0])), 0.0, 0.0, 5e-324)
 def test_rigid_motion_invariance(scene, dx, dy, angle):
     size, walls, o = scene
     seg = np.concatenate([rect(0, 0, size, size), walls])

@@ -92,7 +92,9 @@ def _vertices(seg: np.ndarray, eps: float) -> np.ndarray:
         pi, ri = p[i0:i0 + _CHUNK, None], r[i0:i0 + _CHUNK, None]
         denom = _cross(ri, r[None])
         qp = p[None] - pi
-        with np.errstate(divide="ignore", invalid="ignore"):
+        # Near-parallel pairs give tiny denominators. Their quotients may overflow, and the
+        # mask |denom| > eps below drops them.
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
             t = _cross(qp, r[None]) / denom
             u = _cross(qp, ri) / denom
         hit = (np.abs(denom) > eps) & (t > 0) & (t < 1) & (u > 0) & (u < 1)

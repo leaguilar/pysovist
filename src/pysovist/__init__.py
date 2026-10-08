@@ -16,7 +16,7 @@ from .results import Flags, Isovist
 from .sampling import sampled_metrics
 from .volume3d import VOLUME_METRIC_NAMES, ViewVolume, view_volume, view_volume_field
 
-__version__ = "0.1.0.dev0"
+__version__ = "0.1.0"
 
 __all__ = [
     "METRIC_NAMES", "VOLUME_METRIC_NAMES", "Flags", "Isovist", "Mesh", "Plan", "PointCloud",

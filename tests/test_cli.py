@@ -90,6 +90,14 @@ def test_volume_command_keeps_a_single_thread_request(square_plan, points, tmp_p
 
 # --- section isovists of a point cloud --------------------------------------------------------
 
+def assert_same_bits(a, b):
+    """Equal float64 bit patterns, with any two NaNs counting as equal (0.0 and -0.0 differ)."""
+    a = np.ascontiguousarray(a, dtype="<f8")
+    b = np.ascontiguousarray(b, dtype="<f8")
+    assert a.shape == b.shape
+    assert ((a.view("<i8") == b.view("<i8")) | (np.isnan(a) & np.isnan(b))).all()
+
+
 def write_pts(path, points):
     np.savetxt(path, points, fmt="%.17g")
     return path
@@ -131,9 +139,9 @@ def test_section_command_equals_the_library_bit_for_bit(pillar_room, eyes, tmp_p
     ref = [section_isovist_area(cloud, p[:2], p[2], **kw) for p in q]
     assert list(df.columns) == ["x", "y", "z", "area", "clearance", "inside_occluder",
                                 "unbounded"]
-    np.testing.assert_array_equal(df[["x", "y", "z"]].to_numpy(), q)
-    np.testing.assert_array_equal(df.area.to_numpy(), [s.area for s in ref])
-    np.testing.assert_array_equal(df.clearance.to_numpy(), [s.clearance for s in ref])
+    assert_same_bits(df[["x", "y", "z"]].to_numpy(), q)
+    assert_same_bits(df.area.to_numpy(), [s.area for s in ref])
+    assert_same_bits(df.clearance.to_numpy(), [s.clearance for s in ref])
     np.testing.assert_array_equal(df.inside_occluder.to_numpy(),
                                   [s.flags.inside_occluder for s in ref])
     np.testing.assert_array_equal(df.unbounded.to_numpy(), [s.flags.unbounded for s in ref])

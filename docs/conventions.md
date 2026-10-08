@@ -63,7 +63,7 @@ A view volume is a sum over \(N\) ray directions, each carrying the solid angle 
 - `directions="random"` draws independent uniform directions from `seed`. Its error is a sampling error with standard deviation of order \(N^{-1/2}\).
 - An array of shape (N, 3) is normalised and weighted \(4\pi/N\) per row, so it should be an equal-area design.
 
-`view_volume` uses 16,384 directions by default, and the command line uses 262,144. All eyes of one `view_volume_field` call share the same directions.
+`view_volume` uses 16,384 directions by default, and the `volume` command uses 262,144. All eyes of one `view_volume_field` call share the same directions.
 
 ## Ball radius of a point cloud
 

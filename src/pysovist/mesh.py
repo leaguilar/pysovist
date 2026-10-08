@@ -84,7 +84,8 @@ class Mesh:
         """Extrude a floor plan into a prism.
 
         Every wall segment becomes a vertical rectangle from ``floor`` to
-        ``ceiling``. A floor and a ceiling cover the convex hull of the plan.
+        ``ceiling``. A floor and a ceiling cover the convex hull of the plan and of
+        the closing polygon.
         With ``close="hull"`` vertical walls also run along the convex hull,
         so the domain is closed and no ray escapes. A polygon (for example
         the building footprint) closes the domain along its own outline
@@ -142,7 +143,9 @@ class Mesh:
 
     @property
     def volume(self) -> float:
-        """Signed volume enclosed by the triangles (sum of tetrahedra from the origin).
+        """Signed volume enclosed by the triangles.
+
+        The sum of tetrahedra from the centre of the bounding box.
 
         Meaningful for a closed, consistently oriented mesh: positive when the
         normals point outwards.

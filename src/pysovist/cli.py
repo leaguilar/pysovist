@@ -4,8 +4,9 @@
     pysovist volume  --cloud scan.las  --points points.csv --out volumes.csv
     pysovist odtp
 
-Every run also writes ``<out>.json`` with the pysovist version, all parameters and the
-sha256 of every input, so a result can be traced back to what produced it.
+Every run also writes a JSON file next to the CSV, with the suffix ``.json``, holding the
+pysovist version, all parameters and the sha256 of every input, so a result can be traced
+back to what produced it.
 
 ``pysovist odtp`` reads its settings from environment variables, as the Open Digital Twin
 Platform passes them to a component, and works in ``ODTP_INPUT`` and ``ODTP_OUTPUT``

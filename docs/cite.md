@@ -2,7 +2,7 @@
 
 pysovist is free to use and modify under the MIT licence. If it helps your work, please cite the
 software and the methods paper. If you use the emergency-department results, please cite the
-behaviour paper. GitHub's "Cite this repository" button gives the same references from
+behaviour paper. GitHub's "Cite this repository" button gives the software reference from
 `CITATION.cff`.
 
 ```bibtex

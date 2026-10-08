@@ -113,6 +113,18 @@ def test_open_box_is_unbounded_without_range():
     assert vv.metrics["escape_fraction"] == pytest.approx(1 / 6, abs=2e-3)
 
 
+def test_nan_policy_keeps_the_half_without_escaping_rays():
+    m = o3d.geometry.TriangleMesh.create_box(2, 2, 2)
+    m.translate((-1, -1, -1))
+    v, t = np.asarray(m.vertices), np.asarray(m.triangles)
+    top = np.all(v[t][:, :, 2] > 0.5, axis=1)
+    nan = view_volume(Mesh(v, t[~top]), (0, 0, 0), n_rays=4096, escape="nan")
+    assert math.isnan(nan.volume) and math.isnan(nan.metrics["volume_up"])
+    # Every escaping ray leaves through the top, so the lower half is the half box, 4 m^3.
+    assert nan.metrics["volume_down"] == pytest.approx(4.0, rel=1e-3)
+    assert nan.metrics["escape_fraction"] == pytest.approx(1 / 6, abs=2e-3)
+
+
 # --- mesh model -------------------------------------------------------------------------------
 
 def test_mesh_from_arrays_and_file(tmp_path):

@@ -4,7 +4,7 @@ Exact isovists and view volumes from floor plans, meshes and raw point clouds.
 
 An isovist is the region visible from one point. pysovist computes it in two settings:
 
-- **2D, from wall segments.** The visible polygon is computed exactly, with no ray count. Area, perimeter, occlusivity, radial statistics, drift, elongation and convex deficiency follow in closed form.
+- **2D, from wall segments.** The visible polygon is computed exactly, with no ray count. Area, perimeter, occlusivity, radial statistics, drift and elongation follow in closed form, and so does convex deficiency without a range limit.
 - **3D, from a mesh or a point cloud.** The view volume is the volume visible from an eye point. Point clouds are used as scanned: every point is a small ball, so furniture, equipment and people occlude as they did on the day of the scan.
 
 The 3D volume is an integral over the sphere of directions, and pysovist evaluates it with a set of rays. For a cube, a pyramid and a sphere mesh, 65,536 directions give a relative error below 1e-4.
@@ -23,7 +23,7 @@ Python 3.10 or newer. Point clouds in `.ply` or `.pcd` files are read through op
 
 ## What makes it exact
 
-Seen from the observer, the angles of all wall endpoints and wall crossings cut the full turn into wedges. Within one wedge the nearest wall never changes, so each wedge is a triangle or, under a range limit, a circular sector. Every metric is a sum of closed-form integrals over these pieces.
+Seen from the observer, the angles of all wall endpoints, wall crossings and, under a range limit, crossings of walls with the range circle cut the full turn into wedges. Within one wedge the nearest wall never changes, so each wedge is a triangle or, under a range limit, a circular sector. Every metric is built from closed forms over these pieces.
 
 Ray-sampling tools describe the same isovist by the polygon through \(N\) hit points. `pysovist.sampled_metrics` reproduces that description, so its error can be measured against the exact value. The area error falls as \(N^{-2}\) in convex rooms and as \(N^{-1}\) where the boundary has occluding edges.
 

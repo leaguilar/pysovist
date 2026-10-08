@@ -7,11 +7,11 @@ pip install -e ".[pointcloud,mesh]" pytest hypothesis shapely visilibity
 pytest
 ```
 
-`visilibity` needs SWIG to build. Without `open3d` or `visilibity` the tests that need them are skipped.
+`visilibity` needs SWIG to build. Tests that need open3d, visilibity, shapely, laspy or pye57 are skipped when the package is missing, and the Unity parity tests are skipped without the reference data.
 
 ## 2D isovists
 
-**Closed-form scenes agree to a relative 1e-9.**
+**Closed-form scenes agree to a relative 1e-9 (absolute 1e-9 for values of zero).**
 
 | Scene | Observer | Checked |
 |---|---|---|
@@ -27,7 +27,7 @@ pytest
 | Square, quarter field of view | centre | \(A = 25\), \(P = 10 + 10\sqrt{2}\) |
 | Two crossing walls in a room | below the crossing | \(A\) = 100 minus the hidden polygon |
 
-Six fields of view of 60 degrees add up to the full isovist. A subdivided and partly duplicated outline gives the same isovist as the plain one. A wall seen almost edge-on, which gives a wedge of 5e-6 rad, scales area, perimeter and occlusivity exactly under factors 0.01, 3 and 7. An observer on a wall is flagged `on_wall` with NaN metrics, and an open room without a range limit is flagged `unbounded` with infinite area.
+Six fields of view of 60 degrees add up to the area of the full isovist. A subdivided and partly duplicated outline gives the same isovist as the plain one. A wall seen almost edge-on, which gives a wedge of 5e-6 rad, scales area, perimeter and occlusivity under factors 0.01, 3 and 7, to a relative 1e-9. An observer on a wall is flagged `on_wall` with NaN metrics, and an open room without a range limit is flagged `unbounded` with infinite area.
 
 **Random scenes agree with two independent references to 1e-7.** Rectangular rooms with up to nine rectangular pillars agree with the visibility polygon of the visilibity library. Square rooms with up to ten interior walls, which may cross, agree with the room's area minus the union of the walls' shadows, computed with shapely. Each property is checked on up to 150 random scenes.
 
@@ -48,7 +48,7 @@ Four rays from the centre of a square give the inscribed diamond: area 50 and pe
 
 A closed convex enclosure is star-shaped from any eye inside it, so the view volume equals the enclosed volume. At 65,536 Fibonacci directions the relative error is below 1e-4 unless stated otherwise.
 
-- A cube of half-side \(a = 1.5\) m gives \(8a^3 = 27\) m³ from the centre and from two off-centre eyes. The error from an off-centre eye falls from 3.7e-4 at 1,024 directions to 3.2e-6 at 65,536, with a log-log slope steeper than -0.75. Independent random directions would give -0.5.
+- A cube of half-side \(a = 1.5\) m gives \(8a^3 = 27\) m³ from the centre and from two off-centre eyes. The error from an off-centre eye falls from 3.7e-4 at 1,024 directions to 3.2e-6 at 65,536 (measured), and the test asserts a log-log slope steeper than -0.75. Independent random directions would give -0.5.
 - A square pyramid gives 4 m³, and a faceted sphere of radius 2 m gives the volume of its own tetrahedra.
 - Random convex hulls of 8 to 40 points agree to 2e-4.
 - A range limit of 1.2 m in a cube of half-side 1 m gives the ball minus six caps, 6.38372 m³.
@@ -62,8 +62,8 @@ A closed convex enclosure is star-shaped from any eye inside it, so the view vol
 
 Inside a prism of height H (vertical walls between a horizontal floor and ceiling), the segment from the eye to any point between floor and ceiling crosses a wall exactly when its plan projection does. Every eye therefore sees \(V = H A\), with \(A\) the exact 2D isovist area.
 
-- A room with a pillar and an L-shaped room, 4 eyes each at heights 0.3, 1.6 and 2.4 m (24 eyes), satisfy the identity to a relative 1e-3 at 65,536 directions. The largest residual is 2.4e-4, and it falls to 6e-5 at 262,144 directions.
-- The residual falls with the number of directions, from 4,096 to 65,536 to 262,144, so it is the quadrature error of the 3D estimate.
+- A room with a pillar and an L-shaped room, 4 eyes each at heights 0.3, 1.6 and 2.4 m (24 eyes), satisfy the identity to a relative 1e-3 at 65,536 directions. The largest residual is 2.4e-4 (measured), and it falls to 6e-5 at 262,144 directions.
+- For three eyes of the L-shaped room, the residual falls with the number of directions, from 4,096 to 65,536 to 262,144, so it is the quadrature error of the 3D estimate.
 - A concave building whose plan holds only interior walls, closed with `close=` along its L-shaped footprint, satisfies the identity against the plan closed by the same footprint.
 - The command line reproduces the identity: 250 m³ for a 10 m x 10 m room with a 2.5 m ceiling, to 2e-3 at 65,536 directions.
 
@@ -71,12 +71,12 @@ Inside a prism of height H (vertical walls between a horizontal floor and ceilin
 
 **The ball ray caster agrees with a brute-force first hit to 1e-12.** The grid traversal returns the same misses and the same depths, to an absolute 1e-12, as the minimum over all balls. The tests cover clouds of 1 to 10,000 balls with radii from 0.005 to 0.5 m, eyes in free space, inside balls and outside the cloud, cell sizes from 0.3 to 7 radii, lattice clouds with axis-aligned rays, range limits and near clipping. The 2D caster of horizontal sections agrees with its own brute force to the same tolerance.
 
-**Clouds of balls lie between their erosion bounds.** The faces of a cube of half-side \(a\), sampled on a lattice of spacing \(s\) with balls of radius \(r\), give a view volume between \(8(a - r)^3\) and \(8(a - \sqrt{r^2 - s^2/2})^3\), for \(r\) = 0.03 and 0.05 m and \(s\) = 0.04 m, within the 1e-3 quadrature tolerance. A horizontal section of a 10 m square room sampled every 1 cm, with balls of radius 2 cm, gives an area between the room eroded by \(r\) and the room eroded by \(\sqrt{r^2 - s^2/2}\), a bracket 5.2e-4 wide.
+**Clouds of balls lie between their erosion bounds.** The faces of a cube of half-side \(a\), sampled on a lattice of spacing \(s\) with balls of radius \(r\), give a view volume between \(8(a - r)^3\) and \(8(a - \sqrt{r^2 - s^2/2})^3\), for \(r\) = 0.03 and 0.05 m and \(s\) = 0.04 m, within the 1e-3 quadrature tolerance. A horizontal section of a 10 m square room sampled every 1 cm, with balls of radius 2 cm, gives an area between the room eroded by \(r\) and the room eroded by \(\sqrt{r^2 - s^2/2}\), a bracket 5.2e-4 of the area wide.
 
 **Policies behave as specified.** An eye inside a ball gets NaN or 0. Near clipping gives exactly the volume of the cloud without the near points. Over an open floor, the `escape_fraction` matches the share of the sphere that the floor leaves open, to 0.01. With `escape="zero"` the volume is \(\frac{4\pi}{3}\) times the mean cubed depth, with escaped depths at 0, and `escape="nan"` gives NaN.
 
 ## Directions and the Unity preset
 
-Fibonacci directions are unit vectors with zero mean, and the share of directions in any polar cap equals the cap's share of the sphere to 1/N. Random directions are reproducible from their seed. The weights sum to \(4\pi\) to 1e-14.
+Fibonacci directions are unit vectors whose mean is within 2/N of zero, and the share of directions in a polar cap about z equals the cap's share of the sphere to 1/N. Random directions are reproducible from their seed. The weights sum to \(4\pi\) to 1e-14.
 
-The Unity frame transform equals the composition of the Unity loader's axis swap, the scene's rotation, scale and translation, and the swap back. The [Unity preset](unity.md) runs through `view_volume` with 20,070 random directions. Where the Unity reference volumes are available, a further test compares 100 standing eye points: the same eyes get a volume of 0, and the Spearman rank correlation exceeds 0.99. The mean relative difference from Unity lies within three standard errors of zero, and its spread is at most 1.5 times the spread between two pysovist runs with different seeds.
+The Unity frame transform equals the composition of the Unity loader's axis swap, the scene's rotation, scale and translation, and the swap back. The [Unity preset](unity.md) runs through `view_volume` with 20,070 random directions. Where the Unity reference volumes are available, a further test compares 100 standing eye points: the same eyes get a volume of 0, and the Spearman rank correlation exceeds 0.99. The mean relative difference from Unity lies within three standard errors of zero, with the standard error taken from the spread between two pysovist runs, and its spread is at most 1.5 times the spread between two pysovist runs with different seeds.

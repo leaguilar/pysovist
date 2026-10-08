@@ -110,8 +110,8 @@ class Isovist:
 
         The rays start at ``offset`` (radians, absolute) for a full circle, or
         span the field of view otherwise. Returns ``(angles, depths)``.
-        This is how a ray-sampling tool (Grasshopper, depthmapX) sees the
-        same scene.
+        This is how a ray-sampling tool, such as the Grasshopper isovist
+        components, sees the same scene.
         """
         full = self.fov >= 2 * np.pi - 1e-12
         if full:

@@ -18,7 +18,8 @@ it a Monte Carlo rule (see ``pysovist.directions``).
 Occluders are a triangle ``Mesh`` (exact surfaces) or a ``PointCloud``
 (every point a ball of radius r). For a prism room (vertical walls between a
 horizontal floor and ceiling of height H) every eye between floor and
-ceiling sees ``V = H * A``, with ``A`` the exact 2D isovist area of the plan.
+ceiling sees ``V = H * A``, with ``A`` the exact 2D isovist area of the plan
+closed along the same outline as the prism.
 
 Policies
 --------
@@ -26,8 +27,10 @@ escape
     A ray escapes when it hits nothing within ``R``. ``"clip"`` counts it
     with depth ``R`` (with ``R = inf`` the volume is then ``inf``),
     ``"zero"`` counts it with depth 0 (the Unity reference), ``"nan"`` makes
-    the metrics NaN. ``flags.unbounded`` is set whenever a ray escapes with
-    ``R = inf``, whatever the policy.
+    the volume and the depth statistics NaN (``escape_fraction`` stays a
+    number, and so does ``volume_up`` or ``volume_down`` when no ray escapes
+    through that half). ``flags.unbounded`` is set whenever a ray escapes with
+    ``R = inf``, whatever the policy, unless the eye is inside an occluder.
 inside
     An eye inside a ball of a point cloud, or closer than ``eps`` to an
     occluder, sees nothing. ``"nan"`` makes its metrics NaN and ``"zero"``
@@ -180,8 +183,9 @@ def view_volume(
     escape : {"clip", "zero", "nan"}
         Depth counted for a ray that hits nothing within R: R, 0 or NaN. With
         ``"clip"`` and no range limit, one escaping ray makes the volume
-        ``inf``. With ``"nan"``, it makes every metric but ``escape_fraction``
-        NaN.
+        ``inf``. With ``"nan"``, it makes the volume and the depth statistics
+        NaN. ``escape_fraction`` stays a number, and so does ``volume_up`` or
+        ``volume_down`` when no ray escapes through that half.
     inside : {"nan", "zero"}
         Metrics of an eye inside an occluder or closer than ``eps`` to one:
         NaN or 0.

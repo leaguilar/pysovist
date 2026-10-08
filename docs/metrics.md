@@ -21,7 +21,7 @@ $$
 \end{aligned}
 $$
 
-Here \(\operatorname{arsinh}(\tan u) = \ln(\sec u + \tan u)\). On a range arc of angular width \(\Delta\theta\), \(\int r^k \, d\theta = R^k \, \Delta\theta\). Every 2D metric below is a sum of these terms over the wedges, so no result depends on a number of rays.
+Here \(\operatorname{arsinh}(\tan u) = \ln(\sec u + \tan u)\). On a range arc of angular width \(\Delta\theta\), \(\int r^k \, d\theta = R^k \, \Delta\theta\). Every 2D metric below is built from these terms and the wedge geometry, so no result depends on a number of rays.
 
 ## 2D metrics
 
@@ -132,21 +132,21 @@ The area of the sampled polygon converges to the exact area as \(N^{-2}\) in a c
 
 ## Grasshopper isovist outputs
 
-The isovist components of the DeCodingSpaces toolbox for Grasshopper return 17 outputs. The tool casts 360 rays. The table maps each output to pysovist. `sampled_metrics(iso, 360)` gives the values of the polygon through those 360 hit points.
+The isovist components of the DeCodingSpaces toolbox for Grasshopper return 17 outputs. The tool casts a fixed number \(N\) of rays. The table maps each output to pysovist. `sampled_metrics(iso, N)` gives the values of the polygon through those \(N\) hit points.
 
 | Grasshopper output | pysovist | Note |
 |---|---|---|
-| `Area` | `area` | Grasshopper samples 360 rays. The sampled value is `sampled_metrics(iso, 360)["area"]`. |
-| `Perimeter` | `sampled_metrics(iso, 360)["perimeter"]` | The perimeter of the sampled polygon. |
+| `Area` | `area` | The sampled value is `sampled_metrics(iso, N)["area"]`. |
+| `Perimeter` | `sampled_metrics(iso, N)["perimeter"]` | The perimeter of the sampled polygon. |
 | `MinRadial` | `r_min` | |
 | `MaxRadial` | `r_max` | |
 | `MeanRadial` | `r_mean` | |
-| `Variance` | `r_var` | Population variance. |
-| `StandardDeviation` | `r_mad` | The output is the mean absolute deviation. |
+| `Variance` | `r_var` | |
+| `StandardDeviation` | `r_mad` | The output is smaller than the standard deviation, as a mean absolute deviation is. |
 | `Circularity` | `compactness` | \(4 \pi A / P^2\). |
 | `Compactness` | no equivalent | Equals \(\sqrt{\text{Circularity}} / \pi^2\), so it ranks observers as `compactness` does. |
 | `Occlusivity` | `occlusivity` | |
-| `Skewness` | not comparable | It duplicates `Variance` in that tool. |
+| `Skewness` | not comparable | Its values track `Variance` in that tool, so it is not a skewness. |
 | `Dispersion` | not identified | |
 | `Elogation` | not identified | |
 | `DistanceWeightedArea` | about \(\pi \cdot\) `r_mean` | |

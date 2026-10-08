@@ -1,60 +1,52 @@
 """Preset for the Unity scene that produced the reference view volumes.
 
 That scene treats every scan point as a solid ball and casts random rays from
-each eye point. This module states its setup in pysovist terms, with the C#
-source and scene line that fixes each choice.
+each eye point. This module states its setup in pysovist terms.
 
 Occluders
-:   Every point is a ball of radius 0.05 m (``pointRadius``, scene line 458),
-    built from the transformed points, so the radius holds in the plan frame
-    (``NativePointCloud.cs:107, 211``). A ray that starts inside a ball gets
-    depth 0 (``NativePointCloud.cs:164-167``), so an eye inside a ball has V = 0.
+:   Every point is a ball of radius 0.05 m, built from the transformed points,
+    so the radius holds in the plan frame. A ray that starts inside a ball gets
+    depth 0, so an eye inside a ball has V = 0.
 
 Rays
-:   Directions are uniform on the sphere by rejection sampling in the unit
-    cube (``PointCloudIsovistAnalysisRunner.cs:215-222``). Each eye received
-    exactly 20070 rays: 10 per step (scene line 459) and 281020140 rays over
-    14002 eyes (scene lines 466-468). No range limit and no near clip
-    (``NativePointCloud.cs:38``, ``NativeOctreeRaycastQuery.cs:25``).
+:   Directions are uniform on the sphere, by rejection sampling of the unit
+    ball inside the cube [-1, 1]^3. Each eye received exactly 20070 rays. No
+    range limit and no near clip.
 
 Seeds
-:   ``System.Random(1337)`` draws one seed per query file
-    (``PointCloudIsovistAnalyzer.cs:88, 99``) and worker thread ``i`` starts
-    from that seed plus ``i`` (``PointCloudIsovistAnalysisRunner.cs:70``).
-    Eyes go to threads in batches of 32
-    (``PointCloudIsovistAnalysisRunner.cs:101``), so the directions of an
-    eye depend on thread scheduling and cannot be replayed. The preset's seed
-    1337 is a convention: parity with Unity is statistical.
+:   One generator seeded with 1337 draws one seed per query file, and worker
+    thread ``i`` starts from that seed plus ``i``. Eyes go to threads in
+    batches of 32, so the directions of an eye depend on thread scheduling and
+    cannot be replayed. The preset's seed 1337 is a convention: parity with
+    Unity is statistical.
 
 Escaping rays
-:   A ray that hits nothing returns 1e31 (``NativePointCloud.cs:43``). The
-    writer drops depths above 1e9 from the sum (``IsovistDataWriter.cs:18``,
-    scene line 239, ``IsovistExtensions.cs:30``) but keeps them in the count
-    (``IsovistExtensions.cs:44``), so they contribute 0:
-    V = (4 pi / 3) mean(r^3) with escaped r = 0 (``IsovistExtensions.cs:35-44``).
+:   A ray that hits nothing returns 1e31. The writer drops depths above 1e9
+    from the sum but keeps them in the count, so they contribute 0:
+    V = (4 pi / 3) mean(r^3) with escaped r = 0.
 
 Frame
-:   ``.pts`` rows ``x y z`` load as Unity ``(x, z, y)``
-    (``PointCloudDataLoader.cs:136``). One transform (scene lines 182-184,
-    used at scene line 1122) rotates by 180 degrees about the vertical, scales by
-    0.99 and translates by (9.65, 1.074, 10.45) in Unity ``(x, y, z)``. A
-    second transform is the identity. In the plan frame (z up):
+:   ``.pts`` rows ``x y z`` load as Unity ``(x, z, y)``. One transform rotates
+    by 180 degrees about the vertical, scales by 0.99 and translates by
+    (9.65, 1.074, 10.45) in Unity ``(x, y, z)``. A second transform is the
+    identity. In the plan frame (z up):
 
         x = 9.65 - 0.99 x_pts,   y = 10.45 - 0.99 y_pts,   z = 1.074 + 0.99 z_pts.
 
 Eye points
 :   Query files hold plan ``x, y`` and the eye height ``z``. They load as Unity
-    ``(x, z, y)`` (``ObservationPointsLoader.cs:97-99``) and the height offset
-    is 0 (scene line 456), so the eye stands at the query point itself. Output
-    files list Unity ``x, y, z``: ``y`` is the eye height and ``z`` the plan y
-    (``IsovistDataWriter.cs:169-173``).
+    ``(x, z, y)`` with no height offset, so the eye stands at the query point
+    itself. Output files list Unity ``x, y, z``: ``y`` is the eye height and
+    ``z`` the plan y.
 
-One Unity detail is not reproduced. The octree search returns the nearest
-hit among the balls stored in the first octree leaf along the ray that holds
-any hit (``NativeOctreeRaycastQuery.cs:74-88, 131-157``), and a ball stored
-in that leaf can be hit beyond the leaf's exit. pysovist returns the exact
-first hit, so Unity depths can exceed the exact depth by up to about one
-ball diameter where a ray grazes a surface.
+Two Unity details are not reproduced. First, Unity drew new directions for
+every eye, while ``view_volume_field`` shares one direction set across all
+eyes. Call ``view_volume`` with a different seed per eye for independent
+errors. Second, the octree search returns the nearest hit among the balls
+stored in the first octree leaf along the ray that holds any hit, and a ball
+stored in that leaf can be hit beyond the leaf's exit. pysovist returns the
+exact first hit, so Unity depths can exceed the exact depth where a ray grazes
+a surface.
 """
 
 from __future__ import annotations

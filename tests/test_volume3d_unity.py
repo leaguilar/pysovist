@@ -1,4 +1,4 @@
-"""The Unity preset: frame, reference volumes and parity on the hospital scan."""
+"""The Unity preset: frame, reference volumes and parity on the reference scan."""
 
 import math
 import os
@@ -16,14 +16,14 @@ from pysovist.pointcloud import PointCloud
 from pysovist.volume3d import view_volume
 
 DATA = Path(os.environ.get("PYSOVIST_DATA", Path(__file__).resolve().parents[2] / "data" / "raw"))
-SCAN = DATA / "scan" / "Hospital2 1.pts"
+SCAN = next(iter(sorted((DATA / "scan").glob("*.pts"))), DATA / "scan" / "missing.pts")
 UNITY = DATA / "unity"
 needs_data = pytest.mark.skipif(not (SCAN.exists() and UNITY.exists()),
-                                reason="hospital scan and Unity outputs not available")
+                                reason="reference scan and Unity outputs not available")
 
 
 @pytest.fixture(scope="module")
-def hospital():
+def scan():
     return PointCloud.read(SCAN).transform(unity_transform())
 
 
@@ -65,7 +65,7 @@ def test_reference_volumes_are_in_the_plan_frame():
 
 
 @needs_data
-def test_anchor_points_land_on_walls_at_floor_level(hospital):
+def test_anchor_points_land_on_walls_at_floor_level(scan):
     """The four registration anchors are wall ends on the plan at floor level (z = 0).
 
     Each has wall-height points within 0.3 m in plan and the floor within 0.1 m of z = 0
@@ -82,10 +82,10 @@ def test_anchor_points_land_on_walls_at_floor_level(hospital):
             out.append((int(((z > 0.3) & (z < 2.0)).sum()), float(np.percentile(zf, 5))))
         return out
 
-    for walls, floor in wall_and_floor(hospital.points):
+    for walls, floor in wall_and_floor(scan.points):
         assert walls >= 300
         assert abs(floor) < 0.1
-    shifted = wall_and_floor(hospital.points + [0.3, 0.3, 0.0])
+    shifted = wall_and_floor(scan.points + [0.3, 0.3, 0.0])
     assert min(w for w, _ in shifted) < 100
 
 
@@ -93,7 +93,7 @@ def test_anchor_points_land_on_walls_at_floor_level(hospital):
 
 @needs_data
 @pytest.mark.slow
-def test_parity_with_unity_on_100_standing_points(hospital):
+def test_parity_with_unity_on_100_standing_points(scan):
     """Unity's volumes behave like one more draw of the same Monte Carlo estimator.
 
     Unity drew independent directions for every eye, so each eye gets its own seed here too
@@ -108,7 +108,7 @@ def test_parity_with_unity_on_100_standing_points(hospital):
     origins = sample[["x", "y", "z"]].to_numpy()
 
     def volumes(first_seed):
-        return np.array([view_volume(hospital, o, **{**UNITY_PRESET, "seed": first_seed + i}).volume
+        return np.array([view_volume(scan, o, **{**UNITY_PRESET, "seed": first_seed + i}).volume
                          for i, o in enumerate(origins)])
 
     t0 = time.perf_counter()

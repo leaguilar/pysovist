@@ -1,6 +1,6 @@
 """Ray-sampled isovist metrics, as computed by ray-casting tools.
 
-Tools such as the Grasshopper isovist components or depthmapX cast ``N``
+Tools such as the Grasshopper isovist components cast ``N``
 equally spaced rays and describe the isovist by the polygon through the hit
 points. [`sampled_metrics`][pysovist.sampled_metrics] reproduces that
 description from the exact depth function of an

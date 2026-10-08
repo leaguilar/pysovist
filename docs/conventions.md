@@ -22,7 +22,7 @@ A wall is a two-sided segment with no thickness and no inside. An observer insid
 
 The origin of a view volume is a 3D point `(x, y, z)` in the frame of the scene. Its z is an absolute coordinate. It is a height above the floor only when the floor lies at z = 0, as in a plan extruded with the default `floor=0.0`. The `--eye-height` option of the command line replaces the `z` column of the points file with one value.
 
-In an extruded plan the view volume does not depend on the eye height. Every eye strictly between floor and ceiling sees a volume equal to the height of the prism times the 2D isovist area at its plan position.
+In an extruded plan the view volume does not depend on the eye height. Every eye strictly between floor and ceiling sees a volume equal to the height of the prism times the 2D isovist area at its plan position, in the plan closed along the same outline as the prism (its convex hull by default).
 
 ## Flags
 
@@ -45,7 +45,7 @@ Four parameters decide what a view volume counts.
 :   The range limit R. Each depth is clipped to R.
 
 `escape`
-:   The depth counted for a ray that hits nothing within R. `"clip"` (the default) counts R, so with `max_distance=inf` a single escaping ray makes the volume infinite. `"zero"` counts 0, as the [Unity estimator](unity.md) does. `"nan"` makes every metric NaN except `escape_fraction`, which stays a number. `flags.unbounded` is set whenever a ray escapes with R infinite, whatever the policy.
+:   The depth counted for a ray that hits nothing within R. `"clip"` (the default) counts R, so with `max_distance=inf` a single escaping ray makes the volume infinite. `"zero"` counts 0, as the [Unity estimator](unity.md) does. `"nan"` makes the volume and the depth statistics NaN. `escape_fraction` stays a number, and so does `volume_up` or `volume_down` when no ray escapes through that half. `flags.unbounded` is set whenever a ray escapes with R infinite, whatever the policy, unless the eye is inside an occluder.
 
 `inside`
 :   The metrics of an eye inside a ball of a point cloud or closer than `eps` to an occluder. `"nan"` (the default) makes them NaN, and `"zero"` sets them to 0.
@@ -75,7 +75,7 @@ $$
 
 and the balls then fill the free space in front of it to a depth between \(\sqrt{r^2 - s^2/2}\) and \(r\). A radius just above the bound closes the surfaces and takes the least free space.
 
-Real scans are not lattices, so the spacing to use is a high percentile of the distance from each point to its nearest neighbour. `PointCloud.spacing()` returns the median, the 90th and the 99th percentile of that distance, measured for 200,000 random points against the whole cloud. Choose the radius above the 99th percentile divided by \(\sqrt{2}\). For the cloud of the [quick start](quickstart.md#a-view-volume-from-a-point-cloud):
+Real scans are not lattices, so the spacing to use is a high percentile of the distance from each point to its nearest neighbour. `PointCloud.spacing()` returns the median, the 90th and the 99th percentile of that distance, measured for up to 200,000 random points against the whole cloud. Choose the radius above the 99th percentile divided by \(\sqrt{2}\). For the cloud of the [quick start](quickstart.md#a-view-volume-from-a-point-cloud):
 
 ```python
 sp = cloud.spacing()           # {'median': 0.04, 'p90': 0.04, 'p99': 0.04}

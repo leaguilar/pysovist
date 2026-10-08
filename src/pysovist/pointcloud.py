@@ -91,8 +91,8 @@ class PointCloud:
         Each format needs one optional extra:
 
         - ``.pts``: none.
-        - ``.las``, ``.laz``: ``pointcloud`` (laspy). ``.laz`` also needs a
-          LAZ backend for laspy, such as lazrs.
+        - ``.las``, ``.laz``: ``pointcloud`` (laspy, with the lazrs backend for
+          ``.laz``).
         - ``.e57``: ``e57`` (pye57).
         - ``.ply``, ``.pcd``: ``mesh`` (open3d).
 

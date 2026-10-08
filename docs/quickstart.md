@@ -1,6 +1,6 @@
 # Quick start
 
-All examples on this page use one scene: a 10 m x 10 m room with a 2 m x 2 m pillar in its centre. The Python blocks build on each other and run in order as one script.
+All examples on this page use one scene: a 10 m x 10 m room with a 2 m x 2 m pillar in its centre. The Python blocks build on each other and run in order as one script, except the scan-file block, which needs a scan of your own. On macOS, Windows and Python 3.14 or newer, put the script under `if __name__ == "__main__":`.
 
 ## A 2D isovist
 
@@ -41,7 +41,7 @@ Walls have no solid side. An observer inside the pillar sees the pillar's 4 m² 
 
 ## A view volume from an extruded plan
 
-`Mesh.from_plan` turns every wall into a vertical rectangle between a floor and a ceiling. Inside such a prism, an eye at any height between floor and ceiling sees the height of the prism times the 2D isovist area.
+`Mesh.from_plan` turns every wall into a vertical rectangle between a floor and a ceiling. Inside such a prism, an eye at any height between floor and ceiling sees the height of the prism times the 2D isovist area of the plan closed along the same outline.
 
 ```python
 mesh = pysovist.Mesh.from_plan(plan, floor=0.0, ceiling=2.5)

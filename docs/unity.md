@@ -4,12 +4,12 @@ A set of reference view volumes was computed in a Unity scene that treats every 
 
 ## The preset
 
-`UNITY_PRESET` holds the keyword arguments of `view_volume` and `view_volume_field` that match the Unity estimator.
+`UNITY_PRESET` holds the keyword arguments of `view_volume` and `view_volume_field` that match the Unity estimator. `view_volume_field` shares one direction set across all eyes, whereas Unity drew new directions for every eye. For independent errors per eye, call `view_volume` with a different seed for each eye.
 
 | Argument | Value | Unity behaviour |
 |---|---|---|
 | `radius` | 0.05 | Every point is a ball of radius 5 cm, built from the transformed points, so the radius holds in the plan frame. |
-| `directions` | `"random"` | Directions are uniform on the sphere, drawn by rejection sampling in the unit cube. |
+| `directions` | `"random"` | Directions are uniform on the sphere, drawn by rejection sampling of the unit ball inside the cube \([-1, 1]^3\). |
 | `n_rays` | 20070 | Each eye received exactly 20,070 rays. |
 | `seed` | 1337 | A convention. Unity draws one seed per query file from a generator seeded with 1337, worker thread i starts from that seed plus i, and eyes go to threads in batches of 32. The directions of an eye therefore depend on thread scheduling and cannot be replayed. Parity with Unity is statistical. |
 | `max_distance` | inf | No range limit. There is no near clip either. |
@@ -47,6 +47,6 @@ vv = pysovist.view_volume(cloud, (5.0, 4.0, 1.7), **unity.UNITY_PRESET)
 reference = unity.read_unity_volumes("unity_volumes.csv")  # x, y, z, volume
 ```
 
-## The one difference
+## The octree difference
 
-The Unity octree search returns the nearest hit among the balls stored in the first octree leaf along the ray that holds any hit, and a ball stored in that leaf can be hit beyond the leaf's exit. pysovist returns the exact first hit. Unity depths can therefore exceed the exact depth by up to about one ball diameter where a ray grazes a surface.
+The Unity octree search returns the nearest hit among the balls stored in the first octree leaf along the ray that holds any hit, and a ball stored in that leaf can be hit beyond the leaf's exit. pysovist returns the exact first hit. Unity depths can therefore exceed the exact depth where a ray grazes a surface.

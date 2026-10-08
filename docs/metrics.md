@@ -30,10 +30,10 @@ The keys of `Isovist.metrics` and the columns of `isovist_field`, in the order o
 ### Area, perimeter and occlusivity
 
 `area`
-:   \(A = \frac{1}{2} \int_\Theta r^2 \, d\theta\) (Benedikt 1979).
+:   The area of the isovist (Benedikt 1979), \(A = \frac{1}{2} \int_\Theta r^2 \, d\theta\).
 
 `perimeter`
-:   \(P\) = visible wall length + range-arc length + occlusivity + field-of-view edges (Benedikt 1979). The field-of-view edges are the two radial edges \(r(\theta_\text{start}) + r(\theta_\text{end})\) that bound a partial field of view.
+:   The length \(P\) of the whole isovist boundary: visible wall length + range-arc length + occlusivity + field-of-view edges. Benedikt (1979) splits this boundary into real surfaces, occluding radials and the boundary of the region. His perimeter measure counts the real surfaces only, which here is the visible wall length. The field-of-view edges are the two radial edges \(r(\theta_\text{start}) + r(\theta_\text{end})\) that bound a partial field of view.
 
 `occlusivity`
 :   The total length of the occluding radial edges, where the boundary jumps in depth (Benedikt 1979). At each wedge boundary \(\theta_i\), the jump is \(\lvert r(\theta_i^+) - r(\theta_i^-) \rvert\). Jumps below \(10^{-9} \max(r_\text{max}, 1)\) are rounding and are not counted.
@@ -66,13 +66,13 @@ The statistics of the depth over the field of view, each angle weighted equally.
 ### Shape
 
 `compactness`
-:   \(4 \pi A / P^2\), equal to 1 for a disc (Turner et al. 2001). A square seen from its centre has \(\pi / 4\).
+:   \(4 \pi A / P^2\), the inverse of the circularity \(P^2 / 4 \pi A\) of Benedikt (1979), so it equals 1 for a disc. A square seen from its centre has \(\pi / 4\).
 
 `jaggedness`
 :   \(P^2 / A\) (Wiener and Franz 2005).
 
 `drift`, `drift_angle`
-:   The distance and the direction from the observer to the centroid \(\mathbf{c}\) of the isovist (Conroy Dalton 2001): \(\lvert \mathbf{c} \rvert\) and \(\operatorname{atan2}(c_y, c_x)\). A wall wedge is the triangle spanned by the observer and the two ends of its wall piece, with its centroid at one third of the sum of those ends. A range wedge of width \(\Delta\theta\) is a circular sector, with its centroid at distance \(4 R \sin(\Delta\theta / 2) / (3 \Delta\theta)\) along its bisector. Both are exact.
+:   `drift` is the distance \(\lvert \mathbf{c} \rvert\) from the observer to the centroid \(\mathbf{c}\) of the isovist (Conroy 2001). `drift_angle` is its direction, \(\operatorname{atan2}(c_y, c_x)\). A wall wedge is the triangle spanned by the observer and the two ends of its wall piece, with its centroid at one third of the sum of those ends. A range wedge of width \(\Delta\theta\) is a circular sector, with its centroid at distance \(4 R \sin(\Delta\theta / 2) / (3 \Delta\theta)\) along its bisector. Both are exact.
 
 `elongation`
 :   \(\sqrt{\lambda_1 / \lambda_2}\), where \(\lambda_1 \ge \lambda_2\) are the principal second moments of area of the isovist about its centroid. It equals the aspect ratio for a rectangle: a 40 m x 2 m hallway has elongation 20.
@@ -158,5 +158,4 @@ The isovist components of the DeCodingSpaces toolbox for Grasshopper return 17 o
 
 - Benedikt, M. L. (1979). To take hold of space: isovists and isovist fields. *Environment and Planning B*, 6(1), 47-65.
 - Conroy, R. (2001). *Spatial navigation in immersive virtual environments*. PhD thesis, University College London. The author now publishes as Ruth Conroy Dalton.
-- Turner, A., Doxa, M., O'Sullivan, D. and Penn, A. (2001). From isovists to visibility graphs: a methodology for the analysis of architectural space. *Environment and Planning B*, 28(1), 103-121.
 - Wiener, J. M. and Franz, G. (2005). Isovists as a means to predict spatial experience and behavior. In *Spatial Cognition IV*, Lecture Notes in Computer Science 3343, 42-57. doi:10.1007/978-3-540-32255-9_3.

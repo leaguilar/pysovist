@@ -7,9 +7,10 @@ with no ray sampling.
 
 Definitions (``Theta`` is the field-of-view measure, ``2 pi`` for a full turn):
 
-- ``area``: A = 1/2 int r^2 dtheta (Benedikt 1979).
-- ``perimeter``: visible wall length + range-arc length + occluding radial
-  edges + field-of-view edges (Benedikt 1979).
+- ``area``: the isovist area (Benedikt 1979), A = 1/2 int r^2 dtheta.
+- ``perimeter``: length of the whole isovist boundary, visible wall length +
+  range-arc length + occluding radial edges + field-of-view edges. Benedikt's
+  (1979) perimeter counts the real surfaces only (here the visible walls).
 - ``occlusivity``: total length of occluding radial edges, where the boundary
   jumps in depth (Benedikt 1979).
 - ``r_min``, ``r_max``, ``r_mean``: extremes and mean of r over the field of
@@ -17,10 +18,11 @@ Definitions (``Theta`` is the field-of-view measure, ``2 pi`` for a full turn):
   ``r_std``: its square root. ``r_skew``: standardised third central moment,
   the third central moment divided by r_std^3, and 0 when r_std = 0.
   ``r_mad``: mean absolute deviation of r. ``dispersion``: r_std / r_mean.
-- ``compactness``: 4 pi A / P^2, equal to 1 for a disc (Turner et al. 2001).
+- ``compactness``: 4 pi A / P^2, the inverse of Benedikt's (1979) circularity,
+  equal to 1 for a disc.
 - ``jaggedness``: P^2 / A (Wiener and Franz 2005).
-- ``drift``, ``drift_angle``: distance and direction from the observer to the
-  centroid of the isovist (Conroy Dalton 2001).
+- ``drift``: distance from the observer to the centroid of the isovist
+  (Conroy 2001). ``drift_angle``: its direction.
 - ``elongation``: sqrt(l1 / l2), where l1 >= l2 are the principal second
   moments of area about the centroid, so it is at least 1. Equal to the aspect
   ratio for a rectangle, and ``inf`` when l2 = 0.

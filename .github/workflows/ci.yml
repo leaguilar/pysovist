@@ -28,9 +28,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: Install swig (visilibity reference, Linux only)
+      - name: Install swig (visilibity reference) and the system libraries open3d loads (Linux only)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y swig
+        run: sudo apt-get update && sudo apt-get install -y swig libegl1 libgl1 libgomp1
       - name: Install pysovist with point-cloud and mesh support
         run: |
           python -m pip install --upgrade pip

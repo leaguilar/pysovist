@@ -16,7 +16,7 @@ pip install "pysovist[mesh]"            # meshes (open3d)
 pip install "pysovist[all]"             # everything, including e57 files
 ```
 
-Python 3.10 or newer.
+Python 3.10 or newer. On a Linux machine without a desktop, open3d also needs the system libraries `libegl1`, `libgl1` and `libgomp1`.
 
 ## Quick start
 

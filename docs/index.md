@@ -19,7 +19,7 @@ pip install "pysovist[e57]"             # .e57 scans (pye57)
 pip install "pysovist[all]"             # all of the above
 ```
 
-Python 3.10 or newer. Point clouds in `.ply` or `.pcd` files are read through open3d, so they need `[mesh]` as well as `[pointcloud]`.
+Python 3.10 or newer. Point clouds in `.ply` or `.pcd` files are read through open3d, so they need `[mesh]` as well as `[pointcloud]`. On a Linux machine without a desktop, open3d also needs the system libraries `libegl1`, `libgl1` and `libgomp1`.
 
 ## What makes it exact
 

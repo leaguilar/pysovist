@@ -125,29 +125,31 @@ pysovist volume --plan walls.json --ceiling 2.5 --eye-height 1.7 \
     --points points.csv --n-rays 65536 --out volumes.csv
 pysovist volume --cloud scan.las --radius 0.05 --eye-height 1.7 \
     --points points.csv --out cloud_volumes.csv
+pysovist section --cloud scan.las --radius 0.05 --eye-height 1.7 \
+    --points points.csv --out sections.csv
 ```
 
-Every run also writes a JSON file next to the CSV (`isovists.json` for `isovists.csv`). It holds the pysovist version, all parameters and the sha256 of every input file. The columns of the CSV are those of `isovist_field` or `view_volume_field`.
+Every run also writes a JSON file next to the CSV (`isovists.json` for `isovists.csv`). It holds the pysovist version, all parameters and the sha256 of every input file. The columns of the CSV are those of `isovist_field` or `view_volume_field`. For `section` they are `x`, `y`, `z`, `area`, `clearance`, `inside_occluder` and `unbounded`, from one `section_isovist_area` call per point.
 
 | Option | Command | Default | Meaning |
 |---|---|---|---|
-| `--plan` | both | | Wall segments: JSON records with `start` and `end`, or a CSV with columns `x0, y0, x1, y1`. For `volume`, the plan is extruded with `Mesh.from_plan`. |
-| `--close` | both | | JSON polygon `[[x, y], ...]` that closes the domain. For `isovist` its edges are added as walls. For `volume` it is the `close=` polygon of `Mesh.from_plan`, and without it the plan closes along its convex hull. |
-| `--points` | both | | CSV with columns `x, y` and, for `volume`, `z`. |
-| `--out` | both | | Output CSV. |
-| `--max-distance` | both | inf | Range limit in metres. |
-| `--n-jobs` | both | 1 for `isovist`, -1 for `volume` | Processes for `isovist`, threads for `volume`. -1 uses all cores. |
-| `--cloud` | `volume` | | Point cloud file. |
+| `--plan` | `isovist`, `volume` | | Wall segments: JSON records with `start` and `end`, or a CSV with columns `x0, y0, x1, y1`. For `volume`, the plan is extruded with `Mesh.from_plan`. |
+| `--close` | `isovist`, `volume` | | JSON polygon `[[x, y], ...]` that closes the domain. For `isovist` its edges are added as walls. For `volume` it is the `close=` polygon of `Mesh.from_plan`, and without it the plan closes along its convex hull. |
+| `--points` | all three | | CSV with columns `x, y` and, for `volume` and `section`, `z`. |
+| `--out` | all three | | Output CSV. |
+| `--max-distance` | all three | inf | Range limit in metres. |
+| `--n-jobs` | `isovist`, `volume` | 1 for `isovist`, -1 for `volume` | Processes for `isovist`, threads for `volume`. -1 uses all cores. |
+| `--cloud` | `volume`, `section` | | Point cloud file. |
 | `--mesh` | `volume` | | Mesh file in any format open3d reads. |
 | `--floor`, `--ceiling` | `volume` | 0.0, 2.5 | Heights of an extruded plan. |
-| `--eye-height` | `volume` | | Eye height that replaces the `z` column. |
-| `--n-rays` | `volume` | 262144 | Directions per eye. |
-| `--radius` | `volume` | 0.05 | Ball radius of cloud points in metres. |
-| `--escape` | `volume` | clip | `clip`, `zero` or `nan`. |
-| `--inside` | `volume` | nan | `nan` or `zero`. |
+| `--eye-height` | `volume`, `section` | | Eye height that replaces the `z` column. |
+| `--n-rays` | `volume`, `section` | 262144 for `volume`, 3600 for `section` | Directions per eye. |
+| `--radius` | `volume`, `section` | 0.05 | Ball radius of cloud points in metres. |
+| `--escape` | `volume`, `section` | clip | `clip`, `zero` or `nan`. |
+| `--inside` | `volume`, `section` | nan | `nan` or `zero`. |
 | `--near-clip` | `volume` | 0.0 | Ignore occluders closer than this to the eye. |
 
-`volume` takes exactly one of `--cloud`, `--mesh` and `--plan`, and always uses Fibonacci directions.
+`volume` takes exactly one of `--cloud`, `--mesh` and `--plan`, and always uses Fibonacci directions. `section` cuts the cloud with the horizontal plane at each point's `z` and casts `--n-rays` rays at equal angle steps in that plane, as defined under [3D metrics](metrics.md#3d-metrics).
 
 ### As an ODTP component
 
@@ -161,19 +163,20 @@ pysovist odtp                  # writes output/pysovist_isovist.csv and .json
 
 | Variable | Option | Meaning |
 |---|---|---|
-| `TASK` | | `isovist` or `volume`. |
+| `TASK` | | `isovist`, `volume` or `section`. |
 | `QUERY_FILE` | `--points` | CSV of points. |
 | `PLAN_FILE` | `--plan` | Wall segments. |
 | `CLOSE_FILE` | `--close` | Closing polygon. |
 | `MAX_DISTANCE` | `--max-distance` | Range limit in metres (default: none). |
 | `N_JOBS` | `--n-jobs` | Processes or threads. |
-| `POINTCLOUD_FILE` | `--cloud` | Point cloud, for `TASK=volume`. |
+| `POINTCLOUD_FILE` | `--cloud` | Point cloud, for `TASK=volume` or `section`. |
 | `MESH_FILE` | `--mesh` | Mesh, for `TASK=volume`. |
 | `EYE_HEIGHT` | `--eye-height` | Eye height that replaces the `z` column. |
-| `N_RAYS` | `--n-rays` | Directions per eye (default 262144). |
+| `N_RAYS` | `--n-rays` | Directions per eye for `TASK=volume` (default 262144). |
+| `SECTION_RAYS` | `--n-rays` | Rays per eye for `TASK=section` (default 3600). |
 | `SPLAT_RADIUS` | `--radius` | Ball radius of cloud points in metres (default 0.05). |
-| `ESCAPE`, `INSIDE`, `NEAR_CLIP` | `--escape`, `--inside`, `--near-clip` | Policies of `view_volume`. |
+| `ESCAPE`, `INSIDE`, `NEAR_CLIP` | `--escape`, `--inside`, `--near-clip` | Policies of `view_volume`. `ESCAPE` and `INSIDE` also set those of `section_isovist_area`. |
 | `FLOOR`, `CEILING` | `--floor`, `--ceiling` | Heights of an extruded plan. |
 | `OUTPUT_PREFIX` | | Prefix of the output files (default `pysovist`). |
 
-File names are relative to `ODTP_INPUT`. The variables from `POINTCLOUD_FILE` to `CEILING` apply to `TASK=volume` only.
+File names are relative to `ODTP_INPUT`. A variable applies to the tasks whose command takes its option, except that `N_RAYS` sets `--n-rays` for `volume` only and `SECTION_RAYS` sets it for `section` only.

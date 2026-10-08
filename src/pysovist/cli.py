@@ -2,6 +2,7 @@
 
     pysovist isovist --plan walls.json --points points.csv --out isovists.csv
     pysovist volume  --cloud scan.las  --points points.csv --out volumes.csv
+    pysovist section --cloud scan.las  --points points.csv --out sections.csv
     pysovist odtp
 
 Every run also writes a JSON file next to the CSV, with the suffix ``.json``, holding the
@@ -12,15 +13,16 @@ back to what produced it.
 Platform passes them to a component, and works in ``ODTP_INPUT`` and ``ODTP_OUTPUT``
 (default ``/odtp/odtp-input`` and ``/odtp/odtp-output``):
 
-    TASK             isovist | volume
+    TASK             isovist | volume | section
     PLAN_FILE        wall segments (JSON records with start/end, or CSV x0,y0,x1,y1)
     CLOSE_FILE       optional polygon [[x, y], ...] that closes the domain (JSON)
-    POINTCLOUD_FILE  point cloud (.pts, .las, .laz, .e57, .ply, .pcd) for TASK=volume
+    POINTCLOUD_FILE  point cloud (.pts, .las, .laz, .e57, .ply, .pcd) for TASK=volume or section
     MESH_FILE        mesh (.ply, .obj, .stl, ...) for TASK=volume
-    QUERY_FILE       CSV with columns x, y and, for volumes, z
+    QUERY_FILE       CSV with columns x, y and, for volumes and sections, z
     EYE_HEIGHT       eye height that replaces the z column
     MAX_DISTANCE     range limit in metres (default: none)
     N_RAYS           directions per eye for volumes (default 262144)
+    SECTION_RAYS     equiangular rays per eye for sections (default 3600)
     SPLAT_RADIUS     ball radius of cloud points in metres (default 0.05)
     ESCAPE, INSIDE, NEAR_CLIP, FLOOR, CEILING, N_JOBS, OUTPUT_PREFIX
 """
@@ -145,6 +147,27 @@ def _volume(a: argparse.Namespace) -> None:
             "points": a.points}, t0)
 
 
+def _section(a: argparse.Namespace) -> None:
+    from .pointcloud import PointCloud
+    from .raycast import section_isovist_area
+
+    t0 = time.time()
+    cloud = PointCloud.read(a.cloud, radius=a.radius)
+    pts = _read_points(a.points, a.eye_height, 3)
+    secs = [section_isovist_area(cloud, p[:2], p[2], n_rays=a.n_rays,
+                                 max_distance=a.max_distance, escape=a.escape, inside=a.inside)
+            for p in pts]
+    df = pd.DataFrame({"x": pts[:, 0], "y": pts[:, 1], "z": pts[:, 2],
+                       "area": [s.area for s in secs],
+                       "clearance": [s.clearance for s in secs],
+                       "inside_occluder": [s.flags.inside_occluder for s in secs],
+                       "unbounded": [s.flags.unbounded for s in secs]})
+    params = {"n_rays": a.n_rays, "radius": a.radius, "max_distance": a.max_distance,
+              "escape": a.escape, "inside": a.inside, "eye_height": a.eye_height,
+              "directions": "equiangular"}
+    _write(df, a.out, "section", params, {"cloud": a.cloud, "points": a.points}, t0)
+
+
 def _parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="pysovist", description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="command", required=True)
@@ -178,6 +201,19 @@ def _parser() -> argparse.ArgumentParser:
     vol.add_argument("--n-jobs", type=int, default=-1)
     vol.set_defaults(run=_volume)
 
+    sec = sub.add_parser("section", help="isovist areas of the horizontal section of a point "
+                                         "cloud at eye height")
+    sec.add_argument("--cloud", type=Path, required=True)
+    sec.add_argument("--points", type=Path, required=True)
+    sec.add_argument("--eye-height", type=float)
+    sec.add_argument("--out", type=Path, required=True)
+    sec.add_argument("--n-rays", type=int, default=3600)
+    sec.add_argument("--radius", type=float, default=0.05)
+    sec.add_argument("--max-distance", type=float, default=math.inf)
+    sec.add_argument("--escape", choices=["clip", "zero", "nan"], default="clip")
+    sec.add_argument("--inside", choices=["nan", "zero"], default="nan")
+    sec.set_defaults(run=_section)
+
     od = sub.add_parser("odtp", help="run as an ODTP component, settings from the environment")
     od.set_defaults(run=None)
     return ap
@@ -187,8 +223,8 @@ def _odtp_argv(env) -> list[str]:
     inp = Path(env.get("ODTP_INPUT", "/odtp/odtp-input"))
     out = Path(env.get("ODTP_OUTPUT", "/odtp/odtp-output"))
     task = env.get("TASK", "")
-    if task not in ("isovist", "volume"):
-        raise SystemExit(f"TASK must be 'isovist' or 'volume', got {task!r}")
+    if task not in ("isovist", "volume", "section"):
+        raise SystemExit(f"TASK must be 'isovist', 'volume' or 'section', got {task!r}")
     prefix = env.get("OUTPUT_PREFIX", "pysovist")
     argv = [task, "--points", str(inp / env["QUERY_FILE"]),
             "--out", str(out / f"{prefix}_{task}.csv")]
@@ -197,10 +233,11 @@ def _odtp_argv(env) -> list[str]:
         if env.get(var):
             argv.extend([name, str(inp / env[var]) if path else env[var]])
 
-    opt("--plan", "PLAN_FILE", path=True)
-    opt("--close", "CLOSE_FILE", path=True)
     opt("--max-distance", "MAX_DISTANCE")
-    opt("--n-jobs", "N_JOBS")
+    if task in ("isovist", "volume"):
+        opt("--plan", "PLAN_FILE", path=True)
+        opt("--close", "CLOSE_FILE", path=True)
+        opt("--n-jobs", "N_JOBS")
     if task == "volume":
         opt("--cloud", "POINTCLOUD_FILE", path=True)
         opt("--mesh", "MESH_FILE", path=True)
@@ -212,6 +249,13 @@ def _odtp_argv(env) -> list[str]:
         opt("--near-clip", "NEAR_CLIP")
         opt("--floor", "FLOOR")
         opt("--ceiling", "CEILING")
+    if task == "section":
+        opt("--cloud", "POINTCLOUD_FILE", path=True)
+        opt("--eye-height", "EYE_HEIGHT")
+        opt("--n-rays", "SECTION_RAYS")
+        opt("--radius", "SPLAT_RADIUS")
+        opt("--escape", "ESCAPE")
+        opt("--inside", "INSIDE")
     return argv
 
 

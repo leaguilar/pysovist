@@ -1,6 +1,7 @@
 """Command line: isovists and view volumes for a list of points, written to CSV.
 
     pysovist isovist --plan walls.json --points points.csv --out isovists.csv
+    pysovist isovist --ifc model.ifc --height 1.2 --points points.csv --out isovists.csv
     pysovist volume  --cloud scan.las  --points points.csv --out volumes.csv
     pysovist section --cloud scan.las  --points points.csv --out sections.csv
     pysovist odtp
@@ -100,24 +101,33 @@ def _isovist(a: argparse.Namespace) -> None:
     from .plan import Plan
 
     t0 = time.time()
-    plan = _read_plan(a.plan)
+    if (a.plan is None) == (a.ifc is None):
+        raise SystemExit("give exactly one of --plan, --ifc")
+    params = {"max_distance": a.max_distance, "n_jobs": a.n_jobs}
+    if a.ifc:
+        if a.height is None:
+            raise SystemExit("give --height with --ifc")
+        plan = Plan.from_ifc(a.ifc, a.height, classes=a.ifc_classes, storey=a.ifc_storey)
+        params.update(height=a.height, ifc_classes=a.ifc_classes, ifc_storey=a.ifc_storey)
+    else:
+        plan = _read_plan(a.plan)
     ring = _read_ring(a.close)
     if ring is not None:
         closing = np.stack([ring, np.roll(ring, -1, axis=0)], axis=1)
         plan = Plan(np.concatenate([plan.segments, closing]))
     pts = _read_points(a.points, None, 2)
     df = isovist_field(plan, pts, max_distance=a.max_distance, n_jobs=a.n_jobs)
-    _write(df, a.out, "isovist", {"max_distance": a.max_distance, "n_jobs": a.n_jobs},
-           {"plan": a.plan, "close": a.close, "points": a.points}, t0)
+    _write(df, a.out, "isovist", params,
+           {"plan": a.plan, "ifc": a.ifc, "close": a.close, "points": a.points}, t0)
 
 
 def _volume(a: argparse.Namespace) -> None:
     from .volume3d import view_volume_field
 
     t0 = time.time()
-    sources = [s for s in (a.cloud, a.mesh, a.plan) if s]
+    sources = [s for s in (a.cloud, a.mesh, a.plan, a.ifc) if s]
     if len(sources) != 1:
-        raise SystemExit("give exactly one of --cloud, --mesh, --plan")
+        raise SystemExit("give exactly one of --cloud, --mesh, --plan, --ifc")
     kw = {}
     if a.cloud:
         from .pointcloud import PointCloud
@@ -128,6 +138,10 @@ def _volume(a: argparse.Namespace) -> None:
         from .mesh import Mesh
 
         occ = Mesh.from_file(a.mesh)
+    elif a.ifc:
+        from .mesh import Mesh
+
+        occ = Mesh.from_ifc(a.ifc, classes=a.ifc_classes, storey=a.ifc_storey)
     else:
         from .mesh import Mesh
 
@@ -142,8 +156,10 @@ def _volume(a: argparse.Namespace) -> None:
               "inside": a.inside, "near_clip": a.near_clip, "radius": a.radius,
               "floor": a.floor, "ceiling": a.ceiling, "eye_height": a.eye_height,
               "directions": "fibonacci", "n_jobs": a.n_jobs}
+    if a.ifc:
+        params.update(ifc_classes=a.ifc_classes, ifc_storey=a.ifc_storey)
     _write(df, a.out, "volume", params,
-           {"cloud": a.cloud, "mesh": a.mesh, "plan": a.plan, "close": a.close,
+           {"cloud": a.cloud, "mesh": a.mesh, "plan": a.plan, "ifc": a.ifc, "close": a.close,
             "points": a.points}, t0)
 
 
@@ -172,8 +188,12 @@ def _parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="pysovist", description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="command", required=True)
 
-    iso = sub.add_parser("isovist", help="exact 2D isovists from wall segments")
-    iso.add_argument("--plan", type=Path, required=True)
+    iso = sub.add_parser("isovist", help="exact 2D isovists from wall segments or an IFC model")
+    iso.add_argument("--plan", type=Path)
+    iso.add_argument("--ifc", type=Path, help="IFC model, cut at --height")
+    iso.add_argument("--height", type=float,
+                     help="height of the cut in metres above the storey (or the project origin)")
+    _ifc_options(iso)
     iso.add_argument("--close", type=Path, help="polygon JSON that closes the domain")
     iso.add_argument("--points", type=Path, required=True)
     iso.add_argument("--out", type=Path, required=True)
@@ -186,6 +206,8 @@ def _parser() -> argparse.ArgumentParser:
     vol.add_argument("--cloud", type=Path)
     vol.add_argument("--mesh", type=Path)
     vol.add_argument("--plan", type=Path)
+    vol.add_argument("--ifc", type=Path, help="IFC model")
+    _ifc_options(vol)
     vol.add_argument("--close", type=Path, help="polygon JSON that closes an extruded plan")
     vol.add_argument("--floor", type=float, default=0.0)
     vol.add_argument("--ceiling", type=float, default=2.5)
@@ -217,6 +239,12 @@ def _parser() -> argparse.ArgumentParser:
     od = sub.add_parser("odtp", help="run as an ODTP component, settings from the environment")
     od.set_defaults(run=None)
     return ap
+
+
+def _ifc_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--ifc-classes", nargs="+", default=["walls"],
+                        help="presets (walls, furnished) and IFC classes to read from --ifc")
+    parser.add_argument("--ifc-storey", help="name or GlobalId of the storey to read from --ifc")
 
 
 def _odtp_argv(env) -> list[str]:

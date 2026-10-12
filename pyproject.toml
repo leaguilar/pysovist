@@ -15,7 +15,8 @@ authors = [
     { name = "Bartu Tuncay" },
 ]
 maintainers = [{ name = "Leonel Aguilar", email = "aleonel@ethz.ch" }]
-keywords = ["isovist", "visibility", "space syntax", "point cloud", "view volume", "architecture"]
+keywords = ["isovist", "visibility", "space syntax", "point cloud", "view volume", "architecture",
+            "BIM", "IFC"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -32,7 +33,8 @@ dependencies = [
 pointcloud = ["numba>=0.59", "laspy[lazrs]>=2.4"]
 e57 = ["pye57>=0.4"]
 mesh = ["open3d>=0.18"]
-all = ["pysovist[pointcloud,e57,mesh]"]
+ifc = ["ifcopenshell>=0.8.4"]
+all = ["pysovist[pointcloud,e57,mesh,ifc]"]
 
 [project.scripts]
 pysovist = "pysovist.cli:main"

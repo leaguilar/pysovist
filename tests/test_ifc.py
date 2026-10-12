@@ -34,6 +34,8 @@ from pysovist.cli import main  # noqa: E402
 from .geometry import rect  # noqa: E402
 
 api = ifcopenshell.api
+# ifcopenshell 0.8 stamps new files with datetime.utcnow(), which Python 3.12 deprecates.
+pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning:ifcopenshell")
 OUTER = (6.0, 4.0)  # outer size of the room, m
 T = 0.2  # wall thickness, m
 H = 3.0  # wall height, m

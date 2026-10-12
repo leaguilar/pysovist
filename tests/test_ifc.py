@@ -334,6 +334,9 @@ def test_isovist_command_needs_one_plan_source_and_a_height(tmp_path, eyes_csv):
     with pytest.raises(SystemExit):
         main(["isovist", "--plan", str(walls), "--ifc", str(path), "--height", "1.2",
               "--points", str(eyes_csv), "--out", out])
+    with pytest.raises(SystemExit, match="--height"):
+        main(["isovist", "--plan", str(walls), "--height", "1.2", "--points", str(eyes_csv),
+              "--out", out])
 
 
 def test_volume_command_reads_ifc(tmp_path, eyes_csv):

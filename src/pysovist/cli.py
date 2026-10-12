@@ -103,6 +103,8 @@ def _isovist(a: argparse.Namespace) -> None:
     t0 = time.time()
     if (a.plan is None) == (a.ifc is None):
         raise SystemExit("give exactly one of --plan, --ifc")
+    if a.plan is not None and a.height is not None:
+        raise SystemExit("--height applies to --ifc only")
     params = {"max_distance": a.max_distance, "n_jobs": a.n_jobs}
     if a.ifc:
         if a.height is None:

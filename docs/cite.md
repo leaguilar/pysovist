@@ -16,14 +16,14 @@ behaviour paper. GitHub's "Cite this repository" button gives the software refer
 
 @unpublished{pysovist_methods,
   author = {Aguilar, Leonel and Baur, Rapha{\"e}l and Wheele, Theresa and Tuncay, Bartu and Ladouce, Simon and Li, Chenyang and Schmutz, Jan and Sailer, Kerstin and Gr{\"u}bel, Jascha and Slankamenac, Ksenija and Honegger, Patrik and Conroy-Dalton, Ruth and Sax, Hugo and H{\"o}lscher, Christoph and Gath-Morad, Michal},
-  title  = {Exact isovists and view volumes from raw point clouds},
+  title  = {pysovist: reproducible visibility analysis across floor plans, furnished models and point clouds},
   note   = {In preparation},
   year   = {2026}
 }
 
 @unpublished{pysovist_ed_behaviour,
   author = {Aguilar, Leonel and Baur, Rapha{\"e}l and Wheele, Theresa and Ladouce, Simon and Li, Chenyang and Schmutz, Jan and Sailer, Kerstin and Gr{\"u}bel, Jascha and Slankamenac, Ksenija and Honegger, Patrik and Conroy-Dalton, Ruth and Sax, Hugo and H{\"o}lscher, Christoph and Gath-Morad, Michal},
-  title  = {Visibility and staff occupancy in an emergency department},
+  title  = {Beyond the wall plan: predicting staff occupancy from furnished layouts and point clouds},
   note   = {In preparation},
   year   = {2026}
 }

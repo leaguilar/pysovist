@@ -20,7 +20,7 @@ keywords:
 references:
   - type: article
     status: in-preparation
-    title: "Exact isovists and view volumes from raw point clouds"
+    title: "pysovist: reproducible visibility analysis across floor plans, furnished models and point clouds"
     authors:
       - {family-names: Aguilar, given-names: Leonel}
       - {family-names: Baur, given-names: Raphaël}
@@ -39,7 +39,7 @@ references:
       - {family-names: Gath-Morad, given-names: Michal}
   - type: article
     status: in-preparation
-    title: "Visibility and staff occupancy in an emergency department"
+    title: "Beyond the wall plan: predicting staff occupancy from furnished layouts and point clouds"
     authors:
       - {family-names: Aguilar, given-names: Leonel}
       - {family-names: Baur, given-names: Raphaël}

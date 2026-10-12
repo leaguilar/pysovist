@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.2 (unreleased)
+## 0.1.2
 
 - BIM models in IFC files, read through IfcOpenShell with the new `ifc` extra. `Mesh.from_ifc` reads the elements of the chosen classes in world coordinates and in metres, whatever the file's length unit. `Plan.from_ifc` cuts them at a height above a storey's elevation, for exact 2D isovists. The presets `"walls"` and `"furnished"` name the classes of a wall plan and of a furnished plan, and lists of IFC classes select any others.
 - `Mesh.section(z)` cuts any mesh at the height z into a plan.

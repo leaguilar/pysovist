@@ -10,7 +10,7 @@ authors:
     given-names: Bartu
 license: MIT
 repository-code: "https://github.com/leaguilar/pysovist"
-version: 0.1.1
+version: 0.1.2
 keywords:
   - isovist
   - visibility analysis

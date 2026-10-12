@@ -9,7 +9,7 @@ behaviour paper. GitHub's "Cite this repository" button gives the software refer
 @software{pysovist,
   author  = {Aguilar, Leonel and Tuncay, Bartu},
   title   = {pysovist: exact isovists and view volumes from floor plans, meshes and point clouds},
-  version = {0.1.1},
+  version = {0.1.2},
   year    = {2026},
   url     = {https://github.com/leaguilar/pysovist}
 }

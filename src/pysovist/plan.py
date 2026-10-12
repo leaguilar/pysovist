@@ -60,6 +60,38 @@ class Plan:
         records = json.loads(Path(path).read_text())
         return cls([[r[keys[0]][:2], r[keys[1]][:2]] for r in records])
 
+    @classmethod
+    def from_ifc(cls, path, height: float, *, classes="walls", storey=None) -> Plan:
+        """Cut the elements of a BIM model from an IFC file at ``height``.
+
+        The plan is the horizontal section of ``Mesh.from_ifc(path,
+        classes=classes, storey=storey)`` at ``height`` metres above the
+        storey's elevation, or above the project origin without a storey. It
+        holds the outline of every element the plane cuts, so an observer in
+        a room sees the inner faces of its walls. Needs the ``ifc`` extra
+        (ifcopenshell).
+
+        Parameters
+        ----------
+        path : str or os.PathLike
+            IFC file.
+        height : float
+            Height of the section in metres. A solid from ``z0`` to ``z1`` is
+            cut for ``z0 <= z < z1``, as in ``Mesh.section``.
+        classes : str or sequence of str
+            ``"walls"``, ``"furnished"``, an IFC class, or a sequence of
+            presets and classes, as in ``Mesh.from_ifc``.
+        storey : str, optional
+            Name or GlobalId of an IfcBuildingStorey. Only its elements are
+            read, and ``height`` is measured from its elevation: the z of its
+            placement, or its Elevation attribute when it has no placement.
+        """
+        from .ifc import read_ifc
+        from .mesh import Mesh
+
+        vertices, triangles, elevation = read_ifc(path, classes=classes, storey=storey)
+        return Mesh(vertices, triangles).section(elevation + height)
+
     @property
     def bounds(self) -> tuple[float, float, float, float]:
         """``(xmin, ymin, xmax, ymax)`` of all segment endpoints."""

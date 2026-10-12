@@ -34,10 +34,11 @@ def test_section_of_an_extruded_plan_is_the_plan(plan, eyes, z):
 
 
 def test_section_of_a_hull_closed_prism_adds_the_hull_walls():
-    plan = Plan([[(0, 0), (10, 0)], [(10, 0), (10, 6)], [(3, 2), (3, 5)]])
+    # Two outer walls and an inner wall: the hull is the triangle of the outer walls.
+    plan = Plan([[(0, 0), (10, 0)], [(10, 0), (10, 6)], [(7, 1), (7, 3)]])
     section = Mesh.from_plan(plan, floor=-1.0, ceiling=2.0).section(0.5)
     closed = Plan(np.concatenate([plan.segments, polygon_walls([(0, 0), (10, 0), (10, 6)])]))
-    for eye in [(6.0, 2.0), (8.0, 5.0)]:
+    for eye in [(8.0, 2.0), (5.0, 1.0)]:
         assert isovist(section, eye).area == pytest.approx(isovist(closed, eye).area, rel=1e-9)
 
 

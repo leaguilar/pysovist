@@ -139,6 +139,74 @@ class Mesh:
             n += k
         return cls(np.array(verts), np.array(tris))
 
+    @classmethod
+    def from_ifc(cls, path, *, classes="walls", storey=None) -> Mesh:
+        """Read the elements of a BIM model from an IFC file.
+
+        The body geometry of every element of the chosen classes, in world
+        coordinates and in metres, whatever the file's length unit. Openings
+        are cut from the elements that host them. Needs the ``ifc`` extra
+        (ifcopenshell).
+
+        Parameters
+        ----------
+        path : str or os.PathLike
+            IFC file.
+        classes : str or sequence of str
+            ``"walls"`` (IfcWall with its subtypes, IfcColumn and
+            IfcCurtainWall), ``"furnished"`` (the walls plus IfcFurniture and
+            IfcFurnishingElement), an IFC class, or a sequence of presets and
+            classes. Each class includes its subtypes.
+        storey : str, optional
+            Name or GlobalId of an IfcBuildingStorey. Only the elements in
+            that storey are read. By default all elements are read.
+
+        Raises
+        ------
+        ValueError
+            When no element of the chosen classes has a body.
+        """
+        from .ifc import read_ifc
+
+        vertices, triangles, _ = read_ifc(path, classes=classes, storey=storey)
+        return cls(vertices, triangles)
+
+    # --- sections ---------------------------------------------------------------------------
+
+    def section(self, z: float):
+        """Horizontal section at height ``z``, as a floor plan.
+
+        Every triangle that crosses the plane at height ``z`` gives the
+        segment along which it crosses. A vertex at exactly ``z`` counts as
+        below the plane, so a solid from ``z0`` to ``z1`` is cut for
+        ``z0 <= z < z1``: walls standing on a floor at ``z`` are cut, and a
+        table whose top lies at ``z`` is not. Triangles in the plane give no
+        segment.
+
+        Parameters
+        ----------
+        z : float
+            Height of the plane in metres.
+
+        Returns
+        -------
+        Plan
+            One wall segment per crossing triangle.
+        """
+        from .plan import Plan
+
+        v, t = self.vertices, self.triangles
+        above = v[:, 2] > z
+        n_above = above[t].sum(axis=1)
+        cut = (n_above == 1) | (n_above == 2)
+        tri, side = t[cut], above[t[cut]]
+        # The lone vertex is the one on its own side of the plane. Both crossing edges start there.
+        lone = np.where(n_above[cut] == 1, side.argmax(axis=1), side.argmin(axis=1))
+        rows = np.arange(len(tri))
+        a = tri[rows, lone]
+        ends = [_crossing(v, a, tri[rows, (lone + k) % 3], above, z) for k in (1, 2)]
+        return Plan(np.stack(ends, axis=1) if len(tri) else np.empty((0, 2, 2)))
+
     # --- geometry ---------------------------------------------------------------------------
 
     @property
@@ -216,6 +284,20 @@ class Mesh:
         """True where an origin is closer than ``eps`` to a surface that ``near_clip`` keeps."""
         cl = self.clearance(origins)
         return (cl < eps) & (cl >= near_clip)
+
+
+def _crossing(v, a, b, above, z):
+    """Plan point where each edge ``(a[i], b[i])`` crosses height ``z``.
+
+    Each edge is interpolated from its vertex below the plane, so the two
+    triangles that share an edge give the same point to the last bit, and a
+    vertex on the plane is returned exactly.
+    """
+    lo = np.where(above[a], b, a)
+    hi = np.where(above[a], a, b)
+    s_lo, s_hi = v[lo, 2] - z, v[hi, 2] - z
+    w = s_lo / (s_lo - s_hi)
+    return v[lo, :2] + w[:, None] * (v[hi, :2] - v[lo, :2])
 
 
 def _dot(u, v):

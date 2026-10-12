@@ -16,6 +16,7 @@ pip install pysovist                    # 2D isovists (numpy, scipy, pandas)
 pip install "pysovist[pointcloud]"      # point clouds (numba, laspy)
 pip install "pysovist[mesh]"            # meshes (open3d)
 pip install "pysovist[e57]"             # .e57 scans (pye57)
+pip install "pysovist[ifc]"             # BIM models in IFC files (ifcopenshell)
 pip install "pysovist[all]"             # all of the above
 ```
 
@@ -29,7 +30,8 @@ Ray-sampling tools describe the same isovist by the polygon through \(N\) hit po
 
 ## Contents
 
-- [Quick start](quickstart.md): a 2D isovist, a field of isovists on a grid, view volumes from a point cloud and from an extruded plan, and the command line.
+- [Quick start](quickstart.md): a 2D isovist, a field of isovists on a grid, view volumes from a point cloud and from an extruded plan, a plan from a BIM model, and the command line.
+- [BIM models](ifc.md): plans and meshes from IFC files, the class presets, units, storeys and openings.
 - [Conventions](conventions.md): units, plans, eye heights, flags, the policies of `view_volume` and the choice of the ball radius.
 - [Metric definitions](metrics.md): the formula and source of every metric, and how the outputs of the Grasshopper isovist components map to pysovist.
 - [Verification](verification.md): what the test suite checks, and to which tolerance.

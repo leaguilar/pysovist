@@ -3,11 +3,11 @@
 The test suite compares pysovist with answers computed another way: closed forms, independent libraries, brute-force searches and an exact identity between the 2D and the 3D code. The tolerances below are the ones the tests assert.
 
 ```bash
-pip install -e ".[pointcloud,mesh]" pytest hypothesis shapely visilibity
+pip install -e ".[pointcloud,mesh,ifc]" pytest hypothesis shapely visilibity
 pytest
 ```
 
-`visilibity` needs SWIG to build. Tests that need open3d, visilibity, shapely, laspy or pye57 are skipped when the package is missing, and the Unity parity tests are skipped without the reference data.
+`visilibity` needs SWIG to build. Tests that need open3d, visilibity, shapely, laspy, pye57 or ifcopenshell are skipped when the package is missing, and the Unity parity tests are skipped without the reference data.
 
 ## 2D isovists
 
@@ -66,6 +66,19 @@ Inside a prism of height H (vertical walls between a horizontal floor and ceilin
 - For three eyes of the L-shaped room, the residual falls with the number of directions, from 4,096 to 65,536 to 262,144, so it is the quadrature error of the 3D estimate.
 - A concave building whose plan holds only interior walls, closed with `close=` along its L-shaped footprint, satisfies the identity against the plan closed by the same footprint.
 - The command line reproduces the identity: 250 m³ for a 10 m x 10 m room with a 2.5 m ceiling, to 2e-3 at 65,536 directions.
+
+## BIM models
+
+**A horizontal section of a mesh is exact.** The section of an extruded plan, at the floor, at 0.3 and 1.6 m and just below the ceiling, gives the isovist areas of the plan to a relative 1e-9, for the room with a pillar and the L-shaped room, four eyes each. With the default closure, the section adds the walls along the convex hull. Sections below the floor, at the ceiling and above it are empty. The section of a random convex hull of 8 to 40 points gives the area of the polygon that its half-spaces cut out at that height, computed with scipy, to 1e-9 on up to 25 random hulls.
+
+**IFC models built in the tests give closed-form isovists.** The models are written with IfcOpenShell. A room of 6 m x 4 m outside, enclosed by four walls 0.2 m thick, gives 20.16 m² from three eyes, to a relative 1e-9.
+
+- A table 0.75 m high in the room hides, at 0.5 m, the same area as its outline in a 2D plan, to 1e-9. At 1.2 m the area is 20.16 m² again, and the `"walls"` preset leaves the table out.
+- The same model in millimetres gives the same mesh to 1e-12 and the same isovists to 1e-9.
+- In a model with two storeys 3 m apart, a height is measured from the storey's elevation: 0.5 m above the upper storey gives the same segments as 3.5 m above the origin. A storey is found by its Name or its GlobalId, and a storey without a placement takes its Elevation attribute.
+- The presets read exactly their classes and the subtypes of those classes, a curtain wall is read through its plate, and `"furnished"` reads the furnishing elements of an IFC2X3 model. An unknown class or storey is an error.
+- With a floor slab and a ceiling slab, the view volume of the room equals the wall height times its isovist area, to the 1e-3 of the extruded-plan identity at 65,536 directions, from eyes at 0.4, 1.6 and 2.6 m.
+- The `isovist` command gives exactly the table of `isovist_field` on `Plan.from_ifc`, and the `volume` command gives 3 m x 20.16 m² to 1e-3. Both record the sha256 of the IFC file.
 
 ## Point clouds
 

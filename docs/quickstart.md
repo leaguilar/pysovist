@@ -1,6 +1,6 @@
 # Quick start
 
-All examples on this page use one scene: a 10 m x 10 m room with a 2 m x 2 m pillar in its centre. The Python blocks build on each other and run in order as one script, except the scan-file block, which needs a scan of your own. On macOS, Windows and Python 3.14 or newer, put the script under `if __name__ == "__main__":`.
+All examples on this page use one scene: a 10 m x 10 m room with a 2 m x 2 m pillar in its centre. The Python blocks build on each other and run in order as one script, except the scan-file and BIM blocks, which need files of your own. On macOS, Windows and Python 3.14 or newer, put the script under `if __name__ == "__main__":`.
 
 ## A 2D isovist
 
@@ -103,9 +103,19 @@ vv.volume, vv.metrics["escape_fraction"]
 
 A ray that leaves through an opening of the scan makes the volume infinite under the default `max_distance=inf`. Set `max_distance`, or choose another `escape` policy, for scans that are not closed. `view_volume_field` evaluates many eye points in one call and returns one row per eye.
 
+## A plan from a BIM model
+
+`Plan.from_ifc` cuts the walls of an IFC model with a horizontal plane, and `Mesh.from_ifc` reads its elements as a mesh. Both need the `ifc` extra. The [BIM models](ifc.md) page describes the classes, the units and the storeys.
+
+```python
+# The walls and furniture of one storey of a model of your own, cut 1.2 m above its floor.
+plan = pysovist.Plan.from_ifc("model.ifc", 1.2, classes="furnished", storey="Level 1")
+iso = pysovist.isovist(plan, (3.0, 4.0))
+```
+
 ## Command line
 
-The `pysovist` command reads a plan, a mesh or a point cloud and a CSV of points, and writes one CSV row per point. The script below writes the walls of the room and three observers.
+The `pysovist` command reads a plan, an IFC model, a mesh or a point cloud and a CSV of points, and writes one CSV row per point. The script below writes the walls of the room and three observers.
 
 ```python
 import json
@@ -121,6 +131,7 @@ points.to_csv("points.csv", index=False)
 
 ```bash
 pysovist isovist --plan walls.json --points points.csv --out isovists.csv
+pysovist isovist --ifc model.ifc --height 1.2 --points points.csv --out ifc_isovists.csv
 pysovist volume --plan walls.json --ceiling 2.5 --eye-height 1.7 \
     --points points.csv --n-rays 65536 --out volumes.csv
 pysovist volume --cloud scan.las --radius 0.05 --eye-height 1.7 \
@@ -134,6 +145,10 @@ Every run also writes a JSON file next to the CSV (`isovists.json` for `isovists
 | Option | Command | Default | Meaning |
 |---|---|---|---|
 | `--plan` | `isovist`, `volume` | | Wall segments: JSON records with `start` and `end`, or a CSV with columns `x0, y0, x1, y1`. For `volume`, the plan is extruded with `Mesh.from_plan`. |
+| `--ifc` | `isovist`, `volume` | | IFC model. For `isovist` it is cut at `--height` with `Plan.from_ifc`, and for `volume` it is read with `Mesh.from_ifc`. |
+| `--height` | `isovist` | | Height of the cut through an IFC model in metres, above the storey's elevation or the project origin. |
+| `--ifc-classes` | `isovist`, `volume` | walls | Presets and IFC classes to read, as in [BIM models](ifc.md#classes). |
+| `--ifc-storey` | `isovist`, `volume` | | Name or GlobalId of the storey to read. |
 | `--close` | `isovist`, `volume` | | JSON polygon `[[x, y], ...]` that closes the domain. For `isovist` its edges are added as walls. For `volume` it is the `close=` polygon of `Mesh.from_plan`, and without it the plan closes along its convex hull. |
 | `--points` | all three | | CSV with columns `x, y` and, for `volume` and `section`, `z`. |
 | `--out` | all three | | Output CSV. |
@@ -149,11 +164,11 @@ Every run also writes a JSON file next to the CSV (`isovists.json` for `isovists
 | `--inside` | `volume`, `section` | nan | `nan` or `zero`. |
 | `--near-clip` | `volume` | 0.0 | Ignore occluders closer than this to the eye. |
 
-`volume` takes exactly one of `--cloud`, `--mesh` and `--plan`, and always uses Fibonacci directions. `section` cuts the cloud with the horizontal plane at each point's `z` and casts `--n-rays` rays at equal angle steps in that plane, as defined under [3D metrics](metrics.md#3d-metrics).
+`isovist` takes exactly one of `--plan` and `--ifc`. `volume` takes exactly one of `--cloud`, `--mesh`, `--plan` and `--ifc`, and always uses Fibonacci directions. `section` cuts the cloud with the horizontal plane at each point's `z` and casts `--n-rays` rays at equal angle steps in that plane, as defined under [3D metrics](metrics.md#3d-metrics).
 
 ### As an ODTP component
 
-`pysovist odtp` runs the same commands with settings taken from environment variables, as the Open Digital Twin Platform passes them to a component. Input files are read from `ODTP_INPUT` (default `/odtp/odtp-input`). The results are written to `ODTP_OUTPUT` (default `/odtp/odtp-output`) as `<OUTPUT_PREFIX>_<TASK>.csv` and `.json`.
+`pysovist odtp` runs the same commands on plans, meshes and point clouds, with settings taken from environment variables, as the Open Digital Twin Platform passes them to a component. Input files are read from `ODTP_INPUT` (default `/odtp/odtp-input`). The results are written to `ODTP_OUTPUT` (default `/odtp/odtp-output`) as `<OUTPUT_PREFIX>_<TASK>.csv` and `.json`.
 
 ```bash
 export ODTP_INPUT="$PWD" ODTP_OUTPUT="$PWD/output"

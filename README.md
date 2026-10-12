@@ -13,6 +13,7 @@ An isovist is the region visible from one point. pysovist computes it in two set
 pip install pysovist                    # 2D isovists
 pip install "pysovist[pointcloud]"      # point clouds (numba, laspy)
 pip install "pysovist[mesh]"            # meshes (open3d)
+pip install "pysovist[ifc]"             # BIM models in IFC files (ifcopenshell)
 pip install "pysovist[all]"             # everything, including e57 files
 ```
 
@@ -45,6 +46,15 @@ cloud = pysovist.PointCloud.read("scan.las", radius=0.05)   # every point is a b
 vv = pysovist.view_volume(cloud, (3.0, 0.0, 1.7), n_rays=262_144)
 vv.volume, vv.metrics["escape_fraction"]
 ```
+
+Plans and meshes from a BIM model, read from an IFC file in any length unit:
+
+```python
+plan = pysovist.Plan.from_ifc("model.ifc", 1.2, classes="furnished", storey="Level 1")
+mesh = pysovist.Mesh.from_ifc("model.ifc", classes=("walls", "IfcSlab", "IfcCovering"))
+```
+
+`Plan.from_ifc` cuts the walls and, with `"furnished"`, the furniture of one storey at 1.2 m above its floor.
 
 Units are metres and radians. z points up.
 

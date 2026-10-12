@@ -32,6 +32,7 @@ theme:
 nav:
   - Home: index.md
   - Quick start: quickstart.md
+  - BIM models: ifc.md
   - Conventions: conventions.md
   - Metric definitions: metrics.md
   - Verification: verification.md
@@ -39,6 +40,7 @@ nav:
   - API reference:
       - 2D isovists: api/isovists.md
       - 3D view volumes: api/volumes.md
+      - BIM models: api/ifc.md
       - Ray directions: api/directions.md
       - Unity preset: api/unity.md
       - Command line: api/cli.md

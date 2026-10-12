@@ -16,11 +16,10 @@ from pathlib import Path
 
 import numpy as np
 
-_WALLS = ("IfcWall", "IfcColumn", "IfcCurtainWall")
-
 PRESETS: dict[str, tuple[str, ...]] = {
-    "walls": _WALLS,
-    "furnished": (*_WALLS, "IfcFurniture", "IfcFurnishingElement"),
+    "walls": ("IfcWall", "IfcColumn", "IfcCurtainWall"),
+    "furnished": ("IfcWall", "IfcColumn", "IfcCurtainWall", "IfcFurniture",
+                  "IfcFurnishingElement"),
 }
 """Named class lists. Each class includes its subtypes, and a class that the file's schema
 lacks (IfcFurniture in IFC2X3) is left out."""

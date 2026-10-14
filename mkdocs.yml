@@ -36,13 +36,20 @@ nav:
   - Conventions: conventions.md
   - Metric definitions: metrics.md
   - Verification: verification.md
+  - Obstacle visibility: obstacle-visibility.md
+  - Directed view volumes: directed-volumes.md
+  - Plan tools: plan-tools.md
   - Unity compatibility: unity.md
+  - DeCodingSpaces compatibility: decodingspaces.md
   - API reference:
       - 2D isovists: api/isovists.md
       - 3D view volumes: api/volumes.md
+      - Obstacle visibility: api/visibility.md
+      - Plan tools: api/plan-tools.md
       - BIM models: api/ifc.md
       - Ray directions: api/directions.md
       - Unity preset: api/unity.md
+      - DeCodingSpaces compatibility: api/decodingspaces.md
       - Command line: api/cli.md
   - How to cite: cite.md
 

@@ -119,38 +119,5 @@ ring = plane_to_world(iso.polygon(), eye, 0.0)  # the boundary in the scene, sha
 
 ## API
 
-::: pysovist.rays2d.cast_rays
-    options:
-      heading_level: 3
-
-::: pysovist.rays2d.RayHits
-    options:
-      heading_level: 3
-
-::: pysovist.rays2d.NO_HIT
-    options:
-      heading_level: 3
-
-::: pysovist.Plan.flood_grid
-    options:
-      heading_level: 3
-
-::: pysovist.paths.path_isovists
-    options:
-      heading_level: 3
-
-::: pysovist.paths.sample_path
-    options:
-      heading_level: 3
-
-::: pysovist.vertical.vertical_isovist
-    options:
-      heading_level: 3
-
-::: pysovist.vertical.vertical_section
-    options:
-      heading_level: 3
-
-::: pysovist.vertical.plane_to_world
-    options:
-      heading_level: 3
+The functions are documented on the [plan tools API page](api/plan-tools.md), and `Plan.flood_grid` with
+`Plan` under [2D isovists](api/isovists.md).

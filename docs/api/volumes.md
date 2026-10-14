@@ -17,3 +17,5 @@ View volumes of eye points in a triangle mesh or a point cloud, and isovists of 
 ::: pysovist.SectionIsovist
 
 ::: pysovist.VOLUME_METRIC_NAMES
+
+::: pysovist.volume3d.FACTOR_NAMES

@@ -160,7 +160,8 @@ def _project_root():
 
 ROOT = _project_root()
 AGENTS = ROOT / "analysis" / "agents" if ROOT else Path("missing")
-needs_hospital = pytest.mark.skipif(ROOT is None, reason="hospital plan and plugin areas not available")
+needs_hospital = pytest.mark.skipif(ROOT is None,
+                                    reason="hospital plan and plugin areas not available")
 
 
 # --- ray-count rule and ray layout ------------------------------------------------------------

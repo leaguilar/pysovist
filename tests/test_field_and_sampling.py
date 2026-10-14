@@ -59,3 +59,26 @@ def test_sampling_error_falls_as_n_with_occluding_edges():
     scene = np.concatenate([rect(-5, -5, 5, 5), rect(-1, -1, 1, 1)])
     slope = _error_slope(scene, (3.05, 0.37), [101, 211, 401, 809, 1601])
     assert slope == pytest.approx(-1.0, abs=0.25)
+
+
+def test_sampled_square_with_eight_rays_gives_every_key_in_closed_form():
+    """Closed form: from the centre of the 10 m square, eight rays alternate between the wall
+    midpoints (depth 5) and the corners (depth 5 sqrt 2). The polygon is the square itself."""
+    iso = isovist(Plan(rect(0, 0, 10, 10)), (5, 5))
+    m = sampled_metrics(iso, 8)
+    half = (5 * math.sqrt(2) - 5) / 2
+    expected = {"area": 100.0, "perimeter": 40.0, "r_min": 5.0, "r_max": 5 * math.sqrt(2),
+                "r_mean": 5 + half, "r_var": half**2, "r_std": half, "r_mad": half,
+                "compactness": math.pi / 4}
+    assert list(m) == list(expected)
+    for k, v in expected.items():
+        assert m[k] == pytest.approx(v, rel=1e-12), k
+
+
+def test_sampled_offset_turns_the_first_ray():
+    """Closed form: four rays from the centre offset by 45 degrees reach the corners, and the
+    polygon is the whole square."""
+    iso = isovist(Plan(rect(0, 0, 10, 10)), (5, 5))
+    m = sampled_metrics(iso, 4, offset=math.pi / 4)
+    assert m["area"] == pytest.approx(100.0, rel=1e-12)
+    assert m["r_mean"] == pytest.approx(5 * math.sqrt(2), rel=1e-12)

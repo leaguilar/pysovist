@@ -29,8 +29,8 @@ Surface ids
     continue the numbering after them. A ray that hits nothing has id -1, and
     so does a ray that hits the implicit ground plane. A ray that hits the
     last triangle of an obstacle mesh also reports -1, with its true length.
-    For Rhino's box meshes that triangle is half of the bottom face, which is
-    why half of a closed room's floor reports -1.
+    In the measured box rooms that triangle is one half of the floor, which
+    is why half of a closed room's floor reports -1.
 
 Hits per mesh (OV)
 :   The number of rays with each obstacle id. Ground meshes and the implicit

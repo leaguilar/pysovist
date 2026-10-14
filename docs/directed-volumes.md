@@ -95,7 +95,7 @@ The component's rules, which differ from those of `view_volume`:
 |---|---|
 | Ray layout | Azimuth steps of 360 / HPr degrees and elevation steps of 360 / VPr degrees, whatever the viewing angles. Azimuths run from half the horizontal angle left of the view direction to half of it right, elevations from half the vertical angle below the offset to half of it above, all ends included. 12 x 6 rays give 52 rays over 360 x 180 degrees and 14 over 180 x 90 degrees. |
 | Lengths | The distance to the first hit, or the full range for a ray that hits nothing. An open scene therefore has a volume of hundreds of millions of cubic metres. |
-| Surface ids | Obstacle meshes are numbered from 0 and ground meshes after them. -1 marks a ray that hits nothing, the implicit ground plane, or the last triangle of an obstacle mesh, which in a closed box room from Rhino is one half of the floor. |
+| Surface ids | Obstacle meshes are numbered from 0 and ground meshes after them. -1 marks a ray that hits nothing, the implicit ground plane, or the last triangle of an obstacle mesh, which in the measured box rooms is one half of the floor. |
 | Hits per mesh | The number of rays with each obstacle id. Ground meshes and the plane do not count. |
 | Volume | The polyhedron through the hit points: each cell of the ray grid is cut into two triangles, and the tetrahedra from the eye to the triangles are summed. |
 

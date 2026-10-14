@@ -350,3 +350,212 @@ def test_volume_command_reads_ifc(tmp_path, eyes_csv):
     meta = json.loads(out.with_suffix(".json").read_text())
     assert meta["inputs"]["ifc"]["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
     assert meta["parameters"]["ifc_classes"] == ["walls", "IfcSlab"]
+
+
+# --- the reader itself ----------------------------------------------------------------------------
+
+def enclosed_volume(vertices, triangles):
+    """Volume enclosed by closed triangle surfaces, by the divergence theorem."""
+    a, b, c = (vertices[triangles[:, k]] for k in range(3))
+    return abs(np.einsum("ij,ij->i", a, np.cross(b, c)).sum()) / 6
+
+
+@pytest.mark.parametrize("unit", ["m", "mm"])
+def test_read_ifc_returns_the_triangles_of_the_elements_and_the_storey_elevation(tmp_path, unit):
+    from pysovist.ifc import read_ifc
+
+    path = room_file(tmp_path / "room.ifc", unit=unit, elevation=3.0, table=True)
+    vertices, triangles, elevation = read_ifc(path, storey="Ground")
+    assert elevation == pytest.approx(3.0, rel=1e-12)
+    assert read_ifc(path)[2] == 0.0  # without a storey
+    assert vertices.shape[1] == 3 and triangles.shape[1] == 3
+    assert triangles.min() == 0 and triangles.max() == len(vertices) - 1
+    # Closed form: four wall boxes of thickness T and height H around the inner 5.6 m x 3.6 m.
+    walls = (2 * OUTER[0] + 2 * (OUTER[1] - 2 * T)) * T * H
+    np.testing.assert_allclose(vertices.min(axis=0), [0, 0, 3.0], atol=1e-9)
+    np.testing.assert_allclose(vertices.max(axis=0), [*OUTER, 3.0 + H], atol=1e-9)
+    assert enclosed_volume(vertices, triangles) == pytest.approx(walls, rel=1e-12)
+    x0, y0, x1, y1 = TABLE
+    table = (x1 - x0) * (y1 - y0) * TABLE_HEIGHT
+    v, t, _ = read_ifc(path, classes="furnished")
+    assert enclosed_volume(v, t) == pytest.approx(walls + table, rel=1e-12)
+
+
+def test_read_ifc_keeps_the_order_of_the_elements_in_the_file(row_of_boxes):
+    from pysovist.ifc import read_ifc
+
+    vertices, triangles, _ = read_ifc(row_of_boxes, classes=ROW)
+    box = np.floor(vertices[:, 0] / 2).astype(int)  # box i, written i-th, stands at x = 2i
+    assert (np.diff(box) >= 0).all() and sorted(set(box)) == list(range(len(ROW)))
+    assert (box[triangles] == box[triangles[:, :1]]).all()  # no triangle joins two elements
+
+
+def test_openings_are_cut_and_doors_close_them(tmp_path):
+    import ifcopenshell.api.feature
+
+    from pysovist.ifc import read_ifc
+
+    m = Model()
+    st = m.storey("Ground", 0.0)
+    m.room(st)
+    south = m.f.by_type("IfcWall")[0]
+    width, height, x = 1.0, 2.1, 2.0  # a door opening in the south wall, from x = 2 to 3
+    opening = api.root.create_entity(m.f, ifc_class="IfcOpeningElement")
+    rep = api.geometry.add_wall_representation(m.f, context=m.body, length=width, height=height,
+                                               thickness=T + 0.2)
+    api.geometry.assign_representation(m.f, product=opening, representation=rep)
+    api.geometry.edit_object_placement(m.f, product=opening,
+                                       matrix=quarter_turn(0, x, -0.1, 0.0))
+    ifcopenshell.api.feature.add_feature(m.f, feature=opening, element=south)
+    door = m.box(st, "IfcDoor", width, T, height, at=(x, 0.0, 0.0))
+    ifcopenshell.api.feature.add_filling(m.f, opening=opening, element=door)
+    path = m.write(tmp_path / "door.ifc")
+    # Closed form: the walls lose the volume of the opening.
+    walls = (2 * OUTER[0] + 2 * (OUTER[1] - 2 * T)) * T * H
+    assert enclosed_volume(*read_ifc(path)[:2]) == pytest.approx(walls - width * T * height,
+                                                                 rel=1e-12)
+    # The presets hold no doors: the eye sees out through the opening, and the isovist is open.
+    seen = isovist(Plan.from_ifc(path, 1.2), EYES[0])
+    assert seen.flags.unbounded and seen.area == math.inf
+    # Above the opening, and with the doors, the room is closed again.
+    assert isovist(Plan.from_ifc(path, 2.5), EYES[0]).area == pytest.approx(INNER_AREA, rel=1e-9)
+    closed = Plan.from_ifc(path, 1.2, classes=("walls", "IfcDoor"))
+    for eye in EYES:
+        assert isovist(closed, eye).area == pytest.approx(INNER_AREA, rel=1e-9)
+
+
+def test_a_cut_at_the_top_of_an_element_leaves_it_out(tmp_path):
+    # The rule of the BIM models page: an element from z0 to z1 is cut for z0 <= z < z1.
+    path = room_file(tmp_path / "room.ifc", table=True)
+    at_top = Plan.from_ifc(path, TABLE_HEIGHT, classes="furnished")
+    below = Plan.from_ifc(path, TABLE_HEIGHT - 1e-6, classes="furnished")
+    assert isovist(at_top, EYES[0]).area == pytest.approx(INNER_AREA, rel=1e-9)
+    assert isovist(below, EYES[0]).area == pytest.approx(
+        isovist(inner_plan(table=True), EYES[0]).area, rel=1e-9)
+    # walls standing on the floor are cut at height 0, and not at their top
+    assert isovist(Plan.from_ifc(path, 0.0), EYES[0]).area == pytest.approx(INNER_AREA, rel=1e-9)
+    assert len(Plan.from_ifc(path, H)) == 0
+
+
+def test_a_storey_name_held_by_two_storeys_needs_its_globalid(tmp_path):
+    m = Model()
+    first = m.storey("Level", 0.0)
+    m.room(first)
+    second = m.storey("Level", H)
+    m.room(second)
+    path = m.write(tmp_path / "twins.ifc")
+    with pytest.raises(ValueError, match="2 storeys are named 'Level': give a GlobalId"):
+        Plan.from_ifc(path, 1.2, storey="Level")
+    upper = Plan.from_ifc(path, 1.2, storey=second.GlobalId)
+    np.testing.assert_array_equal(upper.segments, Plan.from_ifc(path, H + 1.2).segments)
+
+
+def test_a_storey_without_placement_or_elevation_stands_at_zero(tmp_path):
+    m = Model()
+    st = m.storey("Ground", 0.0, placed=False)
+    api.attribute.edit_attributes(m.f, product=st, attributes={"Elevation": None})
+    m.room(st)
+    path = m.write(tmp_path / "room.ifc")
+    from pysovist.ifc import read_ifc
+
+    assert read_ifc(path, storey="Ground")[2] == 0.0
+
+
+def test_parts_are_read_at_any_depth(tmp_path):
+    # A curtain wall without a body aggregates an assembly without a body, which aggregates a
+    # plate: the plate is read with the curtain wall.
+    m = Model()
+    st = m.storey("Ground", 0.0)
+    cw = api.root.create_entity(m.f, ifc_class="IfcCurtainWall")
+    api.spatial.assign_container(m.f, relating_structure=st, products=[cw])
+    api.geometry.edit_object_placement(m.f, product=cw)
+    assembly = api.root.create_entity(m.f, ifc_class="IfcElementAssembly")
+    api.aggregate.assign_object(m.f, relating_object=cw, products=[assembly])
+    api.geometry.edit_object_placement(m.f, product=assembly)
+    m.box(st, "IfcPlate", 1.0, 0.1, 2.0, at=(3.0, 0, 0), parent=assembly)
+    path = m.write(tmp_path / "cw.ifc")
+    lo, hi = Mesh.from_ifc(path, classes="IfcCurtainWall").bounds
+    np.testing.assert_allclose([lo, hi], [[3.0, 0, 0], [4.0, 0.1, 2.0]], atol=1e-9)
+
+
+def test_an_empty_class_list_reads_nothing(tmp_path):
+    path = room_file(tmp_path / "room.ifc")
+    with pytest.raises(ValueError, match="no geometry"):
+        Mesh.from_ifc(path, classes=[])
+
+
+def test_a_map_conversion_is_not_applied(tmp_path):
+    import ifcopenshell.api.georeference as georeference
+
+    plain = room_file(tmp_path / "plain.ifc")
+    m = Model()
+    m.room(m.storey("Ground", 0.0))
+    georeference.add_georeferencing(m.f)
+    georeference.edit_georeferencing(m.f, coordinate_operation={
+        "Eastings": 2.6e6, "Northings": 1.2e6, "OrthogonalHeight": 400.0})
+    geo = m.write(tmp_path / "geo.ifc")
+    assert "2600000." in geo.read_text()
+    np.testing.assert_array_equal(Mesh.from_ifc(geo).vertices, Mesh.from_ifc(plain).vertices)
+
+
+# --- command line on IFC models -------------------------------------------------------------------
+
+@pytest.fixture
+def two_storeys(tmp_path):
+    m = Model()
+    m.room(m.storey("Ground", 0.0), table=True)
+    m.room(m.storey("Level 1", H), table=True, slabs=True)
+    return m.write(tmp_path / "two_storeys.ifc")
+
+
+def test_isovist_command_reads_one_storey_bit_for_bit(two_storeys, tmp_path, eyes_csv):
+    out = tmp_path / "iso.csv"
+    main(["isovist", "--ifc", str(two_storeys), "--height", "0.5", "--ifc-storey", "Level 1",
+          "--ifc-classes", "furnished", "--points", str(eyes_csv), "--out", str(out)])
+    plan = Plan.from_ifc(two_storeys, 0.5, classes="furnished", storey="Level 1")
+    ref = isovist_field(plan, pd.read_csv(eyes_csv, float_precision="round_trip").to_numpy())
+    pd.testing.assert_frame_equal(pd.read_csv(out, float_precision="round_trip"), ref,
+                                  check_exact=True, check_dtype=False)
+    assert json.loads(out.with_suffix(".json").read_text())["parameters"]["ifc_storey"] == \
+        "Level 1"
+
+
+def test_volume_command_reads_one_storey_bit_for_bit(two_storeys, tmp_path, eyes_csv):
+    pytest.importorskip("open3d")
+    from pysovist import view_volume_field
+
+    out = tmp_path / "vol.csv"
+    main(["volume", "--ifc", str(two_storeys), "--ifc-storey", "Level 1", "--ifc-classes",
+          "furnished", "IfcSlab", "--eye-height", str(H + 1.6), "--points", str(eyes_csv),
+          "--n-rays", "4096", "--out", str(out)])
+    mesh = Mesh.from_ifc(two_storeys, classes=("furnished", "IfcSlab"), storey="Level 1")
+    eyes = pd.read_csv(eyes_csv, float_precision="round_trip").assign(z=H + 1.6).to_numpy()
+    ref = view_volume_field(mesh, eyes, n_rays=4096)
+    pd.testing.assert_frame_equal(pd.read_csv(out, float_precision="round_trip"), ref,
+                                  check_exact=True, check_dtype=False)
+
+
+def test_isovist_command_refuses_a_cut_that_meets_no_element(two_storeys, tmp_path, eyes_csv):
+    # A height in millimetres cuts above the model, and gave a table of unbounded rows.
+    out = tmp_path / "iso.csv"
+    with pytest.raises(SystemExit) as e:
+        main(["isovist", "--ifc", str(two_storeys), "--height", "1200", "--ifc-storey",
+              "Level 1", "--points", str(eyes_csv), "--out", str(out)])
+    assert "meets no element" in e.value.code
+    assert "span 0 to 3 m above the storey 'Level 1'" in e.value.code, e.value.code
+    assert not out.exists()
+
+
+def test_volume_command_refuses_an_eye_outside_the_model_in_height(two_storeys, tmp_path,
+                                                                   eyes_csv):
+    # --eye-height is the absolute z. 1.6 m taken as a height above Level 1 lies below its
+    # elements, and gave escaping rays.
+    pytest.importorskip("open3d")
+    out = tmp_path / "vol.csv"
+    with pytest.raises(SystemExit) as e:
+        main(["volume", "--ifc", str(two_storeys), "--ifc-storey", "Level 1", "--eye-height",
+              "1.6", "--points", str(eyes_csv), "--n-rays", "1024", "--out", str(out)])
+    msg = e.value.code
+    assert "rows 1, 2, 3" in msg and "z = 3 to 6 m" in msg, msg
+    assert "the storey 'Level 1' stands at z = 3 m: an eye 1.6 m above it has z = 4.6" in msg
+    assert not out.exists()

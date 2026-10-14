@@ -16,6 +16,9 @@ drift apart:
 - A table printed right below a block whose last expression is a table, with the same columns,
   states that table.
 - The sentences listed in ``SENTENCES`` state the values computed after their block.
+- The sentences of the verification page listed in ``VERIFICATION`` state tolerances and counts,
+  which are read from the source of the tests that assert them, and the error messages it quotes
+  are those the library raises.
 
 A value matches to the digits written: ``70.0`` holds for 69.95 to 70.05, a whole number written
 for a count holds exactly, and ``13.416...`` means that the value starts with these digits.
@@ -506,6 +509,321 @@ def test_the_quick_start_commands_write_their_tables_and_records(tmp_path):
         assert (tmp_path / f"{name}.json").is_file()
     vol = pd.read_csv(tmp_path / "volumes.csv")
     assert list(vol.columns[:4]) == ["x", "y", "z", "volume"] and (vol.z == 1.7).all()
+
+
+# --- the verification page ------------------------------------------------------------------------
+#
+# Each entry: a pattern in the verification page whose groups are numbers, and for each group an
+# expression that gives the number from the test that asserts it. src(file, name, pattern) reads
+# the first group of pattern in the source of a top-level name of a test file, decorators
+# included, and T(module) imports a test module. An expression that starts with "assert " is a
+# statement about the tests and takes no group.
+
+def source_of(file: str, name: str) -> str:
+    """Source of a top-level function, class or assignment of a test file, with decorators."""
+    text = (ROOT / "tests" / file).read_text()
+    lines = text.splitlines()
+    for node in ast.parse(text).body:
+        if (isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name == name) or (
+                isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == name for t in node.targets)):
+            start = min([d.lineno for d in getattr(node, "decorator_list", [])] + [node.lineno])
+            return "\n".join(lines[start - 1:node.end_lineno])
+    raise LookupError(f"{name} is not a top-level name of {file}")
+
+
+def src(file: str, name: str, pattern: str):
+    m = re.search(pattern, source_of(file, name))
+    if m is None:
+        raise LookupError(f"{pattern!r} is not in {file}::{name}")
+    return eval(m.group(1), {"math": math})
+
+
+def T(module: str):
+    import importlib
+
+    return importlib.import_module(f"tests.{module}")
+
+
+def default_rtol_of_frame_comparison(file: str, name: str):
+    """The relative tolerance with which pandas compares two tables of floats by default, when
+    the test compares tables without a tolerance of its own: the power of ten r such that a
+    relative difference of 0.99 r passes and one of 1.01 r fails."""
+    assert "assert_frame_equal" in source_of(file, name)
+    assert "rtol" not in source_of(file, name) and "check_exact" not in source_of(file, name)
+    one = pd.DataFrame({"v": [1.0]})
+
+    def passes(d):
+        try:
+            pd.testing.assert_frame_equal(one, one * (1 + d))
+        except AssertionError:
+            return False
+        return True
+
+    return next(r for r in 10.0 ** -np.arange(3, 13) if passes(0.99 * r) and not passes(1.01 * r))
+
+
+V = "test_visibility2d.py"
+R2 = "test_rays2d.py"
+P = "test_paths.py"
+F = "test_flood_grid.py"
+VE = "test_vertical.py"
+DS = "test_compat_decodingspaces_open.py"
+DR = "test_volume3d_directed.py"
+D3 = "test_compat_decodingspaces3d.py"
+REF = "test_volume3d_references.py"
+NUMBER = r"([\d.e-]+)"
+
+VERIFICATION = [
+    # obstacle visibility
+    (r"\*\*The visible part of every wall agrees with closed forms to ([\d.e-]+)\.\*\*",
+     [f"src('{V}', 'approx', r'rel={NUMBER}')"]),
+    (r"square rooms with up to (\d+) interior walls, which may cross, the visible lengths add up "
+     r"to the part of the isovist perimeter that lies on walls, to a relative ([\d.e-]+)\.",
+     [rf"src('{V}', 'room_with_free_walls', r'st.integers\(1, (\d+)\)')",
+      f"src('{V}', 'test_visible_length_is_the_wall_part_of_the_isovist_perimeter', "
+      rf"r'approx\(on_walls, rel={NUMBER},')"]),
+    (r"computed with shapely, to ([\d.e-]+)\. A shift of up to ([\d,]+) m along each axis and a "
+     r"scaling by a factor from ([\d.]+) to (\d+) change the lengths as they change the scene, to "
+     r"([\d.e-]+)\. Each property is checked on up to (\d+) random scenes\.",
+     [rf"src('{V}', 'test_matches_shadow_subtraction', r'approx\(seen, rel={NUMBER},')",
+      rf"src('{V}', 'test_moving_and_scaling_the_scene', r'st.floats\(-1e3, ([\de]+)\)')",
+      rf"src('{V}', 'test_moving_and_scaling_the_scene', r'st.floats\(([\d.]+), 100\)')",
+      rf"src('{V}', 'test_moving_and_scaling_the_scene', r'st.floats\(0.01, (\d+)\)')",
+      f"src('{V}', 'test_moving_and_scaling_the_scene', r'rel={NUMBER},')",
+      rf"src('{V}', 'SETTINGS', r'max_examples=(\d+)')",
+      f"assert all('@SETTINGS' in source_of('{V}', t) for t in ("
+      "'test_visible_length_is_the_wall_part_of_the_isovist_perimeter', "
+      "'test_matches_shadow_subtraction', 'test_moving_and_scaling_the_scene'))"]),
+    (r"single `segment_visibility` calls to ([\d.e-]+), and two processes give the table of one",
+     [f"src('{V}', 'approx', r'rel={NUMBER}')",
+      f"assert 'approx(singles.sum(axis=0))' in source_of('{V}', "
+      "'test_field_sums_and_means_over_the_path')"]),
+    (r"With ([\d,]+) even rays, .* on up to (\d+) random rooms\.",
+     [rf"src('{V}', 'test_ray_hits_converge_to_the_visible_angle', r'n = ([\d_]+)')",
+      rf"src('{V}', 'test_ray_hits_converge_to_the_visible_angle', r'max_examples=(\d+)')"]),
+    # plan tools
+    (r"rays along the axes and a diagonal end at their closed-form distances, to a relative "
+     r"([\d.e-]+), and rays through the corners of regular polygons of (\d+), (\d+), (\d+) and "
+     r"(\d+) sides end on the corners, to ([\d.e-]+)\.",
+     [rf"src('{R2}', 'test_rays_into_a_square_room_hit_the_expected_walls', r'rel={NUMBER}\)')",
+      *[f"src('{R2}', 'test_rays_through_the_corners_of_a_closed_polygon_never_escape', "
+        rf"r'\[(?:\d+, ){{{k}}}(\d+)')" for k in range(4)],
+      f"src('{R2}', 'test_rays_through_the_corners_of_a_closed_polygon_never_escape', "
+      rf"r'rel={NUMBER}\)')"]),
+    (r"square rooms with up to (\d+) interior walls, the distance of every ray equals the depth of "
+     r"the exact isovist at the same angle to ([\d.e-]+), and its hit point lies on the wall it "
+     r"reports, on up to (\d+) random scenes\.",
+     [rf"src('{R2}', 'scene_and_rays', r'st.integers\(0, (\d+)\)')",
+      f"src('{R2}', 'test_ray_depth_equals_the_exact_isovist_depth', r'rel={NUMBER},')",
+      f"src('{R2}', 'test_hit_points_lie_on_the_reported_wall_within_range', "
+      r"r'max_examples=(\d+)')"]),
+    (r"the areas and perimeters of the rows equal their closed forms to ([\d.e-]+)\.",
+     [rf"src('{P}', 'test_isovists_along_a_corridor_see_the_rest_of_it', r'rel={NUMBER}\)')"]),
+    (r"exactly, on up to (\d+) random paths\. On up to (\d+) random polylines the samples lie on "
+     r"the path at their arc length, to ([\d.e-]+)\.",
+     [f"src('{P}', 'test_each_row_is_the_isovist_looking_along_the_tangent', "
+      r"r'max_examples=(\d+)')",
+      rf"src('{P}', 'test_samples_lie_on_the_path_at_their_arc_length', r'max_examples=(\d+)')",
+      f"src('{P}', 'test_samples_lie_on_the_path_at_their_arc_length', "
+      rf"r'starts\[k\]\), abs={NUMBER}\)')"]),
+    (r"the rows equal those of `isovist_field` at the same points, to the relative ([\d.e-]+) of "
+     r"the table comparison of pandas\.",
+     [f"default_rtol_of_frame_comparison('{P}', "
+      "'test_a_full_field_of_view_equals_the_isovist_field')"]),
+    (r"On up to (\d+) random scenes with up to (\d+) walls, spacings from ([\d.]+) to ([\d.]+) m",
+     [f"src('{F}', 'test_fill_equals_a_breadth_first_fill_with_geos_distances', "
+      r"r'max_examples=(\d+)')",
+      rf"src('{F}', 'free_walls', r'st.integers\(0, (\d+)\)')",
+      rf"src('{F}', 'free_walls', r'spacing = draw\(st.floats\(([\d.]+),')",
+      rf"src('{F}', 'free_walls', r'spacing = draw\(st.floats\([\d.]+, ([\d.]+)\)')"]),
+    (r"An L-shaped room fills its (\d+) cells of (\d+) m",
+     [f"src('{F}', 'test_l_shaped_room_fills_its_sixty_cells_and_not_the_notch', "
+      r"r'len\(centres\) == (\d+)')",
+      f"src('{F}', 'test_l_shaped_room_fills_its_sixty_cells_and_not_the_notch', "
+      r"r'flood_grid\(([\d.]+),')"]),
+    (r"on up to (\d+) random polygons of (\d+) to (\d+) sides\.",
+     [rf"src('{F}', 'test_a_closed_polygon_never_leaks', r'max_examples=(\d+)')",
+      rf"src('{F}', 'test_a_closed_polygon_never_leaks', r'st.integers\((\d+), \d+\)')",
+      rf"src('{F}', 'test_a_closed_polygon_never_leaks', r'st.integers\(\d+, (\d+)\)')"]),
+    (r"along, across and diagonally, to ([\d.e-]+), and a table",
+     [f"src('{VE}', 'test_box_room_seen_from_inside_is_the_rectangle_of_its_depth_and_height', "
+      rf"r'rel={NUMBER}\)')"]),
+    (r"It equals, to ([\d.e-]+), the horizontal isovist of the building turned",
+     [f"src('{VE}', 'test_rotating_the_building_as_in_the_tutorial_gives_the_same_isovist', "
+      rf"r'rel={NUMBER}\)')"]),
+    (r"first walls ahead and behind in the plan, to ([\d.e-]+), for up to (\d+) random eyes",
+     [f"src('{VE}', 'test_extruded_plan_gives_the_rectangle_of_the_two_plan_rays', "
+      rf"r'rel={NUMBER}\)')",
+      f"src('{VE}', 'test_extruded_plan_gives_the_rectangle_of_the_two_plan_rays', "
+      r"r'max_examples=(\d+)')"]),
+    # DeCodingSpaces 2D layer
+    (r"The (\d+) properties agree to a relative ([\d.e-]+) \(absolute ([\d.e-]+) near zero\)\.",
+     ["len(__import__('pysovist.compat.decodingspaces', fromlist=['x']).DS_PROPERTY_NAMES)",
+      f"src('{DS}', 'test_properties_match_the_plugin', r'rtol={NUMBER},')",
+      rf"src('{DS}', 'test_properties_match_the_plugin', r'atol={NUMBER}\)')"]),
+    (r"of the same rank to ([\d.e-]+) rad, and its length agrees to a relative ([\d.e-]+)\.",
+     [rf"src('{DS}', 'test_rays_match_the_plugin_one_by_one', r'max\(\) < {NUMBER}')",
+      f"src('{DS}', 'test_rays_match_the_plugin_one_by_one', r'rtol={NUMBER},')"]),
+    (r"The ring has the area of the plugin's Isovist Polygon to ([\d.e-]+), and the hits per line "
+     r"are equal\.",
+     [rf"src('{DS}', 'test_polygon_matches_the_plugin', r'rel={NUMBER}\)')",
+      f"assert 'assert_array_equal(hits, ov)' in source_of('{DS}', "
+      "'test_hits_per_line_match_the_plugin')"]),
+    (r"the areas agree to ([\d.e-]+), and to ([\d.e-]+) where the plugin's areas carry six "
+     r"decimals\.",
+     [r"src('test_compat_decodingspaces.py', 'test_hospital_areas_at_24_ray_counts', "
+      f"r'rtol={NUMBER},')",
+      r"src('test_compat_decodingspaces.py', 'test_hospital_areas_across_the_fallback', "
+      f"r'rtol={NUMBER},')"]),
+    # 3D references
+    (r"end at the closed-form distances to its faces, to a relative ([\d.e-]+), with and without",
+     [rf"src('{REF}', 'test_mesh_cast_gives_the_ray_box_distances', r'rtol={NUMBER}\)')"]),
+    (r"computed with scipy, to ([\d.e-]+) and ([\d.e-]+)\.",
+     [f"src('{REF}', 'test_depth_statistics_from_the_centre_of_a_cube', "
+      rf"r'approx\(mean, rel={NUMBER}\)')",
+      f"src('{REF}', 'test_depth_statistics_from_the_centre_of_a_cube', "
+      rf"r'mean \* mean\), rel={NUMBER}\)')"]),
+    (r"of a faceted sphere of radius (\d+) m is \d+ m to ([\d.e-]+)\.",
+     [rf"src('{REF}', 'test_equivalent_radius_of_a_sphere_is_its_radius', r'radius=([\d.]+),')",
+      f"src('{REF}', 'test_equivalent_radius_of_a_sphere_is_its_radius', "
+      rf"r'approx\(2.0, rel={NUMBER}\)')"]),
+    (r"(\d+) runs of ([\d,]+) directions each lie within (\d+) standard errors",
+     [f"src('{REF}', 'test_random_directions_estimate_the_cube_volume_without_bias', "
+      r"r'range\((\d+)\)')",
+      f"src('{REF}', 'test_random_directions_estimate_the_cube_volume_without_bias', "
+      r"r'n = (\d+)')",
+      f"src('{REF}', 'test_random_directions_estimate_the_cube_volume_without_bias', "
+      r"r'< (\d+) \* se')"]),
+    (r"gives the volume of a cube from (\d+) eyes to ([\d.e-]+), on one thread, on three and on "
+     r"all cores\.",
+     [rf"len(re.findall(r'\(-?[\d.]+, -?[\d.]+, -?[\d.]+\)', source_of('{REF}', "
+      "'test_field_gives_the_cube_volume_from_every_eye')))",
+      rf"src('{REF}', 'test_field_gives_the_cube_volume_from_every_eye', r'rtol={NUMBER}\)')",
+      f"assert '[-1, 1, 3]' in source_of('{REF}', "
+      "'test_field_gives_the_cube_volume_from_every_eye')"]),
+    # directed view volumes and view factors
+    (r"by adaptive quadrature in azimuth, to ([\d.e-]+)\. Over (\d+) fields, from (\d+) x (\d+) "
+     r"degrees to a full turn (\d+) degrees tall",
+     [rf"src('{DR}', 'box_wedge_volume', r'epsrel={NUMBER}\)')",
+      "len(T('test_volume3d_directed').FIELDS)",
+      rf"src('{DR}', 'FIELDS', r'math.radians\((\d+)\), math.radians\(20\)')",
+      rf"src('{DR}', 'FIELDS', r'math.radians\(30\), math.radians\((\d+)\)')",
+      rf"src('{DR}', 'FIELDS', r'2 \* math.pi, math.radians\((\d+)\)')"]),
+    (r"an angle grid of (\d+) x (\d+) cells agrees to ([\d.e-]+), and 2\^(\d+) Fibonacci "
+     r"directions to ([\d.e-]+)\.",
+     [f"src('{DR}', 'test_box_room_grid_volume_converges_to_the_exact_wedge', "
+      r"r'angle_grid\((\d+),')",
+      f"src('{DR}', 'test_box_room_grid_volume_converges_to_the_exact_wedge', "
+      r"r'angle_grid\(\d+, (\d+),')",
+      f"src('{DR}', 'test_box_room_grid_volume_converges_to_the_exact_wedge', "
+      rf"r'rel={NUMBER}\)')",
+      f"src('{DR}', 'test_box_room_fibonacci_volume_converges_to_the_exact_wedge', "
+      r"r'n_rays=1 << (\d+)')",
+      f"src('{DR}', 'test_box_room_fibonacci_volume_converges_to_the_exact_wedge', "
+      rf"r'rel={NUMBER}\)')"]),
+    (r"sum to the solid angle of its field to ([\d.e-]+), and to \\\(4\\pi\\\) over the sphere to "
+     r"([\d.e-]+)\. Eight octants add up to the full view volume to ([\d.e-]+)\.",
+     [rf"src('{DR}', 'test_angle_grid_weights_are_exact_cell_solid_angles', r'rel={NUMBER}\)')",
+      rf"src('{DR}', 'test_full_angle_grid_covers_the_sphere', r'rel={NUMBER}\)')",
+      rf"src('{DR}', 'test_octants_partition_the_full_view', r'rel={NUMBER}\)')"]),
+    (r"to an absolute ([\d.e-]+), with 2\^(\d+) Fibonacci directions and with an angle grid of "
+     r"(\d+) x (\d+) cells\. The three factors add up to (\d) to ([\d.e-]+)\.",
+     [rf"src('{DR}', 'test_view_factors_match_exact_solid_angles', r'abs={NUMBER}\)')",
+      rf"src('{DR}', 'test_view_factors_match_exact_solid_angles', r'n_rays=1 << (\d+)')",
+      rf"src('{DR}', 'test_view_factors_match_exact_solid_angles', r'angle_grid\((\d+),')",
+      rf"src('{DR}', 'test_view_factors_match_exact_solid_angles', r'angle_grid\(\d+, (\d+)\)')",
+      f"src('{DR}', 'test_view_factors_match_exact_solid_angles', "
+      r"r'sum\(f.values\(\)\) == pytest.approx\(([\d.]+),')",
+      f"src('{DR}', 'test_view_factors_match_exact_solid_angles', "
+      rf"r'sum\(f.values\(\)\) == pytest.approx\(1.0, abs={NUMBER}\)')"]),
+    (r"equal single `view_volume` calls to ([\d.e-]+)\.\n",
+     [f"src('{DR}', 'test_directed_field_rows_match_single_volumes', r'rel={NUMBER},')"]),
+    # DeCodingSpaces Isovist3D layer
+    (r"Each ray points in the direction of the component's ray to ([\d.e-]+), its length agrees "
+     r"to a relative ([\d.e-]+), and its hit point to ([\d.e-]+) of its length\.",
+     [rf"src('{D3}', 'test_ray_directions_and_order', r'atol={NUMBER}\)')",
+      rf"src('{D3}', 'test_ray_lengths_and_hit_vectors', r'rtol={NUMBER}\)')",
+      rf"src('{D3}', 'test_ray_lengths_and_hit_vectors', r'err <= {NUMBER} \* lengths')"]),
+    (r"The volumes of the measured views agree to a relative ([\d.e-]+), or an absolute "
+     r"([\d.e-]+) for a grid that encloses nothing\. They agree to ([\d.e-]+) for a closed room "
+     r"and an extruded hospital plan up to (\d+) x (\d+) rays\. From there to ([\d,]+) x "
+     r"([\d,]+) rays they agree to ([\d.e-]+),",
+     [f"src('{D3}', 'test_volume', r'rel={NUMBER},')",
+      rf"src('{D3}', 'test_volume', r'abs={NUMBER}\)')",
+      rf"src('{D3}', 'test_hospital_volumes', r'rel={NUMBER}\)')",
+      "max(r[0] for r in T('test_compat_decodingspaces3d').ROOM_VOLUMES "
+      "+ T('test_compat_decodingspaces3d').HOSPITAL_VOLUMES)",
+      "max(r[1] for r in T('test_compat_decodingspaces3d').ROOM_VOLUMES "
+      "+ T('test_compat_decodingspaces3d').HOSPITAL_VOLUMES)",
+      "max(r['HPr'] for r in T('test_compat_decodingspaces3d').LARGE)",
+      "max(r['VPr'] for r in T('test_compat_decodingspaces3d').LARGE)",
+      rf"src('{D3}', 'test_large_counts', r'LOOSE.get\(key, {NUMBER}\)')",
+      rf"assert src('{D3}', 'test_closed_room_volumes', r'rel={NUMBER}\)') == 5e-6"]),
+    (r"(\d+) x (\d+) rays from the centre of the closed room give a prism of ([\d.]+) m³, to "
+     r"([\d.e-]+)\.",
+     [rf"src('{D3}', 'test_volume_is_the_polyhedron_through_the_hit_points', r'A (\d+) x')",
+      rf"src('{D3}', 'test_volume_is_the_polyhedron_through_the_hit_points', r'A \d+ x (\d+)')",
+      f"src('{D3}', 'test_volume_is_the_polyhedron_through_the_hit_points', "
+      r"r'approx\((3 \* 3 \* 6.75),')",
+      f"src('{D3}', 'test_volume_is_the_polyhedron_through_the_hit_points', "
+      rf"r'6.75, rel={NUMBER}\)')"]),
+    (r"the exact volume is (\d) m times the exact isovist area, ([\d.]+) m³\. The component's "
+     r"volumes lie ([\d.]+) %, ([\d.]+) % and ([\d.]+) % below it at (\d+) x (\d+), (\d+) x "
+     r"(\d+) and ([\d,]+) x (\d+) rays, to ([\d.]+) %\.",
+     [f"src('{D3}', 'test_hospital_exact_volume_is_height_times_isovist_area', "
+      r"r'assert ([\d.]+) \* area')",
+      "T('test_compat_decodingspaces3d').HOSPITAL_EXACT",
+      *[f"-100 * src('{D3}', 'test_volume_does_not_converge_with_the_ray_count', "
+        rf"r'\[(?:-[\d.]+, ){{{k}}}(-[\d.]+)')" for k in range(3)],
+      *[x for k in range(3) for x in (
+          f"src('{D3}', 'test_volume_does_not_converge_with_the_ray_count', "
+          rf"r'for hpr, vpr in \((?:\(\d+, \d+\), ){{{k}}}\((\d+),')",
+          f"src('{D3}', 'test_volume_does_not_converge_with_the_ray_count', "
+          rf"r'for hpr, vpr in \((?:\(\d+, \d+\), ){{{k}}}\(\d+, (\d+)\)')")],
+      f"100 * src('{D3}', 'test_volume_does_not_converge_with_the_ray_count', "
+      rf"r'atol={NUMBER}\)')"]),
+]
+
+
+def test_the_verification_page_states_what_the_tests_assert():
+    text = (ROOT / "docs" / "verification.md").read_text()
+    env = {"src": src, "T": T, "source_of": source_of, "re": re,
+           "default_rtol_of_frame_comparison": default_rtol_of_frame_comparison}
+    found = []
+    for pattern, exprs in VERIFICATION:
+        m = re.search(pattern, text)
+        if m is None:
+            found.append(f"the sentence {pattern!r} is not in the page")
+            continue
+        groups = iter(m.groups())
+        for expr in exprs:
+            if expr.startswith("assert "):
+                try:
+                    exec(expr, env)
+                except AssertionError:
+                    found.append(f"{m.group(0)[:60]!r}: {expr} is false")
+                continue
+            written = next(groups).replace(",", "")
+            found += [f"{m.group(0)[:60]!r}: {q} ({expr})"
+                      for q in problems(Num(written), eval(expr, env))]
+        assert next(groups, None) is None, f"{pattern!r} has a group without an expression"
+    assert not found, "\n".join(found)
+
+
+def test_the_messages_the_verification_page_quotes_are_those_raised():
+    text = (ROOT / "docs" / "verification.md").read_text()
+    section = text[text.index("## Checked inputs"):text.index("## Command line and documentation")]
+    quoted = re.findall(r'raises "([^"]+)"', section)
+    square = [[(0, 0), (10, 0)], [(10, 0), (10, 10)], [(10, 10), (0, 10)], [(0, 10), (0, 0)]]
+    calls = [lambda: pysovist.isovist(square, (5, 5), max_distance=-1),
+             lambda: pysovist.PointCloud([(0.0, 0.0, 0.0)], radius=float("nan")),
+             lambda: pysovist.Mesh(np.eye(4)[:, :3], [(0, 1, 2, 3)])]
+    assert len(quoted) == len(calls)
+    for message, call in zip(quoted, calls, strict=True):
+        with pytest.raises(ValueError) as e:
+            call()
+        assert str(e.value) == message
 
 
 def test_the_software_reference_cites_the_version_of_the_package():

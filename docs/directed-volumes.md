@@ -70,7 +70,7 @@ vg = view_volume(scene, eye, directions=d, weights=w, max_distance=100.0, object
 vg.factors(ground=[0])              # sky 0.1990, ground 0.2107, object 0.5903
 ```
 
-The building on the left, taller and seen higher in the field, takes 0.64 sr of the 2.06 sr in view, more than the 0.58 sr of the lower building on the right. The sky takes a fifth of the view. With 2^24 directions the volume settles at 137,406 m3, and the estimate above, from 43,028 rays, lies 0.05 % above it.
+The building on the left, taller and seen higher in the field, takes 0.64 sr of the 2.06 sr in view, more than the 0.58 sr of the lower building on the right. The sky takes a fifth of the view. With 2^22 directions the volume is 137,406 m3, and the estimate above, from 43,028 rays, lies 0.05 % above it.
 
 ## DeCodingSpaces Isovist3D
 

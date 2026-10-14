@@ -410,6 +410,44 @@ def test_radial_needs_enough_rays():
     assert full.radial(1)[1] == pytest.approx([1.0])
 
 
+@pytest.mark.parametrize("eye, flag", [((1.0, 0.0), "on_wall"), ((0.0, 0.0), "unbounded")])
+def test_depth_and_radial_of_a_flagged_isovist_are_nan(eye, flag):
+    # A defined result: a flagged isovist has no wedges, and its depths are NaN. They used to
+    # raise an IndexError.
+    plan = rect(-1, -1, 1, 1) if flag == "on_wall" else rect(-1, -1, 1, 1)[:3]
+    iso = isovist(plan, eye)
+    assert getattr(iso.flags, flag)
+    assert np.isnan(iso.depth([0.0, 1.0, 2.0])).all()
+    ang, r = iso.radial(4)
+    assert len(ang) == 4 and np.isnan(r).all()
+
+
+def test_radial_offset_must_be_finite():
+    with pytest.raises(ValueError, match="offset"):
+        isovist(rect(-1, -1, 1, 1), (0, 0)).radial(4, offset=np.nan)
+
+
+@pytest.mark.parametrize("kw", [{}, {"fov": 1.0}, {"fov": 1.0, "max_distance": 0.5},
+                                {"max_distance": 0.5}])
+def test_polygon_ring_repeats_its_first_point(kw):
+    # A full turn and a field of view alike end where they start (a field of view at the
+    # observer), so the ring is closed. A field of view used to stop at its last boundary point.
+    ring = isovist(rect(-1, -1, 1, 1), (0.2, 0.1), **kw).polygon()
+    np.testing.assert_allclose(ring[-1], ring[0], atol=1e-12)
+    assert len(ring) >= 4
+    if "fov" in kw:
+        assert ring[0].tolist() == [0.2, 0.1] and ring[-1].tolist() == [0.2, 0.1]
+    assert len(isovist(rect(-1, -1, 1, 1), (1.0, 0.0)).polygon()) == 0  # on a wall
+
+
+@pytest.mark.parametrize("close", ["hull", None])
+def test_a_plan_without_area_is_refused(close):
+    # The floor and the ceiling cover the plan's hull. Walls on one line have none: an opaque
+    # QhullError before.
+    with pytest.raises(ValueError, match="area"):
+        Mesh.from_plan([[(0, 0), (10, 0)], [(2, 0), (5, 0)]], close=close)
+
+
 @pytest.mark.parametrize("step", [0.0, -0.1, np.nan])
 def test_polygon_arc_step_must_be_positive(step):
     iso = isovist(rect(-1, -1, 1, 1), (0, 0), max_distance=0.5)

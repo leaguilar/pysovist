@@ -20,7 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from scipy.spatial import ConvexHull
+from scipy.spatial import ConvexHull, QhullError
 
 _CHUNK_RAYS = 1 << 21  # rays per Embree call (48 MB of single-precision rays)
 CLOSE_OPTIONS = ("hull", None)
@@ -239,9 +239,10 @@ class Mesh:
         ------
         ValueError
             If a wall lies mostly outside the closing polygon, the polygon has
-            fewer than three distinct corners enclosing an area, ``close`` is
-            not one of its options, or ``floor`` and ``ceiling`` are not finite
-            heights with the ceiling above the floor.
+            fewer than three distinct corners enclosing an area, the walls lie
+            on one line with no closing polygon, ``close`` is not one of its
+            options, or ``floor`` and ``ceiling`` are not finite heights with
+            the ceiling above the floor.
         """
         from .plan import Plan
 
@@ -260,7 +261,12 @@ class Mesh:
             cls.check_closing(segs, ring_close)
         if ring_close is not None:
             pts = np.vstack([pts, ring_close])
-        ring = pts[ConvexHull(pts).vertices]  # counter-clockwise, floor and ceiling cover it
+        try:
+            ring = pts[ConvexHull(pts).vertices]  # counter-clockwise, floor and ceiling cover it
+        except QhullError:
+            raise ValueError("the walls lie on one line, so the floor and the ceiling would "
+                             "cover no area: give walls that enclose an area, or a closing "
+                             "polygon") from None
         walls = [segs]
         if ring_close is not None:
             walls.append(np.stack([ring_close, np.roll(ring_close, -1, axis=0)], axis=1))

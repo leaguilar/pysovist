@@ -430,11 +430,18 @@ def test_square_from_centre_at_2999_rays_gives_750_per_wall():
     assert hits.tolist() == [750, 750, 750, 750]
 
 
-@pytest.mark.parametrize("rays,cast", [(11, 12), (360, 361), (2999, 3000), (3000, 361),
-                                       (10, 361), (5, 361), (100_000, 361)])
-def test_decodingspaces_ray_count_rule(rays, cast):
+@pytest.mark.parametrize("rays,direction,cast", [
+    (15, math.pi / 2, 15), (15, 0.0, 15), (15, -math.pi / 2, 16), (100, math.pi / 2, 100),
+    (100.5, math.pi / 2, 101), (360, 0.0, 361), (2999, math.pi / 2, 3000),
+    (3000, math.pi / 2, 361), (10, math.pi / 2, 361), (5, math.pi / 2, 361),
+    (100_000, math.pi / 2, 361)])
+def test_decodingspaces_ray_count_rule(rays, direction, cast):
+    """Ray counts of the plugin's full view (measured, ``data/decodingspaces2d``): the closing
+    ray is cast or not depending on the rounding of the summed step. Precision outside
+    (10, 3000) casts the one-degree rays of Precision 360."""
     # In a closed room every ray hits exactly one wall, so the hits add up to the rays cast.
-    hits = segment_ray_hits(rect(0, 0, 10, 10), (2.1, 3.3), rays, layout="decodingspaces")
+    hits = segment_ray_hits(rect(0, 0, 10, 10), (2.1, 3.3), rays, direction=direction,
+                            layout="decodingspaces")
     assert hits.sum() == cast
 
 

@@ -350,12 +350,14 @@ def segment_ray_hits(
         in [`Isovist.radial`][pysovist.Isovist.radial].
         ``"decodingspaces"``: the rays of the DeCodingSpaces Isovist
         component. The angular step is ``2 pi / n_rays`` for
-        ``10 < n_rays < 3000`` and one degree otherwise, and rays are cast
-        from ``direction - fov / 2`` in steps towards ``direction + fov / 2``,
-        which is reached when ``fov`` is a whole number of steps. A full turn
-        thus casts ``n_rays + 1`` rays, and the direction opposite to
-        ``direction`` is cast twice. The component's default view direction
-        (0, 1) is ``direction = pi / 2``.
+        ``10 < n_rays < 3000`` and one degree otherwise. The rays are cast
+        clockwise from ``direction + fov / 2`` while the angle, summed step
+        by step in floating point as the component sums it, stays short of
+        ``direction - fov / 2``. The rounding of that sum decides whether a
+        ray lands on the far edge: a full turn at ``direction = pi / 2``
+        casts ``n_rays + 1`` rays for 360 and 2,999 (the ray opposite to
+        ``direction`` twice) and ``n_rays`` rays for 15 and 100. The
+        component's default view direction (0, 1) is ``direction = pi / 2``.
 
     Returns
     -------
@@ -516,8 +518,23 @@ def _ray_angles(n_rays, fov, direction, layout):
             return np.array([direction])
         return direction - fov / 2 + fov * np.arange(n) / (n - 1)
     step = TWO_PI / n_rays if _DS_MIN_RAYS < n_rays < _DS_MAX_RAYS else _DS_FALLBACK_STEP
-    count = int(np.floor(fov / step + 1e-9)) + 1
-    return (direction - fov / 2) + step * np.arange(count)
+    return np.pi / 2 - _ds_sweep(step, fov / 2, np.pi / 2 - direction)
+
+
+def _ds_sweep(step, half, bearing):
+    """Bearings of the DeCodingSpaces rays, in radians clockwise from +y.
+
+    The plugin starts at ``bearing - half``, the left edge of the view, and adds ``step`` to
+    the angle while it stays below ``bearing + half``. The sum is rounded at every addition,
+    so the rounding decides whether a ray lands on the far edge.
+    """
+    start, end = bearing - half, bearing + half
+    if not (np.isfinite(start) and np.isfinite(end) and step > 0):
+        raise ValueError(f"the view needs finite angles and a positive step, got bearing "
+                         f"{bearing}, half view angle {half} and step {step}")
+    n = int(np.floor((end - start) / step)) + 2
+    a = np.add.accumulate(np.r_[start, np.full(n, step)])
+    return a[a < end]
 
 
 def _field_chunk(plan, origins, offset, kw, per_viewpoint):

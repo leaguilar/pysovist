@@ -10,41 +10,51 @@ the same numbers.
 
 Rays
 :   The Precision input ``Pr`` becomes an angular step of ``2 pi / Pr`` when
-    ``10 < Pr < 3000`` and of one degree otherwise, without a warning. The rays
-    sweep counter-clockwise from the view direction minus half the view angle
-    to the view direction plus half the view angle, both ends included. A full
-    view therefore has ``Pr + 1`` rays, and the last repeats the first. With
-    the default direction (0, 1, 0), the first ray points along -y.
+    ``10 < Pr < 3000`` and of one degree otherwise, without a warning. A
+    non-integer ``Pr`` is used as it is. The rays sweep clockwise, from the
+    left edge of the view (view direction plus half the view angle) towards
+    the right edge. The plugin adds the step to the angle until the angle
+    reaches the right edge, so the rounding of that sum decides whether a ray
+    lands on the right edge. A full view at the default direction has
+    ``Pr + 1`` rays for ``Pr = 360`` and ``2999`` (the last repeats the first)
+    and ``Pr`` rays for ``Pr = 15`` and ``100``. With the default direction
+    (0, 1, 0), the first ray of a full view points along -y.
 
 Ray ends
 :   A ray ends at the first obstacle line it meets, or at the view range when
     it meets none.
 
+Partial views
+:   A view angle below 360 degrees closes the polygon through the viewpoint.
+    The viewpoint then also counts as a ray of length 0: it is the first
+    vertex of the polygon and enters every statistic over the rays, so Min
+    Radial is 0.
+
 Sums over rays
-:   Standard Deviation, Variance and Skewness are sums over all rays (the
+:   Standard Deviation, Variance and Skewness are sums over all rays (a
     repeated ray included) of the absolute, squared and cubed deviation from
     the Mean Radial. They grow with the ray count.
 
 Occlusivity
-:   The sum of the polygon edges from a ray that hits a line to the next ray
-    (counter-clockwise) when that ray misses every line, or hits another line
-    that shares no end point with the first. An edge from a miss to a hit does
-    not count.
+:   The sum of the polygon edges, in the order of the sweep, that end on a ray
+    hitting a line while the previous ray misses every line (or is the
+    viewpoint), or hits another line that shares no end point with it and
+    lies more than ``DEPTH_STEP_TOL`` (1 cm) nearer or farther. An edge from
+    a hit to a miss does not count.
 
 Drift Angle
-:   The angle at the viewpoint between two points: the drift vector (centroid
-    minus viewpoint) read as a point, and the view direction read as a point.
-    It depends on where the scene lies in the plane. pysovist's
-    ``drift_angle`` is the direction of the drift.
+:   The signed angle at the viewpoint from the view direction, read as a
+    point, to the drift vector (centroid minus viewpoint), read as a point,
+    counter-clockwise positive, in (-pi, pi]. It depends on where the scene
+    lies in the plane. pysovist's ``drift_angle`` is the direction of the
+    drift.
 
 Inputs mirror the component (a view angle in degrees, a direction vector),
 which departs from the radians used elsewhere in pysovist. Agreement with the
-plugin covers full views under the default direction. Four behaviours extend
-the same rules beyond it, without a plugin reference value: the first ray
-points opposite any view direction, a view angle below 360 degrees is swept
-from edge to edge with the polygon closed through the viewpoint, lines that
-touch at a T-junction count as not connected, and the Drift Angle carries no
-sign.
+plugin covers full and partial views for view directions with a non-negative
+x component, non-integer Precision, T-junctions and walls 1 mm apart. A
+direction with a negative x component follows the same rules with the bearing
+``atan2(x, y)`` in (-pi, pi].
 """
 
 from __future__ import annotations
@@ -56,8 +66,10 @@ import numpy as np
 import pandas as pd
 from scipy.spatial import ConvexHull, QhullError
 
-from ..isovist2d import _first_hit, isovist
+from ..isovist2d import isovist
 from ..plan import Plan
+from ..rays2d import cast_rays
+from ..visibility2d import _ds_sweep
 
 DS_PROPERTY_NAMES = (
     "Area", "Distance Weighted Area", "Perimeter", "Compactness", "Circularity",
@@ -82,6 +94,11 @@ ONE_DEGREE = 0.017453292519943295
 CONNECT_TOL = 1e-9
 """Distance in metres below which two line end points count as shared (for Occlusivity)."""
 
+DEPTH_STEP_TOL = 0.01
+"""Depth step in metres up to which a change between two lines that share no end point
+continues the boundary (for Occlusivity). The plugin's own threshold lies between the 2.2 mm
+step it ignores at a T-junction and the 7.2 cm step it counts there."""
+
 
 def ds_angular_step(precision: float) -> float:
     """Angular step between the plugin's rays, in radians.
@@ -101,10 +118,17 @@ def ds_angular_step(precision: float) -> float:
     return 2 * math.pi / pr if 10.0 < pr < 3000.0 else ONE_DEGREE
 
 
-def _view_angle(view_angle_deg: float) -> float:
-    """Field of view in radians. Values outside (0, 360] mean a full view."""
+def _half_view(view_angle_deg: float) -> float:
+    """Half the field of view in radians. Values outside (0, 360] mean a full view."""
     va = float(view_angle_deg)
-    return 2 * math.pi * (va / 360.0 if 0.0 < va <= 360.0 else 1.0)
+    if not 0.0 < va <= 360.0:
+        va = 360.0
+    return va * math.pi / 180.0 / 2.0
+
+
+def _is_full(view_angle_deg: float) -> bool:
+    va = float(view_angle_deg)
+    return not 0.0 < va < 360.0
 
 
 def _direction(view_direction) -> np.ndarray:
@@ -130,16 +154,17 @@ def ds_ray_angles(precision: float = 360, *, view_angle_deg: float = 360.0,
     Returns
     -------
     ndarray
-        Angles from ``direction - fov / 2`` to ``direction + fov / 2`` in steps
-        of the angular step, both ends included. A full view at Precision ``Pr``
-        gives ``Pr + 1`` angles.
+        The angles in the plugin's order: from ``direction + fov / 2`` down in
+        steps of the angular step while above ``direction - fov / 2``, with
+        the step summed in floating point as the plugin does. The sequence
+        decreases monotonically and may leave the range (-pi, pi]. A full view
+        at Precision ``Pr`` gives ``Pr`` or ``Pr + 1`` angles, see the module
+        notes.
     """
-    step = ds_angular_step(precision)
-    fov = _view_angle(view_angle_deg)
     d = _direction(view_direction)
-    start = math.atan2(d[1], d[0]) - fov / 2
-    k = math.floor(fov / step + 1e-9)
-    return start + np.arange(k + 1) * step
+    bearing = math.atan2(d[0], d[1])  # clockwise from +y, as the plugin measures it
+    return math.pi / 2 - _ds_sweep(ds_angular_step(precision), _half_view(view_angle_deg),
+                                   bearing)
 
 
 @dataclass(frozen=True)
@@ -151,7 +176,8 @@ class DSIsovist:
     origin : ndarray of shape (2,)
         Viewpoint.
     angles : ndarray of shape (m,)
-        Ray directions, radians counter-clockwise from +x.
+        Ray directions, radians counter-clockwise from +x, in the plugin's
+        order (clockwise from the left edge of the view).
     depths : ndarray of shape (m,)
         Exact visible depth along each ray, capped at the view range. NaN when
         the viewpoint lies on a line.
@@ -161,8 +187,9 @@ class DSIsovist:
     points : ndarray of shape (m, 2)
         Ray end points (the plugin's radials end there).
     polygon : ndarray of shape (k, 2)
-        The plugin's isovist polygon, as an open ring. For a full view it is
-        ``points``. For a narrower view it starts at the viewpoint.
+        The plugin's isovist polygon, as an open ring in the plugin's order.
+        For a full view it is ``points``. For a narrower view it starts at the
+        viewpoint, which the radial statistics count as a ray of length 0.
     properties : dict
         The 17 Isovist Properties keyed by
         [`DS_PROPERTY_NAMES`][pysovist.compat.decodingspaces.DS_PROPERTY_NAMES].
@@ -209,7 +236,7 @@ def ds_isovist(occluders, viewpoint, *, view_direction=(0.0, 1.0, 0.0), view_ran
     R = float(view_range) if float(view_range) > 0 else DS_DEFAULTS["view_range"]
     dvec = _direction(view_direction)
     ang = ds_ray_angles(precision, view_angle_deg=view_angle_deg, view_direction=dvec)
-    full = _view_angle(view_angle_deg) >= 2 * math.pi
+    full = _is_full(view_angle_deg)
     u = np.c_[np.cos(ang), np.sin(ang)]
 
     iso = isovist(plan, o, max_distance=R)
@@ -221,12 +248,14 @@ def ds_isovist(occluders, viewpoint, *, view_direction=(0.0, 1.0, 0.0), view_ran
         return DSIsovist(o, ang, depths, lines, pts, poly, dict.fromkeys(DS_PROPERTY_NAMES, np.nan))
 
     depths = iso.depth(ang)
-    seg = plan.segments - o
-    t, j = _first_hit(u, seg[:, 0], seg[:, 1] - seg[:, 0])
-    lines = np.where(t < R, j, -1)
+    hits = cast_rays(plan, o, ang, max_distance=R)
+    lines = np.where(hits.distance[0] < R, hits.segment[0], -1)
     pts = o + depths[:, None] * u
-    poly = pts if full else np.vstack([o, pts])
-    props = _properties(o, dvec, depths, lines, pts, poly, plan.segments)
+    if full:
+        poly, radii, ring_lines = pts, depths, lines
+    else:  # the viewpoint comes first, as a ray of length 0 that hits nothing
+        poly, radii, ring_lines = np.vstack([o, pts]), np.r_[0.0, depths], np.r_[-1, lines]
+    props = _properties(o, dvec, radii, ring_lines, poly, plan.segments)
     return DSIsovist(o, ang, depths, lines, pts, poly, props)
 
 
@@ -277,8 +306,9 @@ def _connected(segments, a, b, tol=CONNECT_TOL) -> np.ndarray:
     return gap.reshape(len(a), 4).min(axis=1) < tol
 
 
-def _properties(o, dvec, r, lines, pts, poly, segments) -> dict:
-    x, y = poly[:, 0], poly[:, 1]
+def _properties(o, dvec, r, lines, ring, segments) -> dict:
+    """The 17 properties from the ring of the plugin's polygon, its radii and hit lines."""
+    x, y = ring[:, 0], ring[:, 1]
     xn, yn = np.roll(x, -1), np.roll(y, -1)
     cross = x * yn - xn * y
     signed = 0.5 * cross.sum()
@@ -286,17 +316,20 @@ def _properties(o, dvec, r, lines, pts, poly, segments) -> dict:
     perimeter = np.hypot(xn - x, yn - y).sum()
     centroid = np.array([((x + xn) * cross).sum(), ((y + yn) * cross).sum()]) / (6 * signed)
     try:
-        hull = ConvexHull(poly).volume
+        hull = ConvexHull(ring).volume
     except QhullError:
         hull = np.nan
 
-    # Occluding edges: from a hit to a miss, or to a line that shares no end point.
+    # Occluding edges, in the order of the sweep: onto a hit from a miss (or the viewpoint), or
+    # from a line that shares no end point with it and lies at another depth.
     a, b = lines[:-1], lines[1:]
-    occ = (a >= 0) & (b != a)
-    both = occ & (b >= 0)
+    occ = (b >= 0) & (b != a)
+    both = occ & (a >= 0)
     if both.any():
-        occ[both] = ~_connected(segments, a[both], b[both])
-    edges = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+        idx = np.nonzero(both)[0]
+        step = np.abs(r[idx + 1] - r[idx]) > DEPTH_STEP_TOL
+        occ[idx] = step & ~_connected(segments, a[idx], b[idx])
+    edges = np.linalg.norm(np.diff(ring, axis=0), axis=1)
     occlusivity = float(edges[occ].sum())
 
     mean = r.mean()
@@ -306,7 +339,7 @@ def _properties(o, dvec, r, lines, pts, poly, segments) -> dict:
 
     drift = centroid - o
     p1, p2 = drift - o, dvec - o  # both read as points, seen from the viewpoint
-    drift_angle = abs(math.atan2(p1[0] * p2[1] - p1[1] * p2[0], p1 @ p2))
+    drift_angle = math.atan2(p2[0] * p1[1] - p2[1] * p1[0], p2 @ p1)
 
     values = (
         area, area, perimeter, 4 * math.pi * area / perimeter**2, math.pi * mean**2 / area,

@@ -176,27 +176,35 @@ def test_step_falls_back_to_one_degree(pr):
     assert ds_angular_step(pr) == ONE_DEGREE
 
 
-@pytest.mark.parametrize("pr, n", [(360, 361), (12, 13), (15, 16), (2999, 3000), (3000, 361),
+@pytest.mark.parametrize("pr, n", [(360, 361), (15, 15), (100, 100), (2999, 3000), (3000, 361),
                                    (10, 361), (36000, 361)])
-def test_full_view_casts_one_more_ray_than_the_count(pr, n):
+def test_full_view_sweeps_one_turn_clockwise_from_minus_y(pr, n):
+    """Ray counts of the plugin at the default direction: 361, 15, 100 and 3,000 (measured,
+    ``data/decodingspaces2d``). Precision outside (10, 3000) gives the one-degree rays of
+    Precision 360 (the plugin's areas at 3,000 and above equal its 360-ray areas, see the
+    hospital test below)."""
     ang = ds_ray_angles(pr)
     assert len(ang) == n
-    assert ang[0] == pytest.approx(-math.pi / 2, abs=1e-15)
-    assert ang[-1] == pytest.approx(-math.pi / 2 + 2 * math.pi, abs=1e-12)
-    np.testing.assert_allclose(np.diff(ang), ds_angular_step(pr), rtol=1e-12)
+    first = np.array([math.cos(ang[0]), math.sin(ang[0])])
+    np.testing.assert_allclose(first, [0.0, -1.0], atol=1e-15)
+    np.testing.assert_allclose(np.diff(ang), -ds_angular_step(pr), rtol=1e-9)
+    assert ang[0] - ang[-1] <= 2 * math.pi + 1e-12
 
 
 def test_rays_start_opposite_the_view_direction():
+    """Direction (1, 0): the first ray points along -x (measured, 361 rays)."""
     ang = ds_ray_angles(360, view_direction=(1.0, 0.0, 0.0))
-    assert ang[0] == pytest.approx(-math.pi)
+    np.testing.assert_allclose([math.cos(ang[0]), math.sin(ang[0])], [-1.0, 0.0], atol=1e-15)
     assert len(ang) == 361
 
 
-def test_partial_view_is_swept_edge_to_edge_at_the_same_step():
+def test_partial_view_is_swept_from_the_left_edge_at_the_same_step():
+    """A 90-degree view along +y at Precision 360: rays from 135 degrees down to 46 degrees;
+    the summed step stops short of the right edge at 45 degrees (measured)."""
     ang = ds_ray_angles(360, view_angle_deg=90.0, view_direction=(0.0, 1.0, 0.0))
-    assert len(ang) == 91
-    assert ang[0] == pytest.approx(math.radians(45))
-    assert ang[-1] == pytest.approx(math.radians(135))
+    assert len(ang) == 90
+    assert ang[0] == pytest.approx(math.radians(135), abs=1e-15)
+    assert ang[-1] == pytest.approx(math.radians(46), abs=1e-12)
 
 
 @pytest.mark.parametrize("va", [0.0, -90.0, 400.0])
@@ -277,19 +285,23 @@ def test_polygon_area_is_the_ray_polygon_of_pysovist():
 # --- occlusivity: which polygon edges count ---------------------------------------------------
 
 def _single_wall():
-    return np.array([[[-1.0, 2.0], [1.0, 2.0]]])
+    return np.array([[[-1.0, 2.0], [2.0, 2.0]]])
 
 
-def test_occlusivity_counts_the_edge_from_a_hit_to_a_miss_only():
-    # One wall ahead, range 3: the ccw sweep enters the wall from a miss and leaves it to a miss.
+def test_occlusivity_counts_the_edge_from_a_miss_onto_a_hit_only():
+    """One wall ahead, off-centre, range 3. The clockwise sweep meets the wall at its left end,
+    2.24 m away, and leaves it at its right end, 2.83 m away. Only the edge from the last miss
+    onto the first hit counts, as on the plugin's T-junction and partial-view records."""
     res = ds_isovist(_single_wall(), (0.0, 0.0), view_range=3.0, precision=360)
-    lines = res.lines
+    lines, pts = res.lines, res.points
     enter = np.nonzero((lines[:-1] < 0) & (lines[1:] >= 0))[0]
     leave = np.nonzero((lines[:-1] >= 0) & (lines[1:] < 0))[0]
     assert len(enter) == len(leave) == 1
-    pts = res.points
-    edge = np.linalg.norm(pts[leave[0] + 1] - pts[leave[0]])
-    assert res.properties["Occlusivity"] == pytest.approx(edge, rel=1e-12)
+    assert pts[enter[0] + 1, 0] < 0 < pts[leave[0], 0]  # the sweep runs from -x to +x
+    onto = np.linalg.norm(pts[enter[0] + 1] - pts[enter[0]])
+    off = np.linalg.norm(pts[leave[0] + 1] - pts[leave[0]])
+    assert onto > 0.7 and off < 0.2
+    assert res.properties["Occlusivity"] == pytest.approx(onto, rel=1e-12)
 
 
 def test_occlusivity_ignores_corners_and_counts_jumps_behind_a_pillar():

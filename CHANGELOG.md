@@ -2,29 +2,50 @@
 
 ## 0.2.0
 
-The visibility tools of the DeCodingSpaces toolbox for Grasshopper, in pysovist. Every result of 0.1.2 is unchanged: the
-existing functions keep their arguments, defaults and values, which tests pin. The one exception is a closing polygon
-that leaves walls outside, which now raises an error instead of adding its edges as walls without a message.
+The visibility tools of the DeCodingSpaces toolbox for Grasshopper, in pysovist, and checked inputs everywhere. Every
+public function is tested against an independent reference: a closed form, an independent library, a brute-force
+search, an identity between two routes that share no code, or measured outputs of the plugin. Every code example of
+the documentation runs as a test. Every valid input of 0.1.2 gives the same result, which the pin tests assert, with
+two exceptions. Point clouds in `.pts` files and the CSV files of the command line are now parsed to the nearest float,
+where the fast parser returned some coordinates one unit in the last place off. `Isovist.polygon` of a field of view
+now ends at the observer, so every ring repeats its first point.
 
-- A closing polygon must hold the plan. Every edge of the polygon becomes a wall, the edge from the last vertex back to
-  the first included, so a polygon that leaves walls outside cuts through the building. `Mesh.from_plan`, the new
-  `Mesh.check_closing` and the `--close` option of `pysovist isovist` and `pysovist volume` raise a `ValueError` when a
-  wall lies mostly (more than half its length) outside the polygon. Walls that end on it, run along it or reach past it
-  pass. A plan that already includes its outline needs no polygon, and the error says so.
+New functions
 
 - Obstacle visibility: `segment_visibility` gives the exact visible length, fraction and parts of every wall seen from a
   viewpoint, `segment_visibility_field` sums it over many viewpoints (for example along a path), and `segment_ray_hits`
   counts ray hits per wall.
 - Directed view volumes: `view_volume` and `view_volume_field` take a horizontal and vertical field of view, a view
   direction and an elevation, and angle-grid directions with exact cell solid angles (`angle_grid`). Rays report the
-  object they hit (`Mesh.combine`, `Mesh.cast_hits`, `ViewVolume.hits_per_object`), and the sky, ground and object
-  factors give the shares of the field that escape, meet the ground or meet other objects.
+  object they hit (`Mesh.combine`, `Mesh.cast_hits`, `ViewVolume.hits_per_object`, `ViewVolume.n_objects`), and the
+  sky, ground and object factors give the shares of the field that escape, meet the ground or meet other objects.
 - Plan tools: `cast_rays` casts single 2D rays and returns the distance, hit point and wall index. `Plan.flood_grid`
   builds an analysis grid flooded from a seed point. `path_isovists` computes exact isovists along a path, looking along
   it. `vertical_isovist` computes exact isovists in the vertical plane through the eye, cut from a mesh.
-- DeCodingSpaces compatibility: `pysovist.compat.decodingspaces` reproduces the 17 properties of the plugin's 2D Isovist
-  component, with its ray layout and its ray-count rule, and `pysovist.compat.decodingspaces3d` reproduces its Isovist3D
-  component (ray layout, lengths, surface ids, hits per mesh and volume).
+- DeCodingSpaces compatibility: `pysovist.compat.decodingspaces` reproduces the plugin's 2D Isovist component (its 17
+  properties, polygon, radials and hits per line, ray by ray), and `pysovist.compat.decodingspaces3d` reproduces its
+  Isovist3D component (ray layout, lengths, surface ids, hits per mesh and volume). The conventions of both are measured
+  from the plugin and listed on the DeCodingSpaces page, with the agreement on every measured record.
+
+Checked inputs
+
+- A closing polygon must hold the plan. Every edge of the polygon becomes a wall, the edge from the last vertex back to
+  the first included, so a polygon that leaves walls outside cuts through the building. `Mesh.from_plan`, the new
+  `Mesh.check_closing` and the `--close` option of the commands raise a `ValueError` when a wall lies mostly (more than
+  half its length) outside the polygon. Walls that end on it, run along it or reach past it pass. A plan that already
+  includes its outline needs no polygon, and the error says so.
+- Inputs that returned a number without a message, or crashed, now raise a `ValueError` that says what is wrong and
+  what to do: coordinates that are not finite, arrays of the wrong shape, an empty scene, a missing or empty mesh or
+  point-cloud file, walls on one line, a closing polygon without area, a range, field of view, spacing or eps of zero or
+  below, counts that are not whole numbers, a near clip at or beyond the range, ground ids the scene does not have, and
+  a ball radius of NaN or infinity, which crashed the interpreter.
+- The commands check every input before they compute and stop with a message before they write anything: an output
+  that would overwrite an input, a points file without finite coordinates, a plan without valid walls, an option that
+  does not apply to the scene, a section plane that cuts no ball, and an eye outside an extruded plan. The ODTP mode
+  names the variable it needs.
+- Defined results instead of errors: `Isovist.depth` and `Isovist.radial` give NaN for an isovist flagged `on_wall` or
+  `unbounded`, `sampled_metrics` of a flagged isovist follows its flags, and an eye outside a closed mesh is flagged
+  `unbounded` with its escape fraction. `isovist_field` and `segment_visibility_field` take a single point.
 
 ## 0.1.2
 

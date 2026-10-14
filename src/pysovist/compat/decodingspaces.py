@@ -40,10 +40,14 @@ Sums over rays
 Occlusivity
 :   The sum of the polygon edges, in the order of the sweep, that end on a ray
     hitting a line while the previous ray misses every line (or is the
-    viewpoint), or hits another line that shares no end point with it and
-    lies more than ``DEPTH_STEP_TOL`` (1 cm) nearer or farther. An edge from
-    a hit to a miss does not count, and neither does the edge from the last
-    ray back to the first.
+    viewpoint), or hits another line that lies more than ``DEPTH_STEP_TOL``
+    (1 cm) nearer or farther and is not connected to it. The plugin decides
+    "connected" from the end of the new line nearest to the new hit point:
+    the two lines are connected when the previous line ends there. Two walls
+    meeting at a corner thus count as connected while the new hit lies on the
+    half of its wall next to the corner, and as an occluding edge beyond it.
+    An edge from a hit to a miss does not count, and neither does the edge
+    from the last ray back to the first.
 
 Drift Angle
 :   The signed angle at the viewpoint from the view direction, read as a
@@ -55,11 +59,9 @@ Drift Angle
 Inputs mirror the component (a view angle in degrees, a direction vector),
 which departs from the radians used elsewhere in pysovist. Agreement with the
 plugin covers full and partial views in every view direction, non-integer
-Precision, T-junctions, walls 1 mm apart, settings outside their range and a
-direction list shorter than the viewpoints. Whether the plugin closes the
-Occlusivity sum with the edge from the last ray back to the first, when that
-edge bridges an occluding edge, is not covered by a reference: the module
-leaves it out.
+Precision, T-junctions, walls 1 mm apart, corners seen from far along a wall,
+the gap from the last ray back to the first, settings outside their range and
+a direction list shorter than the viewpoints.
 """
 
 from __future__ import annotations
@@ -97,7 +99,8 @@ ONE_DEGREE = 0.017453292519943295
 """Fallback angular step in radians, as stored in the plugin."""
 
 CONNECT_TOL = 1e-9
-"""Distance in metres below which two line end points count as shared (for Occlusivity)."""
+"""Distance in metres below which two line end points count as the same point (for
+Occlusivity)."""
 
 DEPTH_STEP_TOL = 0.01
 """Depth step in metres up to which a change between two lines that share no end point
@@ -361,11 +364,20 @@ def ds_isovist_properties(occluders, viewpoints, *, view_direction=(0.0, 1.0, 0.
     return pd.DataFrame(rows, columns=["x", "y", *DS_PROPERTY_NAMES])
 
 
-def _connected(segments, a, b, tol=CONNECT_TOL) -> np.ndarray:
-    """Whether segments ``a[i]`` and ``b[i]`` share an end point."""
+def _connected(segments, a, b, q, tol=CONNECT_TOL) -> np.ndarray:
+    """Whether line ``a[i]`` ends where line ``b[i]`` ends nearest to the hit point ``q[i]``.
+
+    This is the plugin's corner test: it takes the end of the newly hit line ``b`` nearest
+    to the new hit point and asks whether the previous line ``a`` has an end point there. Two
+    lines that meet at a corner are therefore connected only while the hit lies on the half
+    of ``b`` next to the corner.
+    """
     ea, eb = segments[a], segments[b]
-    gap = np.linalg.norm(ea[:, :, None, :] - eb[:, None, :, :], axis=-1)
-    return gap.reshape(len(a), 4).min(axis=1) < tol
+    near_first = (np.linalg.norm(q - eb[:, 0], axis=1)
+                  <= np.linalg.norm(q - eb[:, 1], axis=1))
+    end = np.where(near_first[:, None], eb[:, 0], eb[:, 1])
+    gap = np.linalg.norm(ea - end[:, None, :], axis=-1)
+    return gap.min(axis=1) < tol
 
 
 def _properties(o, dvec, r, lines, ring, segments) -> dict:
@@ -383,14 +395,14 @@ def _properties(o, dvec, r, lines, ring, segments) -> dict:
         hull = np.nan
 
     # Occluding edges, in the order of the sweep: onto a hit from a miss (or the viewpoint), or
-    # from a line that shares no end point with it and lies at another depth.
+    # from a line at another depth that the plugin's corner test does not connect to it.
     a, b = lines[:-1], lines[1:]
     occ = (b >= 0) & (b != a)
     both = occ & (a >= 0)
     if both.any():
         idx = np.nonzero(both)[0]
         step = np.abs(r[idx + 1] - r[idx]) > DEPTH_STEP_TOL
-        occ[idx] = step & ~_connected(segments, a[idx], b[idx])
+        occ[idx] = step & ~_connected(segments, a[idx], b[idx], ring[idx + 1])
     edges = np.linalg.norm(np.diff(ring, axis=0), axis=1)
     occlusivity = float(edges[occ].sum())
 

@@ -229,7 +229,11 @@ class Mesh:
         Returns
         -------
         Mesh
-            The walls, the floor and the ceiling, as one object.
+            The walls, the floor and the ceiling, as one object. An eye outside
+            the closed domain (beside the building, in the notch of a concave
+            outline, above the ceiling) sees out of it: its rays escape, so
+            ``view_volume`` flags it ``unbounded`` without a range limit and
+            reports the share that escapes as ``escape_fraction``.
 
         Raises
         ------

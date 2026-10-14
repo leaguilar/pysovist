@@ -88,6 +88,34 @@ def test_extrusion_heights_must_be_finite(kw):
         Mesh.from_plan(SQUARE, **kw)
 
 
+@pytest.mark.parametrize("close, eye", [
+    ([(0, 0), (10, 0), (10, 4), (4, 4), (4, 9), (0, 9)], (7.0, 6.0, 1.2)),  # in the L's notch
+    ("hull", (12.0, 3.0, 1.2)),  # beside the building
+    ("hull", (5.0, 3.0, 3.5)),  # above the ceiling
+])
+def test_an_eye_outside_the_closed_domain_is_flagged_unbounded(close, eye):
+    # A defined result: rays leave the domain, so the eye is flagged unbounded without a range
+    # limit, and escape_fraction reports the share that leaves with one.
+    plan = [[(0, 0), (10, 0)], [(10, 0), (10, 4)], [(10, 4), (4, 4)], [(4, 4), (4, 9)],
+            [(4, 9), (0, 9)], [(0, 9), (0, 0)]]
+    mesh = Mesh.from_plan(plan, floor=0.0, ceiling=2.7, close=close)
+    vv = view_volume(mesh, eye, n_rays=4096)
+    assert vv.flags.unbounded and math.isinf(vv.volume)
+    ranged = view_volume(mesh, eye, n_rays=4096, max_distance=50.0)
+    assert 0 < ranged.metrics["escape_fraction"] < 1 and not ranged.flags.unbounded
+    inside = view_volume(mesh, (2.0, 2.0, 1.2), n_rays=4096)
+    assert not inside.flags.unbounded and inside.metrics["escape_fraction"] == 0.0
+
+
+def test_duplicate_and_zero_length_walls_change_no_view_volume():
+    # A defined result: a repeated wall, a reversed copy and a wall of zero length add no
+    # surface that a ray could meet first.
+    extra = SQUARE + [[(3, 3), (3, 3)], [(0, 0), (10, 0)], [(10, 6), (10, 0)]]
+    a = view_volume(Mesh.from_plan(SQUARE, ceiling=2.7), (4, 2, 1.5), n_rays=8192)
+    b = view_volume(Mesh.from_plan(extra, ceiling=2.7), (4, 2, 1.5), n_rays=8192)
+    assert a.volume == b.volume and not b.flags.on_wall
+
+
 @pytest.mark.parametrize("ring, match", [
     ([(0, 0), (0, 0), (10, 6)], "three distinct corners"),
     ([(0, 0), (5, 3), (10, 6)], "three distinct corners"),

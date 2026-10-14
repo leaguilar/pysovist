@@ -35,6 +35,10 @@ Ray-sampling tools describe the same isovist by the polygon through \(N\) hit po
 - [Conventions](conventions.md): units, plans, eye heights, flags, the policies of `view_volume` and the choice of the ball radius.
 - [Metric definitions](metrics.md): the formula and source of every metric, and how the outputs of the Grasshopper isovist components map to pysovist.
 - [Verification](verification.md): what the test suite checks, and to which tolerance.
+- [Obstacle visibility](obstacle-visibility.md): which walls an observer sees and how much of each, summed along a path, and ray hits per wall.
+- [Directed view volumes](directed-volumes.md): view volumes within a field of view, objects hit by each ray, and the sky, ground and object factors.
+- [Plan tools](plan-tools.md): single rays, an analysis grid flooded from a seed, isovists along a path and isovists in a vertical plane.
 - [Unity compatibility](unity.md): a preset that reproduces a Unity view-volume estimator.
+- [DeCodingSpaces compatibility](decodingspaces.md): the properties of the DeCodingSpaces isovist components for Grasshopper, reproduced from the exact isovist.
 - [API reference](api/isovists.md): every public class and function, and the [command line](api/cli.md).
 - [How to cite](cite.md).

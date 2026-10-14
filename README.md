@@ -66,7 +66,7 @@ Ray-sampling tools describe the same isovist by the polygon through N hit points
 
 ## Verification
 
-- 2D: closed-form scenes (square, hallway, regular polygons, L-shaped room, room with a pillar, open room with a range limit, fields of view) agree to a relative 1e-9 (absolute 1e-9 for values of zero). Random rooms agree with the visilibity library and with a polygon shadow construction to 1e-7, and the results are invariant under rigid motion and scaling.
+- 2D: closed-form scenes (square, hallway, regular polygons, L-shaped room, room with a pillar, open room with a range limit, fields of view) agree to 1e-9 (relative, or absolute for values below 1). Random rooms agree with the visilibity library and with a polygon shadow construction to 1e-7, and the results are invariant under rigid motion and scaling.
 - 3D: closed-form volumes (cube, pyramid, sphere mesh, convex hulls, a cube clipped by a range sphere) agree to a relative 1e-4 at 65,536 directions (2e-4 for random hulls), and the error on the cube falls faster than N^-1/2. On an extruded floor plan the view volume equals the ceiling height times the exact 2D isovist area, to 1e-3 at 65,536 directions.
 - Point clouds: the ball ray caster agrees with a brute-force first hit to 1e-12.
 
@@ -81,7 +81,7 @@ behaviour paper. GitHub's "Cite this repository" button gives the software refer
 @software{pysovist,
   author  = {Aguilar, Leonel and Tuncay, Bartu},
   title   = {pysovist: exact isovists and view volumes from floor plans, meshes and point clouds},
-  version = {0.1.2},
+  version = {0.2.0},
   year    = {2026},
   url     = {https://github.com/leaguilar/pysovist}
 }

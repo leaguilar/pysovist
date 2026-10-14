@@ -114,6 +114,11 @@ class Mesh:
         -------
         Mesh
             The combined scene, with ``object_ids`` set.
+
+        Raises
+        ------
+        ValueError
+            When ``meshes`` is empty.
         """
         meshes = list(meshes)
         if not meshes:
@@ -334,9 +339,16 @@ class Mesh:
         -------
         Plan
             One wall segment per crossing triangle.
+
+        Raises
+        ------
+        ValueError
+            When ``z`` is not finite.
         """
         from .plan import Plan
 
+        if not np.isfinite(z):
+            raise ValueError("z must be a finite height in metres")
         v, t = self.vertices, self.triangles
         above = v[:, 2] > z
         n_above = above[t].sum(axis=1)
@@ -492,9 +504,22 @@ class Mesh:
         return np.linalg.norm(o - _closest_on_triangles(o, a, b, c), axis=1)
 
     def blocked(self, origins, eps: float, near_clip: float = 0.0) -> np.ndarray:
-        """True where an origin (m, 3) is closer than ``eps`` to a surface that ``near_clip`` keeps.
+        """True where an origin is closer than ``eps`` to a surface that ``near_clip`` keeps.
 
-        Surfaces closer than ``near_clip`` to the origin are ignored, as in ``cast``.
+        Parameters
+        ----------
+        origins : array_like of shape (m, 3)
+            Points in metres, finite.
+        eps : float
+            Clearance in metres below which a point counts as on a surface.
+        near_clip : float
+            Surfaces closer than this to the point are ignored, as in
+            ``cast``. Default 0.
+
+        Returns
+        -------
+        ndarray of shape (m,)
+            True for the points on a surface.
         """
         cl = self.clearance(origins)
         return (cl < eps) & (cl >= near_clip)

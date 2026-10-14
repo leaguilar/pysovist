@@ -243,12 +243,18 @@ class PointCloud:
         return {"median": float(q[0]), "p90": float(q[1]), "p99": float(q[2])}
 
     def clearance(self, origins, radius: float | None = None) -> np.ndarray:
-        """Distance from each origin (m, 3) to the nearest ball surface (negative inside a ball).
+        """Distance in metres from each origin (m, 3) to the nearest ball surface.
 
-        ``radius`` overrides the cloud's own radius.
+        Negative inside a ball, ``inf`` for an empty cloud. ``radius``
+        overrides the cloud's own radius.
+
+        Raises
+        ------
+        ValueError
+            When ``radius`` is not positive and finite.
         """
         o = np.asarray(origins, dtype=float).reshape(-1, 3)
-        r = self.radius if radius is None else float(radius)
+        r = self.radius if radius is None else _radius(radius)
         if len(self) == 0:
             return np.full(len(o), np.inf)
         d, _ = self._tree().query(o)
@@ -261,7 +267,21 @@ class PointCloud:
     def blocked(self, origins, eps: float, near_clip: float = 0.0) -> np.ndarray:
         """True where an origin lies inside a ball, or within ``eps`` of one.
 
-        Balls whose centre is closer than ``near_clip`` are ignored, as in ``cast``.
+        Parameters
+        ----------
+        origins : array_like of shape (m, 3)
+            Points in metres.
+        eps : float
+            Distance in metres from a ball surface below which a point counts
+            as inside.
+        near_clip : float
+            Balls whose centre is closer than this are ignored, as in
+            ``cast``. Default 0.
+
+        Returns
+        -------
+        ndarray of shape (m,)
+            True for the points inside a ball.
         """
         o = np.asarray(origins, dtype=float).reshape(-1, 3)
         reach = self.radius + eps
@@ -277,7 +297,11 @@ class PointCloud:
         return out
 
     def grid(self, cell_size: float | None = None):
-        """Ball grid for ray casting, built once per radius and cell size."""
+        """Ball grid for ray casting, built once per radius and cell size.
+
+        See [`build_ball_grid`][pysovist.raycast.build_ball_grid] for the
+        cell size (default twice the radius) and the errors.
+        """
         from .raycast import build_ball_grid
 
         key = ("grid", self.radius, cell_size)
@@ -290,8 +314,10 @@ class PointCloud:
         """First-hit distance (m, n) of rays from ``origins`` (m, 3) along ``directions`` (n, 3).
 
         ``0`` for rays that start inside a ball, ``inf`` when no ball is hit
-        within ``max_distance``. Balls whose centre is closer than
-        ``near_clip`` to the ray's origin are ignored.
+        within ``max_distance`` (default: none). Balls whose centre is closer
+        than ``near_clip`` (default 0) to the ray's origin are ignored.
+        ``n_threads`` sets the threads, all by default. The errors are those
+        of [`cast_balls`][pysovist.raycast.cast_balls].
         """
         from .raycast import cast_balls
 

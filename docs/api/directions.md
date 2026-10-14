@@ -13,3 +13,5 @@ Direction sets for view volumes and horizontal sections.
 ::: pysovist.directions.angle_grid
 
 ::: pysovist.directions.in_field_of_view
+
+::: pysovist.directions.check_field_of_view

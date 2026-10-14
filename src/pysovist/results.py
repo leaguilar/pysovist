@@ -109,9 +109,24 @@ class Isovist:
         """Exact visible depth along ``n`` equally spaced rays.
 
         The rays start at ``offset`` (radians, absolute) for a full circle, or
-        span the field of view otherwise, both edges included. Returns
-        ``(angles, depths)``. This is how a ray-sampling tool, such as the
-        Grasshopper isovist components, sees the same scene.
+        span the field of view otherwise, both edges included. This is how a
+        ray-sampling tool, such as the Grasshopper isovist components, sees
+        the same scene.
+
+        Parameters
+        ----------
+        n : int
+            Number of rays.
+        offset : float
+            Angle of the first ray of a full circle, in radians. Default 0.
+            Unused for a field of view below a full turn.
+
+        Returns
+        -------
+        angles : ndarray of shape (n,)
+            Absolute ray angles in radians.
+        depths : ndarray of shape (n,)
+            Visible depth along each ray in metres.
 
         Raises
         ------

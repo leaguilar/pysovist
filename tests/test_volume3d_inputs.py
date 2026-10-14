@@ -115,6 +115,18 @@ def test_mesh_rays_must_be_finite_and_non_zero(method):
         f([(0, 0, 0)], [(1, 0, 0)], max_distance=0.0)
 
 
+@pytest.mark.parametrize("z", [np.nan, np.inf])
+def test_mesh_section_height_must_be_finite(z):
+    # A NaN height used to give an empty plan.
+    with pytest.raises(ValueError, match="finite"):
+        BOX.section(z)
+
+
+def test_point_cloud_clearance_radius_must_be_positive_and_finite():
+    with pytest.raises(ValueError, match="radius"):
+        CLOUD.clearance([(0, 0, 0)], radius=np.nan)
+
+
 def test_mesh_clearance_needs_finite_points():
     with pytest.raises(ValueError, match="origin"):
         BOX.clearance([(np.nan, 0, 0)])

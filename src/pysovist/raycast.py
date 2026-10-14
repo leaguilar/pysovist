@@ -394,7 +394,10 @@ def first_hit_bruteforce(points, radius: float, origins, directions, *,
                          near_clip: float = 0.0) -> np.ndarray:
     """Reference for ``cast_balls``: the minimum over all balls, with the same arithmetic.
 
-    Quadratic in the number of balls. Meant for tests.
+    Quadratic in the number of balls. Meant for tests. The parameters and the
+    result are those of [`cast_balls`][pysovist.raycast.cast_balls], with the
+    ball centres ``points`` (n, 3) and their ``radius`` in place of a grid,
+    and no range limit.
     """
     c = np.asarray(points, dtype=float).reshape(-1, 3)
     o = np.asarray(origins, dtype=float).reshape(-1, 3)
@@ -431,8 +434,23 @@ def section_disks(points, radius: float, z_eye: float) -> tuple[np.ndarray, np.n
     """Disks in which the plane ``z = z_eye`` cuts balls of radius ``radius``.
 
     A point with ``|z - z_eye| < radius`` gives a disk of radius
-    ``sqrt(radius^2 - (z - z_eye)^2)`` around its (x, y). Returns the centres
-    (k, 2) and radii (k,).
+    ``sqrt(radius^2 - (z - z_eye)^2)`` around its (x, y).
+
+    Parameters
+    ----------
+    points : array_like of shape (n, 3)
+        Ball centres in metres.
+    radius : float
+        Ball radius in metres.
+    z_eye : float
+        Height of the plane in metres.
+
+    Returns
+    -------
+    centers : ndarray of shape (k, 2)
+        Disk centres in plan.
+    radii : ndarray of shape (k,)
+        Disk radii in metres.
     """
     p = np.asarray(points, dtype=float).reshape(-1, 3)
     dz = p[:, 2] - float(z_eye)
@@ -481,7 +499,9 @@ def build_disk_grid(centers, radii, cell_size: float | None = None,
                     max_cells: int = MAX_CELLS) -> DiskGrid:
     """Sort disks (centres (k, 2), radii (k,)) into a 2D grid of cell edge ``cell_size``.
 
-    The default cell edge is the largest disk diameter.
+    The default cell edge is the largest disk diameter, and the grid coarsens
+    beyond ``max_cells`` cells (default 2^27). The result does not depend on
+    the cell size, only the speed does.
 
     Raises
     ------
@@ -583,7 +603,9 @@ def cast_disks(grid: DiskGrid, origins, directions, *, max_distance: float = np.
     """First-hit distance (m, n) of 2D rays from ``origins`` (m, 2) along ``directions`` (n, 2).
 
     ``0`` for rays that start inside a disk, ``inf`` when no disk is hit
-    within ``max_distance``.
+    within ``max_distance`` (default: none). ``grid`` comes from
+    ``build_disk_grid``, the directions are normalised internally, and
+    ``n_threads`` sets the threads, all by default.
 
     Raises
     ------
@@ -607,7 +629,12 @@ def cast_disks(grid: DiskGrid, origins, directions, *, max_distance: float = np.
 
 
 def first_hit_disks_bruteforce(centers, radii, origins, directions) -> np.ndarray:
-    """Reference for ``cast_disks``: the minimum over all disks, with the same arithmetic."""
+    """Reference for ``cast_disks``: the minimum over all disks, with the same arithmetic.
+
+    The parameters and the result are those of
+    [`cast_disks`][pysovist.raycast.cast_disks], with the disk ``centers``
+    (k, 2) and ``radii`` (k,) in place of a grid, and no range limit.
+    """
     c = np.asarray(centers, dtype=float).reshape(-1, 2)
     r2 = np.asarray(radii, dtype=float).reshape(-1) ** 2
     o = np.asarray(origins, dtype=float).reshape(-1, 2)

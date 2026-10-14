@@ -4,7 +4,7 @@
 
 The visibility tools of the DeCodingSpaces toolbox for Grasshopper, in pysovist. Every result of 0.1.2 is unchanged: the
 existing functions keep their arguments, defaults and values, which tests pin. The one exception is a closing polygon
-that leaves walls outside, which now raises an error instead of returning a wrong volume.
+that leaves walls outside, which now raises an error instead of adding its edges as walls without a message.
 
 - A closing polygon must hold the plan. Every edge of the polygon becomes a wall, the edge from the last vertex back to
   the first included, so a polygon that leaves walls outside cuts through the building. `Mesh.from_plan`, the new

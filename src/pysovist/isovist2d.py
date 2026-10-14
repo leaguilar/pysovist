@@ -13,7 +13,7 @@ from __future__ import annotations
 import numpy as np
 
 from .metrics2d import nan_metrics, wedge_metrics
-from .plan import Plan
+from .plan import Plan, _point2d, _view_settings
 from .results import ARC, SEGMENT, Flags, Isovist
 
 TWO_PI = 2 * np.pi
@@ -37,14 +37,16 @@ def isovist(
     ----------
     occluders : Plan or array_like of shape (n, 2, 2)
         Wall segments.
-    origin : (x, y)
-        Observer position.
+    origin : (x, y) or (x, y, z)
+        Observer position. A third coordinate is ignored.
     max_distance : float
-        Range limit in metres. Rays that meet no wall within this distance end
-        on the range circle. With the default ``inf``, an escaping ray makes
-        the isovist unbounded (area ``inf``, ``flags.unbounded``).
+        Range limit in metres, positive. Rays that meet no wall within this
+        distance end on the range circle. With the default ``inf``, an
+        escaping ray makes the isovist unbounded (area ``inf``,
+        ``flags.unbounded``).
     fov : float
-        Field of view in radians, centred on ``direction``. Default: full turn.
+        Field of view in radians, positive, centred on ``direction``. Values
+        of 2 pi and above mean the full turn. Default: full turn.
     direction : float
         Viewing direction in radians, counter-clockwise from +x. Used only when
         ``fov`` is below a full turn.
@@ -53,19 +55,27 @@ def isovist(
         an isovist with NaN metrics and ``flags.on_wall`` set, or raise a
         ``ValueError``.
     eps : float
-        Distance below which the observer counts as standing on a wall.
+        Distance in metres, positive, below which the observer counts as
+        standing on a wall.
 
     Returns
     -------
     Isovist
         Wedges, flags and metrics of the observer.
+
+    Raises
+    ------
+    ValueError
+        When ``on_wall="raise"`` and the observer stands on a wall, when the
+        origin is not one finite point, when ``max_distance``, ``fov`` or
+        ``eps`` is not positive (NaN included), when ``direction`` is not
+        finite, or when ``on_wall`` is not one of its two values.
     """
     if on_wall not in _ON_WALL_POLICIES:
         raise ValueError(f"on_wall must be one of {_ON_WALL_POLICIES}")
     plan = occluders if isinstance(occluders, Plan) else Plan(occluders)
-    o = np.asarray(origin, dtype=float)[:2]
-    R = float(max_distance)
-    fov = float(min(fov, TWO_PI))
+    o = _point2d(origin, "origin")
+    R, fov, direction, eps = _view_settings(max_distance, fov, direction, eps)
     full = fov >= TWO_PI - _ANGLE_TOL
     start = 0.0 if full else float(direction) - fov / 2
 

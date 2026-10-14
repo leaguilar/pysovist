@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pytest
 
-from pysovist import Plan, isovist
+from pysovist import METRIC_NAMES, Plan, isovist
 
 from .geometry import polygon_walls, rect, regular_ngon
 
@@ -109,8 +109,11 @@ def test_open_room_with_range():
 def test_open_room_without_range_is_unbounded():
     walls = np.array([[(0, 10), (0, 0)], [(0, 0), (10, 0)], [(10, 0), (10, 10)]], dtype=float)
     iso = isovist(Plan(walls), (5, 5))
-    assert iso.flags.unbounded
-    assert math.isinf(iso.area)
+    assert iso.flags.unbounded and not iso.flags.on_wall
+    assert iso.area == iso.perimeter == math.inf
+    rest = [v for k, v in iso.metrics.items() if k not in ("area", "perimeter")]
+    assert len(rest) == len(METRIC_NAMES) - 2 and all(math.isnan(v) for v in rest)
+    assert iso.polygon().shape == (0, 2)
 
 
 # --- field of view ----------------------------------------------------------------------------
@@ -132,10 +135,23 @@ def test_field_of_view_wedges_add_up():
 
 # --- degenerate input -------------------------------------------------------------------------
 
-def test_observer_on_a_wall_is_flagged():
-    iso = isovist(Plan(rect(0, 0, 10, 10)), (5, 0))
-    assert iso.flags.on_wall
-    assert math.isnan(iso.area)
+@pytest.mark.parametrize("origin", [(5, 0), (0, 0), (5, 1e-12), (10 - 5e-10, 5)])
+def test_observer_on_a_wall_is_flagged(origin):
+    """On a wall, at a corner, and closer than eps = 1e-9 to a wall: every metric is NaN, the
+    isovist has no wedges and no polygon."""
+    iso = isovist(Plan(rect(0, 0, 10, 10)), origin)
+    assert iso.flags.on_wall and not iso.flags.unbounded
+    assert tuple(iso.metrics) == METRIC_NAMES
+    assert all(math.isnan(v) for v in iso.metrics.values())
+    assert len(iso.theta0) == 0 and iso.polygon().shape == (0, 2)
+    assert iso.clearance < 1e-9
+
+
+def test_observer_just_beyond_eps_is_not_on_the_wall():
+    """At 2e-9 from a wall with eps = 1e-9 the room is whole: area 100 (closed form)."""
+    iso = isovist(Plan(rect(0, 0, 10, 10)), (5, 2e-9))
+    assert not iso.flags.on_wall
+    assert iso.area == pytest.approx(100.0, rel=1e-12)
 
 
 def test_observer_on_a_wall_can_raise():

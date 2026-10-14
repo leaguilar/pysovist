@@ -51,13 +51,17 @@ def sample_path(path, spacing: float, *, endpoint: bool = True
     Raises
     ------
     ValueError
-        When ``spacing`` is not positive, or the path has fewer than two
-        distinct vertices.
+        When ``spacing`` is not a positive finite number, when a vertex is
+        not finite, or when the path has fewer than two distinct vertices.
     """
     if not spacing > 0:
         raise ValueError("spacing must be positive")
+    if not np.isfinite(spacing):
+        raise ValueError(f"spacing must be finite, got {spacing}")
     v = np.asarray(path, dtype=float)
     v = v.reshape(-1, v.shape[-1])[:, :2]
+    if not np.isfinite(v).all():
+        raise ValueError("path vertices must be finite")
     piece = np.diff(v, axis=0)
     length = np.hypot(piece[:, 0], piece[:, 1])
     keep = length > 0

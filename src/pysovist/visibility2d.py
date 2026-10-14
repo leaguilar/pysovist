@@ -34,7 +34,6 @@ Grasshopper toolbox does (its output OV).
 
 from __future__ import annotations
 
-import os
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 
@@ -48,7 +47,7 @@ from .isovist2d import (
     _circle_crossings,
     _point_segment_distance,
 )
-from .plan import Plan
+from .plan import Plan, _as_segments, _point2d, _points2d, _view_settings, _workers
 from .results import Flags
 
 _ON_WALL_POLICIES = ("nan", "raise")
@@ -148,14 +147,15 @@ def segment_visibility(
     ----------
     occluders : Plan or array_like of shape (n, 2, 2)
         Wall segments. The result has one entry per segment, in this order.
-    origin : (x, y)
-        Observer position.
+    origin : (x, y) or (x, y, z)
+        Observer position. A third coordinate is ignored.
     max_distance : float
-        Range limit in metres. A wall crossing the range circle counts only
-        inside it. With the default ``inf`` the range is unlimited, and rays
-        that meet no wall add nothing.
+        Range limit in metres, positive. A wall crossing the range circle
+        counts only inside it. With the default ``inf`` the range is
+        unlimited, and rays that meet no wall add nothing.
     fov : float
-        Field of view in radians, centred on ``direction``. Default: full turn.
+        Field of view in radians, positive, centred on ``direction``. Values
+        of 2 pi and above mean the full turn. Default: full turn.
     direction : float
         Viewing direction in radians, counter-clockwise from +x. Used only when
         ``fov`` is below a full turn.
@@ -164,12 +164,21 @@ def segment_visibility(
         return NaN lengths with ``flags.on_wall`` set, or raise a
         ``ValueError``.
     eps : float
-        Distance below which the observer counts as standing on a wall.
+        Distance in metres, positive, below which the observer counts as
+        standing on a wall.
 
     Returns
     -------
     SegmentVisibility
         Per segment: visible length, fraction, angle, flag and subintervals.
+
+    Raises
+    ------
+    ValueError
+        When ``on_wall="raise"`` and the observer stands on a wall, or for an
+        argument that [`isovist`][pysovist.isovist] refuses: an origin that
+        is not one finite point, a ``max_distance``, ``fov`` or ``eps`` that
+        is not positive, a direction that is not finite.
 
     Notes
     -----
@@ -180,11 +189,11 @@ def segment_visibility(
     if on_wall not in _ON_WALL_POLICIES:
         raise ValueError(f"on_wall must be one of {_ON_WALL_POLICIES}")
     segs, plan, keep = _segments(occluders)
-    o = np.asarray(origin, dtype=float)[:2]
-    R, fov = float(max_distance), float(min(fov, TWO_PI))
+    o = _point2d(origin, "origin")
+    R, fov, direction, eps = _view_settings(max_distance, fov, direction, eps)
     length = np.linalg.norm(segs[:, 1] - segs[:, 0], axis=1)
     n = len(segs)
-    clearance, pieces = _visible_pieces(plan, o, R, fov, float(direction), eps, on_wall)
+    clearance, pieces = _visible_pieces(plan, o, R, fov, direction, eps, on_wall)
 
     def result(vis_len, vis_angle, intervals, flags):
         with np.errstate(invalid="ignore", divide="ignore"):
@@ -222,16 +231,17 @@ def segment_visibility_field(
     ----------
     occluders : Plan or array_like of shape (n, 2, 2)
         Wall segments.
-    origins : array_like of shape (m, 2)
-        Viewpoints. Columns after the second are ignored.
+    origins : array_like of shape (m, 2) or (m, 3)
+        Viewpoints. Columns after the second are ignored, and one point of
+        shape (2,) is one viewpoint.
     per_viewpoint : bool
         Also return the visible length of every segment from every viewpoint.
     n_jobs : int
-        Worker processes that share the viewpoints. ``-1`` uses all cores, and
-        1 runs in the calling process.
+        Worker processes that share the viewpoints, a positive integer. ``-1``
+        uses all cores, and 1 runs in the calling process.
     chunk : int
-        Viewpoints per task. For a given ``chunk``, the result does not depend on
-        ``n_jobs``.
+        Viewpoints per task, a positive integer. For a given ``chunk``, the
+        result does not depend on ``n_jobs``.
     **kw
         Keyword arguments of
         [`segment_visibility`][pysovist.visibility2d.segment_visibility],
@@ -254,16 +264,30 @@ def segment_visibility_field(
         The second table has one row per viewpoint and visible segment, with
         the columns ``viewpoint`` (the row in ``origins``), ``x``, ``y``,
         ``segment`` (the row in the first table), ``visible_length``,
-        ``visible_fraction`` and ``visible_angle``.
+        ``visible_fraction`` and ``visible_angle``. With no viewpoints off
+        the walls the means are NaN.
+
+    Raises
+    ------
+    ValueError
+        When a viewpoint is not finite, when ``n_jobs`` or ``chunk`` is not a
+        positive integer (``n_jobs`` may be -1), or for a keyword argument
+        that ``segment_visibility`` refuses.
+    TypeError
+        For a keyword argument that ``segment_visibility`` does not take.
     """
     segs, plan, keep = _segments(occluders)
-    origins = np.asarray(origins, dtype=float)[:, :2]
+    origins = _points2d(origins, "origins")
     on_wall = kw.get("on_wall", "nan")
     if on_wall not in _ON_WALL_POLICIES:
         raise ValueError(f"on_wall must be one of {_ON_WALL_POLICIES}")
-    if n_jobs == -1:
-        n_jobs = os.cpu_count() or 1
-    starts = list(range(0, len(origins), max(int(chunk), 1)))
+    unknown = set(kw) - {"max_distance", "fov", "direction", "eps", "on_wall"}
+    if unknown:
+        raise TypeError(f"unexpected keyword arguments {sorted(unknown)}")
+    _view_settings(kw.get("max_distance", np.inf), kw.get("fov", TWO_PI),
+                   kw.get("direction", 0.0), kw.get("eps", 1e-9))
+    n_jobs, chunk = _workers(n_jobs, chunk)
+    starts = list(range(0, len(origins), chunk))
     parts = [origins[i:i + chunk] for i in starts]
     args = ([plan] * len(parts), parts, starts, [kw] * len(parts), [per_viewpoint] * len(parts))
     if n_jobs <= 1 or len(parts) <= 1:
@@ -334,14 +358,19 @@ def segment_ray_hits(
     ----------
     occluders : Plan or array_like of shape (n, 2, 2)
         Wall segments. The result has one count per segment, in this order.
-    origin : (x, y)
-        Observer position.
+    origin : (x, y) or (x, y, z)
+        Observer position. A third coordinate is ignored. On a wall, the
+        rays leave the observer and that wall is never hit.
     n_rays : int
-        Ray count. Its meaning depends on ``layout``.
+        Ray count. Its meaning depends on ``layout``: a whole number of at
+        least 1 for ``"even"``, any number (the component's Precision) for
+        ``"decodingspaces"``.
     max_distance : float
-        Range limit in metres. A ray counts only when its first hit is closer.
+        Range limit in metres, positive. A ray counts only when its first hit
+        is closer.
     fov : float
-        Field of view in radians, centred on ``direction``. Default: full turn.
+        Field of view in radians, positive, centred on ``direction``. Values
+        of 2 pi and above mean the full turn. Default: full turn.
     direction : float
         Viewing direction in radians, counter-clockwise from +x.
     layout : {"even", "decodingspaces"}
@@ -364,6 +393,14 @@ def segment_ray_hits(
     ndarray of shape (n,), int
         Hits per segment.
 
+    Raises
+    ------
+    ValueError
+        When the origin is not one finite point, ``n_rays`` is not a whole
+        number of at least 1 (``"even"``) or is NaN (``"decodingspaces"``),
+        ``max_distance`` or ``fov`` is not positive, ``direction`` is not
+        finite, or ``layout`` is unknown.
+
     Notes
     -----
     A ray hits the nearest segment it meets. A ray that passes exactly
@@ -375,12 +412,18 @@ def segment_ray_hits(
     if layout not in _LAYOUTS:
         raise ValueError(f"layout must be one of {_LAYOUTS}")
     segs, plan, keep = _segments(occluders)
-    o = np.asarray(origin, dtype=float)[:2]
-    ang = _ray_angles(n_rays, float(min(fov, TWO_PI)), float(direction), layout)
+    o = _point2d(origin, "origin")
+    R, fov, direction, _ = _view_settings(max_distance, fov, direction)
+    n = float(n_rays)
+    if layout == "even" and not (np.isfinite(n) and n.is_integer() and n >= 1):
+        raise ValueError(f"n_rays must be a whole number of at least 1, got {n_rays}")
+    if np.isnan(n):
+        raise ValueError("n_rays is NaN: pass the component's Precision, such as 360")
+    ang = _ray_angles(int(n) if layout == "even" else n, fov, direction, layout)
     seg = plan.segments - o
     t, j, _ = _nearest(np.c_[np.cos(ang), np.sin(ang)], seg[:, 0], seg[:, 1] - seg[:, 0],
                        _RAY_SLACK, prefer_start=True)
-    hit = t < float(max_distance)
+    hit = t < R
     out = np.zeros(len(segs), dtype=np.int64)
     out[keep] = np.bincount(j[hit], minlength=len(plan))
     return out
@@ -392,10 +435,7 @@ def _segments(occluders):
     """Input segments, the plan of those with positive length, and their input rows."""
     if isinstance(occluders, Plan):
         return occluders.segments, occluders, np.arange(len(occluders))
-    s = np.asarray(occluders, dtype=float)
-    if s.size == 0:
-        s = np.empty((0, 2, 2))
-    s = np.ascontiguousarray(s.reshape(-1, 2, s.shape[-1])[:, :, :2])
+    s = np.ascontiguousarray(_as_segments(occluders))
     keep = np.flatnonzero(np.linalg.norm(s[:, 1] - s[:, 0], axis=1) > 1e-12)
     return s, Plan(s[keep]), keep
 

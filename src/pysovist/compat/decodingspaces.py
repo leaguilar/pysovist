@@ -327,7 +327,14 @@ def ds_isovist_properties(occluders, viewpoints, *, view_direction=(0.0, 1.0, 0.
     DataFrame
         Columns ``x, y`` and the names of
         [`DS_PROPERTY_NAMES`][pysovist.compat.decodingspaces.DS_PROPERTY_NAMES],
-        one row per viewpoint in the order of ``viewpoints``.
+        one row per viewpoint in the order of ``viewpoints``. No viewpoints
+        give an empty table with these columns.
+
+    Raises
+    ------
+    ValueError
+        For any viewpoint or setting that
+        [`ds_isovist`][pysovist.compat.decodingspaces.ds_isovist] refuses.
     """
     plan = occluders if isinstance(occluders, Plan) else Plan(occluders)
     vps = np.atleast_2d(np.asarray(viewpoints, dtype=float))[:, :2]

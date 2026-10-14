@@ -493,3 +493,8 @@ def test_defaults_are_the_component_defaults():
     sig = inspect.signature(ds_ray_angles).parameters
     assert sig["precision"].default == 360 and sig["view_angle_deg"].default == 360.0
     assert sig["view_direction"].default == (0.0, 1.0, 0.0)
+
+
+def test_table_without_viewpoints_has_the_columns_and_no_rows():
+    df = ds_isovist_properties(SQUARE, np.empty((0, 2)))
+    assert len(df) == 0 and list(df.columns) == ["x", "y", *DS_PROPERTY_NAMES]

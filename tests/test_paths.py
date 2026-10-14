@@ -107,7 +107,7 @@ def test_a_path_on_a_wall_keeps_its_rows_with_flags():
        st.floats(0.05, 20))
 def test_samples_lie_on_the_path_at_their_arc_length(vertices, spacing):
     v = np.array(vertices)
-    piece = np.linalg.norm(np.diff(v, axis=0), axis=1)
+    piece = np.hypot(*np.diff(v, axis=0).T)  # hypot does not underflow on tiny steps
     if piece.sum() == 0:
         with pytest.raises(ValueError):
             sample_path(v, spacing)

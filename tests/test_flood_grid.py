@@ -119,6 +119,17 @@ def test_a_larger_eps_closes_gaps_narrower_than_twice_it():
     assert len(plan.flood_grid(1.0, (0.5, 0.5), eps=0.05)[0]) == 2
 
 
+def test_an_almost_horizontal_wall_blocks_without_a_warning():
+    import warnings
+
+    # The wall rises by 1e-320 m over 4 m and runs along the row of centres at y = 0.
+    plan = Plan(np.concatenate([rect(0, -0.5, 4, 1.5), [[(0, 0), (4, 1e-320)]]]))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        centres, _ = plan.flood_grid(1.0, (0.5, 1.2))
+    assert centres[:, 1].tolist() == [1.0] * 4
+
+
 # --- property tests ---------------------------------------------------------------------------
 
 def _oracle_flood(walls, spacing, seed, domain, eps):

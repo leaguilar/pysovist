@@ -274,7 +274,8 @@ def _blocked_links(seg, xs, ys, eps, spacing):
     j1 = np.searchsorted(ys, np.maximum(p[:, 1], q[:, 1]) + pad, side="right")
     w, j = _expand(j0, np.maximum(j1 - j0, 0))
     pw, dw = p[w], q[w] - p[w]
-    with np.errstate(divide="ignore", invalid="ignore"):
+    # A horizontal or almost horizontal wall gives 0, inf or nan here: it spans the whole band.
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
         t0 = (ys[j] - pad - pw[:, 1]) / dw[:, 1]
         t1 = (ys[j] + pad - pw[:, 1]) / dw[:, 1]
     flat = dw[:, 1] == 0

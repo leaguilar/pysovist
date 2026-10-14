@@ -1,31 +1,15 @@
 # How to cite
 
 pysovist is free to use and modify under the MIT licence. If it helps your work, please cite the
-software and the methods paper. If you use the emergency-department results, please cite the
-behaviour paper. GitHub's "Cite this repository" button gives the software reference from
-`CITATION.cff`.
+software. GitHub's "Cite this repository" button gives the same reference from `CITATION.cff`.
 
 ```bibtex
 @software{pysovist,
   author  = {Aguilar, Leonel and Tuncay, Bartu},
   title   = {pysovist: exact isovists and view volumes from floor plans, meshes and point clouds},
-  version = {0.1.2},
+  version = {0.2.0},
   year    = {2026},
   url     = {https://github.com/leaguilar/pysovist}
-}
-
-@unpublished{pysovist_methods,
-  author = {Aguilar, Leonel and Baur, Rapha{\"e}l and Wheele, Theresa and Tuncay, Bartu and Ladouce, Simon and Li, Chenyang and Schmutz, Jan and Sailer, Kerstin and Gr{\"u}bel, Jascha and Slankamenac, Ksenija and Honegger, Patrik and Conroy-Dalton, Ruth and Sax, Hugo and H{\"o}lscher, Christoph and Gath-Morad, Michal},
-  title  = {pysovist: reproducible visibility analysis across floor plans, furnished models and point clouds},
-  note   = {In preparation},
-  year   = {2026}
-}
-
-@unpublished{pysovist_ed_behaviour,
-  author = {Aguilar, Leonel and Baur, Rapha{\"e}l and Wheele, Theresa and Ladouce, Simon and Li, Chenyang and Schmutz, Jan and Sailer, Kerstin and Gr{\"u}bel, Jascha and Slankamenac, Ksenija and Honegger, Patrik and Conroy-Dalton, Ruth and Sax, Hugo and H{\"o}lscher, Christoph and Gath-Morad, Michal},
-  title  = {Beyond the wall plan: predicting staff occupancy from furnished layouts and point clouds},
-  note   = {In preparation},
-  year   = {2026}
 }
 ```
 

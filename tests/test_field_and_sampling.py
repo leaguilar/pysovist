@@ -82,3 +82,24 @@ def test_sampled_offset_turns_the_first_ray():
     m = sampled_metrics(iso, 4, offset=math.pi / 4)
     assert m["area"] == pytest.approx(100.0, rel=1e-12)
     assert m["r_mean"] == pytest.approx(5 * math.sqrt(2), rel=1e-12)
+
+
+def test_field_columns_in_closed_form():
+    """Closed forms in a 10 m square: clearance is the distance to the nearest side, an open
+    room without a range is unbounded, and the columns follow METRIC_NAMES in order."""
+    origins = np.array([[5.0, 5.0], [2.0, 3.0], [9.5, 1.0], [0.0, 4.0]])
+    df = isovist_field(rect(0, 0, 10, 10), origins)
+    assert list(df.columns) == ["x", "y", *METRIC_NAMES, "clearance", "on_wall", "unbounded"]
+    np.testing.assert_array_equal(df[["x", "y"]].to_numpy(), origins)
+    np.testing.assert_allclose(df["clearance"], [5.0, 2.0, 0.5, 0.0], atol=1e-12)
+    assert df["on_wall"].tolist() == [False, False, False, True]
+    assert df["on_wall"].dtype == bool and df["unbounded"].dtype == bool
+    open_room = isovist_field(rect(0, 0, 10, 10)[:3], [(5.0, 5.0)])
+    assert open_room["unbounded"].tolist() == [True]
+    assert open_room["area"].iloc[0] == math.inf
+
+
+def test_field_passes_isovist_options_to_every_observer():
+    """Closed form: a range of 3 m from the centre of the square gives the disc, 9 pi."""
+    df = isovist_field(rect(0, 0, 10, 10), [(5.0, 5.0), (4.0, 6.0)], max_distance=3.0)
+    np.testing.assert_allclose(df["area"], 9 * math.pi, rtol=1e-12)

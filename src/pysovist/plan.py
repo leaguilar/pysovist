@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -17,17 +18,31 @@ class Plan:
     ----------
     segments : array_like of shape (n, 2, 2)
         Segment endpoints ``[[x0, y0], [x1, y1]]``. A third coordinate, if
-        present, is dropped. Zero-length segments are removed.
+        present, is dropped. Zero-length segments are removed. One segment
+        of shape (2, 2) and nested lists of segments, such as one list per
+        room, are accepted as well: every array whose last two axes have
+        shape (2, 2) or (2, 3).
     eps : float
-        Length below which a segment counts as zero-length. It is also the
-        tolerance of the search for crossing points.
+        Length in metres, finite and not negative, below which a segment
+        counts as zero-length. Default 1e-12. The search for crossing points
+        uses it too: two segments whose direction vectors have a cross
+        product of at most ``eps`` (in square metres) count as parallel and
+        do not cross.
 
     Attributes
     ----------
     segments : ndarray of shape (n, 2, 2)
         The segments that remain.
     vertices : ndarray of shape (k, 2)
-        Every segment endpoint and every crossing point, without duplicates.
+        Every segment endpoint and every crossing point, without duplicates:
+        points that round to the same multiple of 1e-9 m count once.
+
+    Raises
+    ------
+    ValueError
+        When ``segments`` is not an array of that shape, such as rows of
+        ``x0, y0, x1, y1`` or a list of points, when it holds a coordinate
+        that is not finite, or when ``eps`` is negative or not finite.
 
     Notes
     -----
@@ -37,10 +52,10 @@ class Plan:
     """
 
     def __init__(self, segments, *, eps: float = 1e-12):
-        s = np.asarray(segments, dtype=float)
-        if s.size == 0:
-            s = np.empty((0, 2, 2))
-        s = s.reshape(-1, 2, s.shape[-1])[:, :, :2]
+        eps = float(eps)
+        if not 0 <= eps < np.inf:
+            raise ValueError(f"eps must be a finite non-negative length, got {eps}")
+        s = _as_segments(segments)
         length = np.linalg.norm(s[:, 1] - s[:, 0], axis=1)
         self.segments: np.ndarray = np.ascontiguousarray(s[length > eps])
         self.vertices: np.ndarray = _vertices(self.segments, eps)
@@ -55,7 +70,27 @@ class Plan:
     def from_json(cls, path, keys=("start", "end")) -> Plan:
         """Read a list of ``{"start": [x, y(, z)], "end": [x, y(, z)]}`` records.
 
-        ``keys`` names the two endpoint fields of a record.
+        Parameters
+        ----------
+        path : str or os.PathLike
+            JSON file holding a list of records.
+        keys : (str, str)
+            Names of the two endpoint fields of a record. A third coordinate
+            is dropped.
+
+        Returns
+        -------
+        Plan
+            One segment per record, in file order, less zero-length ones.
+
+        Raises
+        ------
+        FileNotFoundError
+            When ``path`` does not exist.
+        KeyError
+            When a record lacks one of ``keys``.
+        ValueError
+            When a coordinate is not finite.
         """
         records = json.loads(Path(path).read_text())
         return cls([[r[keys[0]][:2], r[keys[1]][:2]] for r in records])
@@ -85,6 +120,21 @@ class Plan:
             Name or GlobalId of an IfcBuildingStorey. Only its elements are
             read, and ``height`` is measured from its elevation: the z of its
             placement, or its Elevation attribute when it has no placement.
+
+        Returns
+        -------
+        Plan
+            The outlines of the elements cut at that height, in metres.
+
+        Raises
+        ------
+        ImportError
+            When ifcopenshell is not installed.
+        ValueError
+            For a name in ``classes`` that is neither a preset nor an IFC
+            class, when no element of those classes has geometry, for a
+            ``storey`` that names no storey of the model, and for a name that
+            several storeys share (give the GlobalId instead).
         """
         from .ifc import read_ifc
         from .mesh import Mesh
@@ -94,7 +144,12 @@ class Plan:
 
     @property
     def bounds(self) -> tuple[float, float, float, float]:
-        """``(xmin, ymin, xmax, ymax)`` of all segment endpoints."""
+        """``(xmin, ymin, xmax, ymax)`` of all segment endpoints.
+
+        Raises ``ValueError`` for a plan without segments.
+        """
+        if len(self.segments) == 0:
+            raise ValueError("the plan has no segments, so it has no bounds")
         p = self.segments.reshape(-1, 2)
         return (*p.min(axis=0), *p.max(axis=0))
 
@@ -102,9 +157,17 @@ class Plan:
         """Regular grid of points, shape (m, 2), over ``domain`` or the plan bounds.
 
         ``domain`` is ``(xmin, ymin, xmax, ymax)``. The points lie ``spacing``
-        apart, starting half a ``spacing`` inside the lower corner.
+        apart, starting half a ``spacing`` inside the lower corner, and every
+        point lies below ``xmax`` and ``ymax``. A ``spacing`` more than twice
+        the width or the height of the domain gives no points.
+
+        Raises ``ValueError`` when ``spacing`` is not a positive finite
+        number, when ``domain`` is not four finite numbers with
+        ``xmin < xmax`` and ``ymin < ymax``, or when the plan has no segments
+        and no ``domain`` is given.
         """
-        xmin, ymin, xmax, ymax = self.bounds if domain is None else domain
+        spacing = _positive_finite(spacing, "spacing")
+        xmin, ymin, xmax, ymax = self._domain(domain)
         xs = np.arange(xmin + spacing / 2, xmax, spacing)
         ys = np.arange(ymin + spacing / 2, ymax, spacing)
         gx, gy = np.meshgrid(xs, ys)
@@ -149,9 +212,11 @@ class Plan:
         Raises
         ------
         ValueError
-            When ``seed`` lies outside the cells of the grid, or when the
-            segment from ``seed`` to the centre of its cell passes closer
-            than ``eps`` to a wall.
+            When ``seed`` lies outside the cells of the grid or is not one
+            finite point, when the segment from ``seed`` to the centre of its
+            cell passes closer than ``eps`` to a wall, when ``spacing`` or
+            ``eps`` is not a positive number (``spacing`` also finite), or for
+            a ``domain`` that ``grid`` refuses.
 
         Notes
         -----
@@ -169,12 +234,13 @@ class Plan:
             raise ValueError("spacing must be positive")
         if not eps > 0:
             raise ValueError("eps must be positive")
-        xmin, ymin, xmax, ymax = self.bounds if domain is None else domain
+        spacing = _positive_finite(spacing, "spacing")
+        xmin, ymin, xmax, ymax = self._domain(domain)
         # The same lattice as grid(), to the last bit.
         xs = np.arange(xmin + spacing / 2, xmax, spacing)
         ys = np.arange(ymin + spacing / 2, ymax, spacing)
         nx, ny = len(xs), len(ys)
-        s = np.asarray(seed, dtype=float)[:2]
+        s = _point2d(seed, "seed")
         i, j = (int(k) for k in np.floor((s - (xmin, ymin)) / spacing))
         if not (0 <= i < nx and 0 <= j < ny):
             raise ValueError(f"seed {tuple(s.tolist())} lies outside the cells of the grid")
@@ -196,6 +262,99 @@ class Plan:
         centres = np.c_[gx.ravel(), gy.ravel()][keep]
         half = spacing / 2
         return centres, np.c_[centres - half, centres + half]
+
+    def _domain(self, domain) -> tuple[float, float, float, float]:
+        """``domain`` as four floats, or the plan bounds when it is None."""
+        if domain is None:
+            if len(self.segments) == 0:
+                raise ValueError("the plan has no segments: pass domain=(xmin, ymin, xmax, ymax)")
+            return self.bounds
+        d = np.asarray(domain, dtype=float).ravel()
+        if d.shape != (4,) or not np.isfinite(d).all() or not (d[0] < d[2] and d[1] < d[3]):
+            raise ValueError(f"domain must be four finite numbers (xmin, ymin, xmax, ymax) with "
+                             f"xmin < xmax and ymin < ymax, got {domain!r}")
+        return tuple(float(v) for v in d)
+
+
+def _as_segments(segments) -> np.ndarray:
+    """Segments as a float array of shape (n, 2, 2), checked for shape and finite values."""
+    s = np.asarray(segments, dtype=float)
+    if s.size == 0:
+        return np.empty((0, 2, 2))
+    if s.ndim < 2 or s.shape[-2] != 2 or s.shape[-1] not in (2, 3):
+        raise ValueError(f"segments must have shape (n, 2, 2) or (n, 2, 3), got {s.shape}. "
+                         f"Rows of x0, y0, x1, y1 become segments with "
+                         f"np.reshape(rows, (-1, 2, 2))")
+    s = s.reshape(-1, 2, s.shape[-1])[:, :, :2]
+    bad = ~np.isfinite(s).all(axis=(1, 2))
+    if bad.any():
+        k = int(np.flatnonzero(bad)[0])
+        raise ValueError(f"segment coordinates must be finite: segment {k} is {s[k].tolist()}")
+    return s
+
+
+def _point2d(value, name: str) -> np.ndarray:
+    """One point (x, y) from (x, y) or (x, y, z), refused when x or y is not finite."""
+    p = np.asarray(value, dtype=float)
+    if p.shape not in ((2,), (3,)):
+        raise ValueError(f"{name} must be one point (x, y) or (x, y, z), got shape {p.shape}")
+    if not np.isfinite(p[:2]).all():
+        raise ValueError(f"{name} must be finite, got {tuple(p.tolist())}")
+    return p[:2]
+
+
+def _points2d(value, name: str) -> np.ndarray:
+    """Points of shape (m, 2) from (m, 2), (m, 3) or one point, refused when not finite."""
+    p = np.asarray(value, dtype=float)
+    if p.ndim == 1:
+        p = p[None]
+    if p.size == 0:
+        return np.empty((0, 2))
+    if p.ndim != 2 or p.shape[1] not in (2, 3):
+        raise ValueError(f"{name} must have shape (m, 2) or (m, 3), got {p.shape}")
+    p = p[:, :2]
+    bad = ~np.isfinite(p).all(axis=1)
+    if bad.any():
+        k = int(np.flatnonzero(bad)[0])
+        raise ValueError(f"{name} must be finite: row {k} is {p[k].tolist()}")
+    return p
+
+
+def _positive_finite(value, name: str) -> float:
+    v = float(value)
+    if not (v > 0 and np.isfinite(v)):
+        raise ValueError(f"{name} must be a positive finite number, got {v}")
+    return v
+
+
+def _view_settings(max_distance, fov, direction, eps=1.0) -> tuple[float, float, float, float]:
+    """Range, field of view, direction and eps of a 2D view, checked.
+
+    The range is positive (``inf`` for none), the field of view positive and at most a full
+    turn (larger values mean the full turn), the direction finite and eps positive.
+    """
+    R, f, d, e = float(max_distance), float(fov), float(direction), float(eps)
+    if not R > 0:
+        raise ValueError(f"max_distance must be positive (inf for no limit), got {R}")
+    if not f > 0:
+        raise ValueError(f"fov must be a positive angle in radians (2 pi for the full turn), "
+                         f"got {f}")
+    if not np.isfinite(d):
+        raise ValueError(f"direction must be a finite angle in radians, got {d}")
+    if not e > 0:
+        raise ValueError(f"eps must be a positive distance, got {e}")
+    return R, min(f, 2 * np.pi), d, e
+
+
+def _workers(n_jobs, chunk) -> tuple[int, int]:
+    """Worker count (-1: all cores) and chunk size of a field, checked."""
+    if n_jobs == -1:
+        n_jobs = os.cpu_count() or 1
+    if int(n_jobs) != n_jobs or n_jobs < 1:
+        raise ValueError(f"n_jobs must be a positive integer or -1 for all cores, got {n_jobs}")
+    if int(chunk) != chunk or chunk < 1:
+        raise ValueError(f"chunk must be a positive integer, got {chunk}")
+    return int(n_jobs), int(chunk)
 
 
 def _cross(a, b):

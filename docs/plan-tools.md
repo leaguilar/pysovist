@@ -45,7 +45,7 @@ hits = cast_rays(plan, (2.0, 2.0), np.radians(np.arange(360) + 0.5))
 np.bincount(hits.segment[hits.hit], minlength=len(plan))  # [121, 28, 31, 29, 32, 119]
 ```
 
-Walls are closed segments with no thickness. A ray through the shared endpoint of two walls ends there, and a ray through the free end of a wall hits that wall, so no ray slips through a closed corner. A wall that lies along a ray is seen edge-on and is not hit. Wall indices refer to `plan.segments`, from which zero-length segments are removed.
+Walls are closed segments with no thickness. A ray through the shared endpoint of two walls ends there, and a ray through the free end of a wall hits that wall, so no ray slips through a closed corner. A wall that lies along a ray is seen edge-on and is not hit. Only hits at a positive distance count, so a ray from an origin on a wall leaves through that wall. Wall indices refer to `plan.segments`, from which zero-length segments are removed. An origin or angle that is not finite, or a range that is not positive, raises a `ValueError`.
 
 ## An analysis grid flooded from a seed
 
@@ -82,9 +82,9 @@ df[["s", "x", "y", "direction", "area"]].iloc[4:8]
 | 6.0 | 2.0 | 2.0 | 1.571 | 26.309 |
 | 7.0 | 2.0 | 3.0 | 1.571 | 21.691 |
 
-Walking left along the lower wing, the observer sees less of the room as the end wall comes closer, from 33.7 m² at the start of the path to 12.6 m² one metre before the corner. At the corner the view turns up the other wing and opens to 26.3 m².
+Walking left along the lower wing, the visible area falls from 33.7 m² at the start of the path to 12.6 m² one metre before the corner, where the end wall fills the view. At the corner the view turns up the other wing and opens to 26.3 m².
 
-The observers stand at the arc lengths 0, `spacing`, 2 `spacing` and so on. When the length of the path is not a multiple of `spacing`, an observer also stands on the last vertex, unless `endpoint=False`. An observer on a vertex looks along the segment that leaves it, and the observer on the last vertex looks along the segment that ends there. Repeated vertices are skipped. `sample_path` returns the arc lengths, points and directions alone. With the default full turn as the field of view, the direction plays no role, and the rows equal those of `isovist_field` at the same points.
+The observers stand at the arc lengths 0, `spacing`, 2 `spacing` and so on. When the length of the path is not a multiple of `spacing`, an observer also stands on the last vertex, unless `endpoint=False`. An observer on a vertex looks along the segment that leaves it, and the observer on the last vertex looks along the segment that ends there. Repeated vertices are skipped. A spacing that is not positive and finite, a vertex that is not finite, or a path with fewer than two distinct vertices raises a `ValueError`. `sample_path` returns the arc lengths, points and directions alone. With the default full turn as the field of view, the direction plays no role, and the rows equal those of `isovist_field` at the same points.
 
 ## Vertical isovists
 

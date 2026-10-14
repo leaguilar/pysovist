@@ -34,7 +34,6 @@ Grasshopper toolbox does (its output OV).
 
 from __future__ import annotations
 
-import os
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 
@@ -48,7 +47,7 @@ from .isovist2d import (
     _circle_crossings,
     _point_segment_distance,
 )
-from .plan import Plan
+from .plan import Plan, _as_segments, _point2d, _points2d, _view_settings, _workers
 from .results import Flags
 
 _ON_WALL_POLICIES = ("nan", "raise")
@@ -148,14 +147,15 @@ def segment_visibility(
     ----------
     occluders : Plan or array_like of shape (n, 2, 2)
         Wall segments. The result has one entry per segment, in this order.
-    origin : (x, y)
-        Observer position.
+    origin : (x, y) or (x, y, z)
+        Observer position. A third coordinate is ignored.
     max_distance : float
-        Range limit in metres. A wall crossing the range circle counts only
-        inside it. With the default ``inf`` the range is unlimited, and rays
-        that meet no wall add nothing.
+        Range limit in metres, positive. A wall crossing the range circle
+        counts only inside it. With the default ``inf`` the range is
+        unlimited, and rays that meet no wall add nothing.
     fov : float
-        Field of view in radians, centred on ``direction``. Default: full turn.
+        Field of view in radians, positive, centred on ``direction``. Values
+        of 2 pi and above mean the full turn. Default: full turn.
     direction : float
         Viewing direction in radians, counter-clockwise from +x. Used only when
         ``fov`` is below a full turn.
@@ -164,12 +164,21 @@ def segment_visibility(
         return NaN lengths with ``flags.on_wall`` set, or raise a
         ``ValueError``.
     eps : float
-        Distance below which the observer counts as standing on a wall.
+        Distance in metres, positive, below which the observer counts as
+        standing on a wall. Default 1e-9.
 
     Returns
     -------
     SegmentVisibility
         Per segment: visible length, fraction, angle, flag and subintervals.
+
+    Raises
+    ------
+    ValueError
+        When ``on_wall="raise"`` and the observer stands on a wall, or for an
+        argument that [`isovist`][pysovist.isovist] refuses: an origin that
+        is not one finite point, a ``max_distance``, ``fov`` or ``eps`` that
+        is not positive, a direction that is not finite.
 
     Notes
     -----
@@ -180,11 +189,11 @@ def segment_visibility(
     if on_wall not in _ON_WALL_POLICIES:
         raise ValueError(f"on_wall must be one of {_ON_WALL_POLICIES}")
     segs, plan, keep = _segments(occluders)
-    o = np.asarray(origin, dtype=float)[:2]
-    R, fov = float(max_distance), float(min(fov, TWO_PI))
+    o = _point2d(origin, "origin")
+    R, fov, direction, eps = _view_settings(max_distance, fov, direction, eps)
     length = np.linalg.norm(segs[:, 1] - segs[:, 0], axis=1)
     n = len(segs)
-    clearance, pieces = _visible_pieces(plan, o, R, fov, float(direction), eps, on_wall)
+    clearance, pieces = _visible_pieces(plan, o, R, fov, direction, eps, on_wall)
 
     def result(vis_len, vis_angle, intervals, flags):
         with np.errstate(invalid="ignore", divide="ignore"):
@@ -222,16 +231,17 @@ def segment_visibility_field(
     ----------
     occluders : Plan or array_like of shape (n, 2, 2)
         Wall segments.
-    origins : array_like of shape (m, 2)
-        Viewpoints. Columns after the second are ignored.
+    origins : array_like of shape (m, 2) or (m, 3)
+        Viewpoints. Columns after the second are ignored, and one point of
+        shape (2,) is one viewpoint.
     per_viewpoint : bool
         Also return the visible length of every segment from every viewpoint.
     n_jobs : int
-        Worker processes that share the viewpoints. ``-1`` uses all cores, and
-        1 runs in the calling process.
+        Worker processes that share the viewpoints, a positive integer. ``-1``
+        uses all cores, and 1 runs in the calling process.
     chunk : int
-        Viewpoints per task. For a given ``chunk``, the result does not depend on
-        ``n_jobs``.
+        Viewpoints per task, a positive integer. For a given ``chunk``, the
+        result does not depend on ``n_jobs``.
     **kw
         Keyword arguments of
         [`segment_visibility`][pysovist.visibility2d.segment_visibility],
@@ -254,16 +264,30 @@ def segment_visibility_field(
         The second table has one row per viewpoint and visible segment, with
         the columns ``viewpoint`` (the row in ``origins``), ``x``, ``y``,
         ``segment`` (the row in the first table), ``visible_length``,
-        ``visible_fraction`` and ``visible_angle``.
+        ``visible_fraction`` and ``visible_angle``. With no viewpoints off
+        the walls the means are NaN.
+
+    Raises
+    ------
+    ValueError
+        When a viewpoint is not finite, when ``n_jobs`` or ``chunk`` is not a
+        positive integer (``n_jobs`` may be -1), or for a keyword argument
+        that ``segment_visibility`` refuses.
+    TypeError
+        For a keyword argument that ``segment_visibility`` does not take.
     """
     segs, plan, keep = _segments(occluders)
-    origins = np.asarray(origins, dtype=float)[:, :2]
+    origins = _points2d(origins, "origins")
     on_wall = kw.get("on_wall", "nan")
     if on_wall not in _ON_WALL_POLICIES:
         raise ValueError(f"on_wall must be one of {_ON_WALL_POLICIES}")
-    if n_jobs == -1:
-        n_jobs = os.cpu_count() or 1
-    starts = list(range(0, len(origins), max(int(chunk), 1)))
+    unknown = set(kw) - {"max_distance", "fov", "direction", "eps", "on_wall"}
+    if unknown:
+        raise TypeError(f"unexpected keyword arguments {sorted(unknown)}")
+    _view_settings(kw.get("max_distance", np.inf), kw.get("fov", TWO_PI),
+                   kw.get("direction", 0.0), kw.get("eps", 1e-9))
+    n_jobs, chunk = _workers(n_jobs, chunk)
+    starts = list(range(0, len(origins), chunk))
     parts = [origins[i:i + chunk] for i in starts]
     args = ([plan] * len(parts), parts, starts, [kw] * len(parts), [per_viewpoint] * len(parts))
     if n_jobs <= 1 or len(parts) <= 1:
@@ -320,7 +344,7 @@ def segment_ray_hits(
     *,
     max_distance: float = np.inf,
     fov: float = TWO_PI,
-    direction: float = 0.0,
+    direction=0.0,
     layout: str = "even",
 ) -> np.ndarray:
     """Number of sampled rays whose first hit lies on each segment.
@@ -334,33 +358,57 @@ def segment_ray_hits(
     ----------
     occluders : Plan or array_like of shape (n, 2, 2)
         Wall segments. The result has one count per segment, in this order.
-    origin : (x, y)
-        Observer position.
+    origin : (x, y) or (x, y, z)
+        Observer position. A third coordinate is ignored. There is no
+        on-wall flag: from an observer exactly on a wall, the rays leave the
+        observer and that wall is never hit, while an observer a hair in
+        front of a wall sends about half its rays onto it.
     n_rays : int
-        Ray count. Its meaning depends on ``layout``.
+        Ray count. Its meaning depends on ``layout``: a whole number of at
+        least 1 for ``"even"``, any number (the component's Precision) for
+        ``"decodingspaces"``.
     max_distance : float
-        Range limit in metres. A ray counts only when its first hit is closer.
+        Range limit in metres, positive. A ray counts only when its first hit
+        is closer.
     fov : float
-        Field of view in radians, centred on ``direction``. Default: full turn.
-    direction : float
-        Viewing direction in radians, counter-clockwise from +x.
+        Field of view in radians, positive, centred on ``direction``. Values
+        of 2 pi and above mean the full turn. Default: full turn.
+    direction : float or (x, y)
+        Viewing direction in radians, counter-clockwise from +x, or as a
+        vector like the component's Viewing Direction. The vector gives the
+        component's rays bit for bit. An angle in radians gives the same rays
+        unless the rounding of its conversion moves the last ray across the
+        far edge of the view.
     layout : {"even", "decodingspaces"}
         ``"even"``: ``n_rays`` equally spaced rays, from ``direction`` around
         the full turn, or from one edge of the field of view to the other, as
         in [`Isovist.radial`][pysovist.Isovist.radial].
         ``"decodingspaces"``: the rays of the DeCodingSpaces Isovist
         component. The angular step is ``2 pi / n_rays`` for
-        ``10 < n_rays < 3000`` and one degree otherwise, and rays are cast
-        from ``direction - fov / 2`` in steps towards ``direction + fov / 2``,
-        which is reached when ``fov`` is a whole number of steps. A full turn
-        thus casts ``n_rays + 1`` rays, and the direction opposite to
-        ``direction`` is cast twice. The component's default view direction
-        (0, 1) is ``direction = pi / 2``.
+        ``10 < n_rays < 3000`` and one degree otherwise. The rays are cast
+        clockwise from ``direction + fov / 2`` while the angle, summed step
+        by step in floating point as the component sums it, stays short of
+        ``direction - fov / 2``. The rounding of that sum decides whether a
+        ray lands on the far edge: a full turn at ``direction = pi / 2``
+        casts ``n_rays + 1`` rays for 360 and 2,999 (the ray opposite to
+        ``direction`` twice) and ``n_rays`` rays for 15 and 100. The
+        component's default view direction (0, 1) is ``direction = pi / 2``.
+        The component measures the direction clockwise from +y, between 0 and
+        2 pi.
 
     Returns
     -------
     ndarray of shape (n,), int
         Hits per segment.
+
+    Raises
+    ------
+    ValueError
+        When the origin is not one finite point, ``n_rays`` is not a whole
+        number of at least 1 (``"even"``) or is NaN (``"decodingspaces"``),
+        ``max_distance`` or ``fov`` is not positive, ``direction`` is not
+        finite or is a vector without an x or y component, or ``layout`` is
+        unknown.
 
     Notes
     -----
@@ -373,12 +421,26 @@ def segment_ray_hits(
     if layout not in _LAYOUTS:
         raise ValueError(f"layout must be one of {_LAYOUTS}")
     segs, plan, keep = _segments(occluders)
-    o = np.asarray(origin, dtype=float)[:2]
-    ang = _ray_angles(n_rays, float(min(fov, TWO_PI)), float(direction), layout)
+    o = _point2d(origin, "origin")
+    bearing = None
+    if np.ndim(direction) == 1:
+        v = np.asarray(direction, dtype=float)[:2]
+        if len(v) < 2 or not np.isfinite(v).all() or not v.any():
+            raise ValueError(f"direction must be an angle or a finite vector with an x or y "
+                             f"component, got {direction!r}")
+        bearing = np.arctan2(v[0], v[1]) % TWO_PI  # clockwise from +y, as the component
+        direction = np.arctan2(v[1], v[0])
+    R, fov, direction, _ = _view_settings(max_distance, fov, direction)
+    n = float(n_rays)
+    if layout == "even" and not (np.isfinite(n) and n.is_integer() and n >= 1):
+        raise ValueError(f"n_rays must be a whole number of at least 1, got {n_rays}")
+    if np.isnan(n):
+        raise ValueError("n_rays is NaN: pass the component's Precision, such as 360")
+    ang = _ray_angles(int(n) if layout == "even" else n, fov, direction, layout, bearing)
     seg = plan.segments - o
     t, j, _ = _nearest(np.c_[np.cos(ang), np.sin(ang)], seg[:, 0], seg[:, 1] - seg[:, 0],
                        _RAY_SLACK, prefer_start=True)
-    hit = t < float(max_distance)
+    hit = t < R
     out = np.zeros(len(segs), dtype=np.int64)
     out[keep] = np.bincount(j[hit], minlength=len(plan))
     return out
@@ -390,10 +452,7 @@ def _segments(occluders):
     """Input segments, the plan of those with positive length, and their input rows."""
     if isinstance(occluders, Plan):
         return occluders.segments, occluders, np.arange(len(occluders))
-    s = np.asarray(occluders, dtype=float)
-    if s.size == 0:
-        s = np.empty((0, 2, 2))
-    s = np.ascontiguousarray(s.reshape(-1, 2, s.shape[-1])[:, :, :2])
+    s = np.ascontiguousarray(_as_segments(occluders))
     keep = np.flatnonzero(np.linalg.norm(s[:, 1] - s[:, 0], axis=1) > 1e-12)
     return s, Plan(s[keep]), keep
 
@@ -413,7 +472,7 @@ def _visible_pieces(plan, o, R, fov, direction, eps, on_wall):
     clearance = float(dist.min()) if len(dist) else np.inf
     if clearance < eps:
         if on_wall == "raise":
-            raise ValueError(f"observer {tuple(o)} is {clearance:.3g} m from a wall")
+            raise ValueError(f"observer {tuple(o.tolist())} is {clearance:.3g} m from a wall")
         return clearance, None
 
     # The events of the isovist's wedge sweep: walls beyond the range never bound it.
@@ -505,8 +564,12 @@ def _nearest(u, a, d, slack, prefer_start=False):
     return t[rows, col], idx[rows, col], s[rows, col]
 
 
-def _ray_angles(n_rays, fov, direction, layout):
-    """Absolute ray angles of a sampled view."""
+def _ray_angles(n_rays, fov, direction, layout, bearing=None):
+    """Absolute ray angles of a sampled view.
+
+    For the DeCodingSpaces layout, ``bearing`` (clockwise from +y, in [0, 2 pi)) replaces the
+    one derived from ``direction`` when the caller has the component's direction vector.
+    """
     full = fov >= TWO_PI - _ANGLE_TOL
     if layout == "even":
         n = int(n_rays)
@@ -516,8 +579,26 @@ def _ray_angles(n_rays, fov, direction, layout):
             return np.array([direction])
         return direction - fov / 2 + fov * np.arange(n) / (n - 1)
     step = TWO_PI / n_rays if _DS_MIN_RAYS < n_rays < _DS_MAX_RAYS else _DS_FALLBACK_STEP
-    count = int(np.floor(fov / step + 1e-9)) + 1
-    return (direction - fov / 2) + step * np.arange(count)
+    if bearing is None:
+        bearing = (np.pi / 2 - direction) % TWO_PI
+    return np.pi / 2 - _ds_sweep(step, fov / 2, bearing)
+
+
+def _ds_sweep(step, half, bearing):
+    """Bearings of the DeCodingSpaces rays, in radians clockwise from +y.
+
+    ``bearing`` is the view direction measured clockwise from +y in [0, 2 pi), as the
+    plugin measures it. The plugin starts at ``bearing - half``, the left edge of the view,
+    and adds ``step`` to the angle while it stays below ``bearing + half``. The sum is rounded
+    at every addition, so the rounding decides whether a ray lands on the far edge.
+    """
+    start, end = bearing - half, bearing + half
+    if not (np.isfinite(start) and np.isfinite(end) and step > 0):
+        raise ValueError(f"the view needs finite angles and a positive step, got bearing "
+                         f"{bearing}, half view angle {half} and step {step}")
+    n = int(np.floor((end - start) / step)) + 2
+    a = np.add.accumulate(np.r_[start, np.full(n, step)])
+    return a[a < end]
 
 
 def _field_chunk(plan, origins, offset, kw, per_viewpoint):

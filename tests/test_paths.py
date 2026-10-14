@@ -140,3 +140,20 @@ def test_each_row_is_the_isovist_looking_along_the_tangent(x0, y0, fov):
                       max_distance=30.0)
         assert row.area == iso.area
         assert row.drift_angle == iso.metrics["drift_angle"]
+
+
+def test_path_options_reach_every_observer():
+    """Closed forms: with no walls and a range of 2 m every observer sees the disc 4 pi; without
+    the end point a 2.5 m path at spacing 1 has three observers; eps = 1e-5 puts a path 1e-6 m
+    from a wall on it, and on_wall="raise" refuses it."""
+    df = path_isovists(np.empty((0, 2, 2)), [(0, 0), (2.5, 0)], 1.0, max_distance=2.0)
+    np.testing.assert_allclose(df["area"], 4 * math.pi, rtol=1e-12)
+    assert len(df) == 4
+    short = path_isovists(np.empty((0, 2, 2)), [(0, 0), (2.5, 0)], 1.0, max_distance=2.0,
+                          endpoint=False)
+    assert short["s"].tolist() == [0.0, 1.0, 2.0]
+    walls = rect(0, 0, 10, 10)
+    near = path_isovists(walls, [(2, 1e-6), (8, 1e-6)], 2.0, eps=1e-5)
+    assert near["on_wall"].all()
+    with pytest.raises(ValueError, match="from a wall"):
+        path_isovists(walls, [(2, 1e-6), (8, 1e-6)], 2.0, eps=1e-5, on_wall="raise")

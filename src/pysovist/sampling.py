@@ -17,6 +17,9 @@ import numpy as np
 
 from .results import Isovist
 
+_KEYS = ("area", "perimeter", "r_min", "r_max", "r_mean", "r_var", "r_std", "r_mad",
+         "compactness")
+
 
 def sampled_metrics(iso: Isovist, n_rays: int, offset: float = 0.0) -> dict:
     """Metrics of the polygon through ``n_rays`` equally spaced hit points.
@@ -29,8 +32,10 @@ def sampled_metrics(iso: Isovist, n_rays: int, offset: float = 0.0) -> dict:
     iso : Isovist
         Exact isovist whose depth function is sampled.
     n_rays : int
-        Number of rays. They cover the full turn, or the field of view from
-        one edge to the other.
+        Number of rays, a whole number: at least 3 for a full turn and at
+        least 2 for a narrower field of view, whose polygon also passes
+        through the observer. The rays cover the full turn, or the field of
+        view from one edge to the other.
     offset : float
         Angle of the first ray for a full turn, in absolute radians. It is
         ignored for a narrower field of view.
@@ -41,11 +46,30 @@ def sampled_metrics(iso: Isovist, n_rays: int, offset: float = 0.0) -> dict:
         ``area`` and ``perimeter`` of the polygon, ``r_min``, ``r_max``,
         ``r_mean``, ``r_var``, ``r_std`` and ``r_mad`` of the ``n_rays``
         depths (population statistics), and ``compactness``, which is
-        4 pi area / perimeter^2.
+        4 pi area / perimeter^2. An isovist flagged ``on_wall`` gives NaN for
+        every key, and one flagged ``unbounded`` gives ``inf`` for ``area``
+        and ``perimeter`` and NaN for the others, as in its exact metrics.
+
+    Raises
+    ------
+    ValueError
+        When ``n_rays`` is not a whole number or is too small for a polygon.
     """
+    full = iso.fov >= 2 * np.pi - 1e-12
+    n = float(n_rays)
+    least = 3 if full else 2
+    if not (np.isfinite(n) and n.is_integer() and n >= least):
+        raise ValueError(f"n_rays must be a whole number of at least {least} for "
+                         f"{'a full turn' if full else 'a field of view below a full turn'}, "
+                         f"got {n_rays}")
+    n_rays = int(n)
+    if iso.flags.on_wall or iso.flags.unbounded:
+        inf = np.inf if iso.flags.unbounded else np.nan
+        out = dict.fromkeys(_KEYS, np.nan)
+        out.update(area=inf, perimeter=inf)
+        return out
     ang, r = iso.radial(n_rays, offset=offset)
     pts = np.c_[r * np.cos(ang), r * np.sin(ang)]
-    full = iso.fov >= 2 * np.pi - 1e-12
     if not full:
         pts = np.vstack([np.zeros((1, 2)), pts])
     x, y = pts[:, 0], pts[:, 1]

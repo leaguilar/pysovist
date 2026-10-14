@@ -430,11 +430,18 @@ def test_square_from_centre_at_2999_rays_gives_750_per_wall():
     assert hits.tolist() == [750, 750, 750, 750]
 
 
-@pytest.mark.parametrize("rays,cast", [(11, 12), (360, 361), (2999, 3000), (3000, 361),
-                                       (10, 361), (5, 361), (100_000, 361)])
-def test_decodingspaces_ray_count_rule(rays, cast):
+@pytest.mark.parametrize("rays,direction,cast", [
+    (15, math.pi / 2, 15), (15, 0.0, 15), (15, -math.pi / 2, 16), (100, math.pi / 2, 100),
+    (100.5, math.pi / 2, 101), (360, 0.0, 361), (2999, math.pi / 2, 3000),
+    (3000, math.pi / 2, 361), (10, math.pi / 2, 361), (5, math.pi / 2, 361),
+    (100_000, math.pi / 2, 361)])
+def test_decodingspaces_ray_count_rule(rays, direction, cast):
+    """Ray counts of the plugin's full view (measured, ``data/decodingspaces2d``): the closing
+    ray is cast or not depending on the rounding of the summed step. Precision outside
+    (10, 3000) casts the one-degree rays of Precision 360."""
     # In a closed room every ray hits exactly one wall, so the hits add up to the rays cast.
-    hits = segment_ray_hits(rect(0, 0, 10, 10), (2.1, 3.3), rays, layout="decodingspaces")
+    hits = segment_ray_hits(rect(0, 0, 10, 10), (2.1, 3.3), rays, direction=direction,
+                            layout="decodingspaces")
     assert hits.sum() == cast
 
 
@@ -495,3 +502,64 @@ def test_binned_candidate_search_gives_the_same_visibility(monkeypatch):
     binned = [segment_visibility(walls, p, max_distance=12) for p in pts]
     for a, b in zip(direct, binned, strict=True):
         np.testing.assert_array_equal(a.visible_length, b.visible_length)
+
+
+def test_ray_hits_from_an_observer_on_a_wall_never_count_that_wall():
+    """From (0, 5) on the west wall (wall 3) of a 10 m square, 36 rays: the half turn that
+    faces the room hits the other walls, the other half leaves, and wall 3 gets none."""
+    hits = segment_ray_hits(rect(0, 0, 10, 10), (0.0, 5.0), 36, direction=0.005)
+    assert hits[3] == 0
+    assert hits.sum() == 18
+
+
+def test_ray_hits_ignore_a_wall_along_the_ray():
+    """A wall from (1, 0) to (3, 0) lies along the even layout's first ray from the origin; that
+    ray passes it and ends on the far wall x = 5 of the room."""
+    walls = np.concatenate([rect(-5, -5, 5, 5), [[(1.0, 0.0), (3.0, 0.0)]]])
+    hits = segment_ray_hits(walls, (0.0, 0.0), 4, direction=0.0)
+    assert hits.tolist() == [1, 1, 1, 1, 0]
+
+
+@pytest.mark.parametrize("gap, top, front", [(1e-9, 10.0, 0.0), (1e-7, 4.0, 6.0)])
+def test_walls_closer_than_a_relative_1e9_in_depth_overlap(gap, top, front):
+    """A 6 m wall just in front of the top wall of a 10 m square, seen from (5, 5): at 1e-9 m,
+    a relative 2e-10 of the 5 m depth, the two overlap and the top wall, listed first, keeps the
+    stretch. At 1e-7 m the front wall hides 6 m of the top wall (closed form)."""
+    walls = np.concatenate([rect(0, 0, 10, 10), [[(2.0, 10.0 - gap), (8.0, 10.0 - gap)]]])
+    vis = segment_visibility(walls, (5.0, 5.0))
+    np.testing.assert_allclose(vis.visible_length[[2, 4]], [top, front], atol=1e-6)
+
+
+def test_ray_hits_a_hair_in_front_of_a_wall_send_half_the_rays_onto_it():
+    """360 rays offset by half a degree from (5, 1e-12) in a 10 m square: the 180 that point
+    below the horizon end on the bottom wall at once. From (5, 0), on that wall, none do."""
+    near = segment_ray_hits(rect(0, 0, 10, 10), (5.0, 1e-12), 360, direction=0.5 * math.pi / 180)
+    on = segment_ray_hits(rect(0, 0, 10, 10), (5.0, 0.0), 360, direction=0.5 * math.pi / 180)
+    assert near[0] == 180 and on[0] == 0
+
+
+def test_field_fractions_and_angles_in_closed_form():
+    """In a 10 m square every wall is fully visible from every inside point, so every visible
+    fraction is 1. From the centre each wall fills a quarter turn, and from (2, 3) the bottom
+    wall fills atan(2 / 3) + atan(8 / 3)."""
+    walls = rect(0, 0, 10, 10)
+    table, pairs = segment_visibility_field(walls, [(5.0, 5.0), (2.0, 3.0)], per_viewpoint=True)
+    np.testing.assert_allclose(table["visible_fraction_mean"], 1.0, rtol=1e-12)
+    np.testing.assert_allclose(table["length"], 10.0)
+    np.testing.assert_allclose(pairs["visible_fraction"], 1.0, rtol=1e-12)
+    centre = pairs[pairs["viewpoint"] == 0]
+    np.testing.assert_allclose(centre["visible_angle"], math.pi / 2, rtol=1e-12)
+    bottom = pairs[(pairs["viewpoint"] == 1) & (pairs["segment"] == 0)]
+    assert bottom["visible_angle"].iloc[0] == pytest.approx(math.atan(2 / 3) + math.atan(8 / 3),
+                                                            rel=1e-12)
+
+
+def test_clearance_is_the_distance_to_the_nearest_wall():
+    vis = segment_visibility(rect(0, 0, 10, 10), (2.0, 3.0))
+    assert vis.clearance == pytest.approx(2.0, rel=1e-12)
+    assert segment_visibility(np.empty((0, 2, 2)), (2.0, 3.0)).clearance == math.inf
+
+
+def test_a_larger_eps_puts_the_observer_on_the_wall():
+    vis = segment_visibility(rect(0, 0, 10, 10), (2.0, 3.0), eps=2.5)
+    assert vis.flags.on_wall and np.isnan(vis.visible_length).all()

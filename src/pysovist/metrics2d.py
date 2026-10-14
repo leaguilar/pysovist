@@ -50,6 +50,7 @@ metric columns of [`isovist_field`][pysovist.isovist_field].
 
 
 def nan_metrics(**known) -> dict:
+    """Every metric NaN, except the ones passed by keyword (a flagged isovist's metrics)."""
     m = dict.fromkeys(METRIC_NAMES, np.nan)
     m.update(known)
     return m
@@ -94,6 +95,13 @@ def _int_r_above(c, u0, u1, p, kind, R, d_theta):
 
 
 def wedge_metrics(theta0, theta1, kind, p, phi, R, fov, full) -> dict:
+    """The exact metrics of an isovist given by its wedges.
+
+    The arguments are the wedge arrays of [`Isovist`][pysovist.Isovist]
+    (angles relative to the observer), the range ``R``, the field of view
+    ``fov`` in radians and whether it is the full turn. Returns the metrics
+    keyed by ``METRIC_NAMES``.
+    """
     d_theta = theta1 - theta0
     seg = kind == SEGMENT
     u0 = np.where(seg, _wrap(theta0 - phi), 0.0)

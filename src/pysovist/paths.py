@@ -51,13 +51,17 @@ def sample_path(path, spacing: float, *, endpoint: bool = True
     Raises
     ------
     ValueError
-        When ``spacing`` is not positive, or the path has fewer than two
-        distinct vertices.
+        When ``spacing`` is not a positive finite number, when a vertex is
+        not finite, or when the path has fewer than two distinct vertices.
     """
     if not spacing > 0:
         raise ValueError("spacing must be positive")
+    if not np.isfinite(spacing):
+        raise ValueError(f"spacing must be finite, got {spacing}")
     v = np.asarray(path, dtype=float)
     v = v.reshape(-1, v.shape[-1])[:, :2]
+    if not np.isfinite(v).all():
+        raise ValueError("path vertices must be finite")
     piece = np.diff(v, axis=0)
     length = np.hypot(piece[:, 0], piece[:, 1])
     keep = length > 0
@@ -117,7 +121,8 @@ def path_isovists(
         What to do with an observer closer than ``eps`` to a wall, as in
         ``isovist``.
     eps : float
-        Distance below which an observer counts as standing on a wall.
+        Distance in metres, positive, below which an observer counts as
+        standing on a wall. Default 1e-9.
 
     Returns
     -------
@@ -128,6 +133,13 @@ def path_isovists(
         [`METRIC_NAMES`][pysovist.METRIC_NAMES], ``clearance`` and the flags
         ``on_wall`` and ``unbounded``. Without ``s`` and ``direction`` it
         has the columns of [`isovist_field`][pysovist.isovist_field].
+
+    Raises
+    ------
+    ValueError
+        For a path or spacing that ``sample_path`` refuses, for an argument
+        that [`isovist`][pysovist.isovist] refuses, and with
+        ``on_wall="raise"`` when an observer stands on a wall.
     """
     plan = occluders if isinstance(occluders, Plan) else Plan(occluders)
     s, points, direction = sample_path(path, spacing, endpoint=endpoint)

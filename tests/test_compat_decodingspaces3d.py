@@ -279,6 +279,11 @@ def test_the_failing_counts_are_those_measured():
               and r.get("VVA", 180.0) == 180.0 and (r.get("crashed") or r.get("messages"))}
     assert failed == set(FAILING_COUNTS)
     assert len(FAILING_COUNTS) == 65
+    sweep = [r for r in COUNTS if 1000 <= r["HPr"] <= 1100]
+    assert len(sweep) == 101 and sum((r["HPr"], r["VPr"]) in FAILING_COUNTS for r in sweep) == 64
+    # Where it works, the room's volume moves between 297.24 and 299.90 m3.
+    volumes = [r["volume"][0] for r in sweep if r.get("volume")]
+    assert (round(min(volumes), 2), round(max(volumes), 2)) == (297.24, 299.90)
     # At other viewing angles the counts were not measured, and the rules apply.
     res = isovist3d((5, 5, 1.5), [ROOM], (1, 0, 0), horizontal_angle=180, vertical_angle=90,
                     horizontal_rays=1000, vertical_rays=500)
@@ -383,7 +388,16 @@ def test_volume(record):
     # Reference: the measured volume (output Vol). A grid that encloses nothing (one azimuth or
     # one elevation, or a full turn of one or two steps) gives 0, the component a few 1e-6.
     res = run(record)
-    assert res.volume == pytest.approx(record["volume"][0], rel=1e-5, abs=1e-5)
+    assert res.volume == pytest.approx(record["volume"][0], rel=2e-6, abs=1e-5)
+
+
+@pytest.mark.parametrize("record", WIDE_RECORDS, ids=label)
+def test_hits_per_mesh_at_360_x_180_rays(record):
+    # Reference: the measured hits per mesh. In the closed room, rays that meet the floor on the
+    # diagonal its two triangles share are decided by rounding, here and in the component.
+    res = run(record)
+    tol = 5 if record["scene"] == "room" else 0
+    np.testing.assert_allclose(res.object_visibility, record["OV"], atol=tol)
 
 
 def test_volume_sums_unsigned_tetrahedra():
@@ -405,7 +419,7 @@ def test_closed_room_volumes(hpr, vpr, hva, vva, volume):
     # Reference: the measured volumes of the closed room from (5, 5, 1.5).
     res = isovist3d((5, 5, 1.5), [ROOM], (1, 0, 0), horizontal_angle=hva, vertical_angle=vva,
                     horizontal_rays=hpr, vertical_rays=vpr, ground_at_zero=False)
-    assert res.volume == pytest.approx(volume, rel=1e-5)
+    assert res.volume == pytest.approx(volume, rel=5e-6)
 
 
 def test_hospital_exact_volume_is_height_times_isovist_area():
@@ -421,7 +435,7 @@ def test_hospital_volumes(hpr, vpr, volume):
     res = isovist3d(HOSPITAL_EYE, HOSPITAL, (1, 0, 0), horizontal_angle=360,
                     vertical_angle=180, horizontal_rays=hpr, vertical_rays=vpr,
                     ground_at_zero=False)
-    assert res.volume == pytest.approx(volume, rel=1e-4)
+    assert res.volume == pytest.approx(volume, rel=5e-6)
 
 
 def test_hospital_volume_at_1440_x_720():
@@ -511,7 +525,7 @@ def test_one_vantage_point_per_call_as_the_component_alone_gives():
     for r in alone:
         res = isovist3d(r["eye"], HOSPITAL, (1, 0, 0), horizontal_angle=360, vertical_angle=180,
                         horizontal_rays=360, vertical_rays=180)
-        assert res.volume == pytest.approx(r["volume"][0], rel=2e-4)
+        assert res.volume == pytest.approx(r["volume"][0], rel=1e-4)
 
 
 # --- isovist mesh -----------------------------------------------------------------------------

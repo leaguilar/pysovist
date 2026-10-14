@@ -103,15 +103,15 @@ The component's rules, which differ from those of `view_volume`:
 
 The volume is a polyhedron and not the solid-angle integral. On flat walls the two agree: 12 x 6 rays from the centre of the closed room give a 12-sided prism of 60.75 m3. Where a cell spans a near and a far surface, the polyhedron cuts the corner, so the component underestimates scenes with many occluding edges. On a hospital floor plan extruded to 3 m, from an eye with an exact volume of 200.01 m3, it returns 3.3 % less at 360 x 180 rays and 1.1 % less at 720 x 360. At 1,440 x 720 rays the fine vertical step takes the rays off the grid, and it returns 3.4 % less (193.23 m3). The volume therefore does not converge with the ray count: for the closed room it moves between 297.24 and 299.90 m3 from one count to the next between 1000 x 500 and 1100 x 550 rays. `view_volume` gives the view volume itself.
 
-| Measurement | Largest relative difference to the component |
+| Measurement | Relative difference to the component |
 |---|---|
-| Lengths of all 779 rays of 28 views: three scenes at 12 x 6 rays, a single triangle, a room without a floor, reversed and triangulated faces, two boxes on two ground meshes, partial fields, odd counts, a tilted view direction, an offset over the pole and counts from 1 x 6 to 12 x 2 | 1.1e-6 |
-| Volumes of these views, and of three scenes at 360 x 180 rays | 1.2e-6 |
-| Closed room, five ray counts from 10 x 10 to 720 x 360 | 2.8e-6 |
-| Hospital plan, 10 x 10 to 720 x 360 rays | 1.4e-6 |
-| Hospital plan at 20 vantage points, 360 x 180 rays | 9.3e-5 |
-| Room and hospital, 53 measurements from 720 x 360 to 2,880 x 1,440 rays | 2e-4, except 1013 x 506 and 2,880 x 1,440 rays (up to 7.7e-4) |
+| Lengths of all 779 rays of 28 views: three scenes at 12 x 6 rays, a single triangle, a room without a floor, reversed and triangulated faces, two boxes on two ground meshes, partial fields, odd counts, a tilted view direction, an offset over the pole and counts from 1 x 6 to 12 x 2 | below 2e-6 |
+| Volumes of these views, and of three scenes at 360 x 180 rays | below 2e-6 |
+| Closed room, five ray counts from 10 x 10 to 720 x 360 | below 5e-6 |
+| Hospital plan, 10 x 10 to 720 x 360 rays | below 5e-6 |
+| Hospital plan at 20 vantage points, 360 x 180 rays | below 1e-4 |
+| Room and hospital, 53 measurements from 720 x 360 to 2,880 x 1,440 rays | below 2e-4, and below 1e-3 at 1013 x 506 and 2,880 x 1,440 rays |
 
-The surface ids agree on all 779 rays. The hits per mesh agree exactly for the small views and, at 360 x 180 rays, for the room with a block (30,800 and 404) and the block on the ground (654). In the closed room 437 rays meet the floor on the diagonal that splits it, where rounding picks the triangle, and the count differs by 5 (26,216 against 26,211). On the hospital, at every count up to 2,880 x 1,440 rays, the hits per mesh differ by at most 8 of 2 million rays.
+The surface ids agree on all 779 rays. The hits per mesh agree exactly for the small views and, at 360 x 180 rays, for the room with a block (30,800 and 404) and the block on the ground (654). In the closed room, rounding decides which triangle reports a ray that meets the floor on the diagonal splitting it, and the count differs by 5 (26,216 against 26,211). On the hospital, at every count up to 2,880 x 1,440 rays, the hits per mesh differ by at most 10 of 2 million rays.
 
 Over 360 x 180 degrees the component stops with an index error, or crashes Rhino, at 64 of the 101 counts from 1000 x 500 to 1100 x 550 and at 1200 x 600, with no rule in the counts. `isovist3d` raises a `ValueError` at these 65 measured counts (`FAILING_COUNTS`), since the component has no output there to reproduce, and applies the rules at every other count. At 1003 x 501 rays the component returns one column of rays fewer than its layout, with the volume of the whole layout. Given several vantage points in one solution, it returns 0 for 13 of 20, different ones from run to run, so `isovist3d` takes one vantage point per call, as the component computes it alone.

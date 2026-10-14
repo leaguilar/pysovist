@@ -144,10 +144,11 @@ def test_hits_per_line_match_the_plugin(r):
     lines = _run(r).lines
     np.testing.assert_array_equal(np.bincount(lines[lines >= 0], minlength=len(segs)), ov)
     dx, dy = r["direction"]
-    hits = segment_ray_hits(segs, r["viewpoint"], r["precision"], max_distance=r["range"],
-                            fov=math.radians(r["view_angle"]), direction=math.atan2(dy, dx),
-                            layout="decodingspaces")
-    np.testing.assert_array_equal(hits, ov)
+    for direction in (r["direction"], math.atan2(dy, dx)):
+        hits = segment_ray_hits(segs, r["viewpoint"], r["precision"], max_distance=r["range"],
+                                fov=math.radians(r["view_angle"]), direction=direction,
+                                layout="decodingspaces")
+        np.testing.assert_array_equal(hits, ov)
 
 
 # --- conventions, each on the record that shows it ----------------------------------------------

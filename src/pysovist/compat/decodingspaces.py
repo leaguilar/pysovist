@@ -11,18 +11,20 @@ the same numbers.
 Rays
 :   The Precision input ``Pr`` becomes an angular step of ``2 pi / Pr`` when
     ``10 < Pr < 3000`` and of one degree otherwise, without a warning. A
-    non-integer ``Pr`` is used as it is. The rays sweep clockwise, from the
-    left edge of the view (view direction plus half the view angle) towards
-    the right edge. The plugin adds the step to the angle until the angle
-    reaches the right edge, so the rounding of that sum decides whether a ray
-    lands on the right edge. A full view at the default direction has
+    non-integer ``Pr`` is used as it is. The plugin measures the view
+    direction as a bearing, clockwise from +y, between 0 and 2 pi. The rays
+    sweep clockwise, from the left edge of the view (bearing minus half the
+    view angle) towards the right edge. The plugin adds the step to the angle
+    until the angle reaches the right edge, so the rounding of that sum
+    decides whether a ray lands on the right edge. A full view at the default direction has
     ``Pr + 1`` rays for ``Pr = 360`` and ``2999`` (the last repeats the first)
     and ``Pr`` rays for ``Pr = 15`` and ``100``. With the default direction
     (0, 1, 0), the first ray of a full view points along -y.
 
 Ray ends
 :   A ray ends at the first obstacle line it meets, or at the view range when
-    it meets none.
+    it meets none. A ray through the point where two lines meet ends on the
+    line listed first among those it does not meet at their second end point.
 
 Partial views
 :   A view angle below 360 degrees closes the polygon through the viewpoint.
@@ -40,7 +42,8 @@ Occlusivity
     hitting a line while the previous ray misses every line (or is the
     viewpoint), or hits another line that shares no end point with it and
     lies more than ``DEPTH_STEP_TOL`` (1 cm) nearer or farther. An edge from
-    a hit to a miss does not count.
+    a hit to a miss does not count, and neither does the edge from the last
+    ray back to the first.
 
 Drift Angle
 :   The signed angle at the viewpoint from the view direction, read as a
@@ -51,10 +54,12 @@ Drift Angle
 
 Inputs mirror the component (a view angle in degrees, a direction vector),
 which departs from the radians used elsewhere in pysovist. Agreement with the
-plugin covers full and partial views for view directions with a non-negative
-x component, non-integer Precision, T-junctions and walls 1 mm apart. A
-direction with a negative x component follows the same rules with the bearing
-``atan2(x, y)`` in (-pi, pi].
+plugin covers full and partial views in every view direction, non-integer
+Precision, T-junctions, walls 1 mm apart, settings outside their range and a
+direction list shorter than the viewpoints. Whether the plugin closes the
+Occlusivity sum with the edge from the last ray back to the first, when that
+edge bridges an occluding edge, is not covered by a reference: the module
+leaves it out.
 """
 
 from __future__ import annotations
@@ -69,7 +74,7 @@ from scipy.spatial import ConvexHull, QhullError
 from ..isovist2d import isovist
 from ..plan import Plan
 from ..rays2d import cast_rays
-from ..visibility2d import _ds_sweep
+from ..visibility2d import _RAY_SLACK, _ds_sweep, _nearest
 
 DS_PROPERTY_NAMES = (
     "Area", "Distance Weighted Area", "Perimeter", "Compactness", "Circularity",
@@ -97,7 +102,7 @@ CONNECT_TOL = 1e-9
 DEPTH_STEP_TOL = 0.01
 """Depth step in metres up to which a change between two lines that share no end point
 continues the boundary (for Occlusivity). The plugin's own threshold lies between the 2.2 mm
-step it ignores at a T-junction and the 7.2 cm step it counts there."""
+step it ignores at a T-junction and the 11 mm step it counts there."""
 
 
 def ds_angular_step(precision: float) -> float:
@@ -183,7 +188,7 @@ def ds_ray_angles(precision: float = 360, *, view_angle_deg: float = 360.0,
         notes.
     """
     d = _direction(view_direction)
-    bearing = math.atan2(d[0], d[1])  # clockwise from +y, as the plugin measures it
+    bearing = math.atan2(d[0], d[1]) % (2 * math.pi)  # clockwise from +y, in [0, 2 pi)
     return math.pi / 2 - _ds_sweep(ds_angular_step(precision), _half_view(view_angle_deg),
                                    bearing)
 
@@ -204,7 +209,8 @@ class DSIsovist:
         the viewpoint lies on a line.
     lines : ndarray of shape (m,)
         Index into ``Plan(occluders).segments`` of the line each ray hits, -1
-        for a ray that reaches the view range.
+        for a ray that reaches the view range. Counting them per line gives
+        the component's Obstacle Visibility output.
     points : ndarray of shape (m, 2)
         Ray end points (the plugin's radials end there).
     polygon : ndarray of shape (k, 2)
@@ -294,7 +300,11 @@ def ds_isovist(occluders, viewpoint, *, view_direction=(0.0, 1.0, 0.0), view_ran
         return DSIsovist(o, ang, depths, lines, pts, poly, dict.fromkeys(DS_PROPERTY_NAMES, np.nan))
 
     depths = iso.depth(ang)
-    lines = np.where(hits.distance[0] < R, hits.segment[0], -1)
+    # The line of each ray, with the plugin's choice where a ray passes exactly through the
+    # point where two lines meet (the rule of segment_ray_hits, measured at T-junctions).
+    seg = plan.segments - o
+    t, j, _ = _nearest(u, seg[:, 0], seg[:, 1] - seg[:, 0], _RAY_SLACK, prefer_start=True)
+    lines = np.where(t < R, j, -1)
     pts = o + depths[:, None] * u
     if full:
         poly, radii, ring_lines = pts, depths, lines

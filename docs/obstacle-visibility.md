@@ -102,7 +102,7 @@ The DeCodingSpaces Isovist component casts rays from the viewpoint and reports, 
 
 - The angular step is 2π / n for a requested ray count n with 10 < n < 3000, and one degree for any other n.
 - The rays start at the left edge of the view, the view direction plus half the field of view, and step clockwise while the angle stays short of the right edge. The step is summed in floating point, as in the component, and the rounding decides whether a ray lands on the right edge. In the default view direction a full turn casts n + 1 rays for n = 360 or 2,999, so the ray straight behind the view direction is cast twice, and n rays for n = 15 or 100.
-- The component's default view direction (0, 1) is `direction=math.pi / 2`, and its default range is 1,000 m.
+- The component's default view direction (0, 1) is `direction=math.pi / 2`, and its default range is 1,000 m. `direction` also takes the component's direction vector, such as `(0, 1)`, which gives its rays bit for bit. The component measures the direction clockwise from +y, between 0 and 2π.
 
 ```python
 hits = segment_ray_hits(walls, (2.0, 5.0), 2999, max_distance=1000,
@@ -113,7 +113,7 @@ vis.visible_angle / (2 * math.pi / 2999)    # [664.7, 299.4, 664.7, 1136.3, 0, 0
 
 These are the component's own counts for this scene. The exact visible angle divided by the angular step predicts them to within one ray per visible stretch. The south wall gets one ray more because the doubled ray behind the observer points at it.
 
-`segment_ray_hits` reproduces every count of the component on 42 reference records. Twelve cover four scenes (a square seen from its centre and from off-centre, a 20 m x 5 m rectangle, and the room with the pillar), each at 2,999 and at 360 rays with a range of 1,000 m, and at 2,999 rays with a range of 4 m, all full turns in the default view direction. Thirty more vary the view direction, the field of view (90, 180 and 359 degrees) and the ray count (15, 100 and 100.5), and add an interior wall that ends on the middle of another wall and two walls 1 mm apart.
+`segment_ray_hits` reproduces every count of the component on 95 reference records. Twelve cover four scenes (a square seen from its centre and from off-centre, a 20 m x 5 m rectangle, and the room with the pillar), each at 2,999 and at 360 rays with a range of 1,000 m, and at 2,999 rays with a range of 4 m, all full turns in the default view direction. The other 83 vary the view direction around the full circle, the field of view (90, 180 and 359 degrees) and the ray count (15 to 2,400, and 100.5), and add an interior wall that ends on the middle of another wall and two walls 1 mm apart.
 
 A ray that passes exactly through the corner where one segment ends and the next starts counts once, for the segment that starts there. In a closed outline every corner thus belongs to exactly one wall. From the centre of a square at 360 rays, four rays hit corners, and the walls get 91, 90, 90 and 90 hits, as in the component. The default `layout="even"` casts n rays evenly over the full turn, starting at `direction`, or n rays from one edge of the field of view to the other.
 

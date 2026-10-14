@@ -284,3 +284,18 @@ def test_isovist_refuses_an_unknown_on_wall_policy_and_takes_a_large_eps():
     with pytest.raises(ValueError, match="on_wall"):
         isovist(SQUARE, (5.0, 5.0), on_wall="zero")
     assert isovist(SQUARE, (5.0, 5.0), eps=6.0).flags.on_wall  # the walls are 5 m away
+
+
+@pytest.mark.parametrize("direction", [(0.0, 0.0), (NAN, 1.0), (1.0,)])
+def test_segment_ray_hits_refuses_a_direction_vector_without_a_direction(direction):
+    with pytest.raises(ValueError, match="direction"):
+        segment_ray_hits(SQUARE, (5.0, 5.0), 10, direction=direction, layout="decodingspaces")
+
+
+def test_segment_ray_hits_takes_a_direction_vector_in_the_even_layout():
+    """Closed form: four even rays from the centre along (0, 1) and its quarter turns hit the
+    four walls once each, as with direction = pi / 2."""
+    hits = segment_ray_hits(SQUARE, (5.0, 5.0), 4, direction=(0.0, 2.0))
+    assert hits.tolist() == [1, 1, 1, 1]
+    np.testing.assert_array_equal(hits, segment_ray_hits(SQUARE, (5.0, 5.0), 4,
+                                                         direction=math.pi / 2))

@@ -344,7 +344,7 @@ def segment_ray_hits(
     *,
     max_distance: float = np.inf,
     fov: float = TWO_PI,
-    direction: float = 0.0,
+    direction=0.0,
     layout: str = "even",
 ) -> np.ndarray:
     """Number of sampled rays whose first hit lies on each segment.
@@ -373,8 +373,12 @@ def segment_ray_hits(
     fov : float
         Field of view in radians, positive, centred on ``direction``. Values
         of 2 pi and above mean the full turn. Default: full turn.
-    direction : float
-        Viewing direction in radians, counter-clockwise from +x.
+    direction : float or (x, y)
+        Viewing direction in radians, counter-clockwise from +x, or as a
+        vector like the component's Viewing Direction. The vector gives the
+        component's rays bit for bit. An angle in radians gives the same rays
+        unless the rounding of its conversion moves the last ray across the
+        far edge of the view.
     layout : {"even", "decodingspaces"}
         ``"even"``: ``n_rays`` equally spaced rays, from ``direction`` around
         the full turn, or from one edge of the field of view to the other, as
@@ -389,6 +393,8 @@ def segment_ray_hits(
         casts ``n_rays + 1`` rays for 360 and 2,999 (the ray opposite to
         ``direction`` twice) and ``n_rays`` rays for 15 and 100. The
         component's default view direction (0, 1) is ``direction = pi / 2``.
+        The component measures the direction clockwise from +y, between 0 and
+        2 pi.
 
     Returns
     -------
@@ -401,7 +407,8 @@ def segment_ray_hits(
         When the origin is not one finite point, ``n_rays`` is not a whole
         number of at least 1 (``"even"``) or is NaN (``"decodingspaces"``),
         ``max_distance`` or ``fov`` is not positive, ``direction`` is not
-        finite, or ``layout`` is unknown.
+        finite or is a vector without an x or y component, or ``layout`` is
+        unknown.
 
     Notes
     -----
@@ -415,13 +422,21 @@ def segment_ray_hits(
         raise ValueError(f"layout must be one of {_LAYOUTS}")
     segs, plan, keep = _segments(occluders)
     o = _point2d(origin, "origin")
+    bearing = None
+    if np.ndim(direction) == 1:
+        v = np.asarray(direction, dtype=float)[:2]
+        if len(v) < 2 or not np.isfinite(v).all() or not v.any():
+            raise ValueError(f"direction must be an angle or a finite vector with an x or y "
+                             f"component, got {direction!r}")
+        bearing = np.arctan2(v[0], v[1]) % TWO_PI  # clockwise from +y, as the component
+        direction = np.arctan2(v[1], v[0])
     R, fov, direction, _ = _view_settings(max_distance, fov, direction)
     n = float(n_rays)
     if layout == "even" and not (np.isfinite(n) and n.is_integer() and n >= 1):
         raise ValueError(f"n_rays must be a whole number of at least 1, got {n_rays}")
     if np.isnan(n):
         raise ValueError("n_rays is NaN: pass the component's Precision, such as 360")
-    ang = _ray_angles(int(n) if layout == "even" else n, fov, direction, layout)
+    ang = _ray_angles(int(n) if layout == "even" else n, fov, direction, layout, bearing)
     seg = plan.segments - o
     t, j, _ = _nearest(np.c_[np.cos(ang), np.sin(ang)], seg[:, 0], seg[:, 1] - seg[:, 0],
                        _RAY_SLACK, prefer_start=True)
@@ -549,8 +564,12 @@ def _nearest(u, a, d, slack, prefer_start=False):
     return t[rows, col], idx[rows, col], s[rows, col]
 
 
-def _ray_angles(n_rays, fov, direction, layout):
-    """Absolute ray angles of a sampled view."""
+def _ray_angles(n_rays, fov, direction, layout, bearing=None):
+    """Absolute ray angles of a sampled view.
+
+    For the DeCodingSpaces layout, ``bearing`` (clockwise from +y, in [0, 2 pi)) replaces the
+    one derived from ``direction`` when the caller has the component's direction vector.
+    """
     full = fov >= TWO_PI - _ANGLE_TOL
     if layout == "even":
         n = int(n_rays)
@@ -560,15 +579,18 @@ def _ray_angles(n_rays, fov, direction, layout):
             return np.array([direction])
         return direction - fov / 2 + fov * np.arange(n) / (n - 1)
     step = TWO_PI / n_rays if _DS_MIN_RAYS < n_rays < _DS_MAX_RAYS else _DS_FALLBACK_STEP
-    return np.pi / 2 - _ds_sweep(step, fov / 2, np.pi / 2 - direction)
+    if bearing is None:
+        bearing = (np.pi / 2 - direction) % TWO_PI
+    return np.pi / 2 - _ds_sweep(step, fov / 2, bearing)
 
 
 def _ds_sweep(step, half, bearing):
     """Bearings of the DeCodingSpaces rays, in radians clockwise from +y.
 
-    The plugin starts at ``bearing - half``, the left edge of the view, and adds ``step`` to
-    the angle while it stays below ``bearing + half``. The sum is rounded at every addition,
-    so the rounding decides whether a ray lands on the far edge.
+    ``bearing`` is the view direction measured clockwise from +y in [0, 2 pi), as the
+    plugin measures it. The plugin starts at ``bearing - half``, the left edge of the view,
+    and adds ``step`` to the angle while it stays below ``bearing + half``. The sum is rounded
+    at every addition, so the rounding decides whether a ray lands on the far edge.
     """
     start, end = bearing - half, bearing + half
     if not (np.isfinite(start) and np.isfinite(end) and step > 0):

@@ -2,7 +2,7 @@
 
 DeCodingSpaces is a Grasshopper toolbox for Rhino. Its 2D Isovist component casts rays from each viewpoint against obstacle lines and reports 17 Isovist Properties. `pysovist.compat.decodingspaces` reproduces these properties from pysovist's exact isovist. It samples the exact depth along the plugin's rays and applies the plugin's formulas, so a Grasshopper definition and a Python script give the same numbers.
 
-The plugin's measures are the isovist measures of OmniVista (Conroy Dalton and Dalton 2001), computed on the polygon through the ray ends, with the radial statistics left as sums over the rays instead of means. Two rules follow for anyone comparing numbers. The radial statistics grow with the ray count, and dividing them by the number of rays recovers the means that pysovist computes exactly.
+The plugin's radial statistics, Circularity, Dispersion and Drift Magnitude are the isovist measures of OmniVista (Conroy Dalton and Dalton 2001), computed on the rays and on the polygon through the ray ends, with the radial statistics left as sums over the rays instead of means. Two rules follow for anyone comparing numbers. The radial statistics grow with the ray count, and dividing them by the number of rays recovers the means that pysovist computes exactly.
 
 ## Reproducing the component
 

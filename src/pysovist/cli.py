@@ -115,6 +115,9 @@ def _isovist(a: argparse.Namespace) -> None:
         plan = _read_plan(a.plan)
     ring = _read_ring(a.close)
     if ring is not None:
+        from .mesh import Mesh
+
+        Mesh.check_closing(plan, ring)
         closing = np.stack([ring, np.roll(ring, -1, axis=0)], axis=1)
         plan = Plan(np.concatenate([plan.segments, closing]))
     pts = _read_points(a.points, None, 2)

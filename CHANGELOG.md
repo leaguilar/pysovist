@@ -3,7 +3,14 @@
 ## 0.2.0
 
 The visibility tools of the DeCodingSpaces toolbox for Grasshopper, in pysovist. Every result of 0.1.2 is unchanged: the
-existing functions keep their arguments, defaults and values, which tests pin.
+existing functions keep their arguments, defaults and values, which tests pin. The one exception is a closing polygon
+that leaves walls outside, which now raises an error instead of returning a wrong volume.
+
+- A closing polygon must hold the plan. Every edge of the polygon becomes a wall, the edge from the last vertex back to
+  the first included, so a polygon that leaves walls outside cuts through the building. `Mesh.from_plan`, the new
+  `Mesh.check_closing` and the `--close` option of `pysovist isovist` and `pysovist volume` raise a `ValueError` when a
+  wall lies mostly (more than half its length) outside the polygon. Walls that end on it, run along it or reach past it
+  pass. A plan that already includes its outline needs no polygon, and the error says so.
 
 - Obstacle visibility: `segment_visibility` gives the exact visible length, fraction and parts of every wall seen from a
   viewpoint, `segment_visibility_field` sums it over many viewpoints (for example along a path), and `segment_ray_hits`

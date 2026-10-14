@@ -120,6 +120,30 @@ class Mesh:
         m = o3d.io.read_triangle_mesh(str(Path(path)))
         return cls(np.asarray(m.vertices), np.asarray(m.triangles))
 
+    @staticmethod
+    def check_closing(plan, polygon) -> None:
+        """Raise a ValueError if a wall of ``plan`` lies mostly (more than half
+        its length) outside the closing ``polygon`` (vertices in order).
+
+        Every edge of a closing polygon becomes a wall, so a polygon that
+        leaves walls outside cuts through the building. A wall may end on the
+        polygon, run along it or reach past it.
+        """
+        from .plan import Plan
+
+        if isinstance(plan, Plan):
+            segs = plan.segments
+        else:
+            segs = np.asarray(plan, dtype=float).reshape(-1, 2, 2)
+        out = _walls_outside_ring(segs, np.asarray(polygon, dtype=float).reshape(-1, 2)[:, :2])
+        if out.any():
+            raise ValueError(
+                f"{int(out.sum())} of {len(segs)} walls lie mostly outside the closing polygon. "
+                "Every edge of the polygon becomes a wall, so a polygon that leaves walls outside "
+                "cuts through the building. A plan that already includes its outline needs no "
+                "polygon: keep the default close='hull'. Otherwise remove the walls that lie "
+                "outside the polygon.")
+
     @classmethod
     def from_plan(cls, plan, floor: float = 0.0, ceiling: float = 2.5,
                   close="hull") -> Mesh:
@@ -143,7 +167,18 @@ class Mesh:
             Height of the ceiling plane in metres, above ``floor``.
         close : "hull", None or array_like of shape (k, 2)
             Close the sides along the convex hull, not at all, or along the
-            given polygon (vertices in order, the last joins the first).
+            given polygon (vertices in order, the last joins the first). Every
+            edge of the polygon becomes a wall, the edge from the last vertex
+            to the first included, so the polygon must hold the plan. A wall
+            may end on it, run along it or reach past it, but a wall that lies
+            mostly (more than half its length) outside it raises an error. A
+            plan that already includes its outline needs no polygon: keep the
+            default.
+
+        Raises
+        ------
+        ValueError
+            If a wall lies mostly outside the closing polygon.
         """
         from .plan import Plan
 
@@ -158,6 +193,8 @@ class Mesh:
             raise ValueError("ceiling must lie above floor")
         segs = (plan if isinstance(plan, Plan) else Plan(plan)).segments
         pts = segs.reshape(-1, 2)
+        if ring_close is not None:
+            cls.check_closing(segs, ring_close)
         if ring_close is not None:
             pts = np.vstack([pts, ring_close])
         ring = pts[ConvexHull(pts).vertices]  # counter-clockwise, floor and ceiling cover it
@@ -367,6 +404,71 @@ class Mesh:
         """True where an origin is closer than ``eps`` to a surface that ``near_clip`` keeps."""
         cl = self.clearance(origins)
         return (cl < eps) & (cl >= near_clip)
+
+
+def _walls_outside_ring(segments, ring, rel_tol: float = 1e-6) -> np.ndarray:
+    """True for each wall that lies mostly (more than half its length) outside
+    the polygon ``ring``. Points within ``rel_tol`` times the scene's extent of
+    an edge lie on the polygon, which covers coordinates rounded to six
+    decimals."""
+    segs = np.asarray(segments, dtype=float)
+    a = np.asarray(ring, dtype=float)
+    b = np.roll(a, -1, axis=0)
+    tol = rel_tol * max(1.0, float(np.ptp(np.vstack([segs.reshape(-1, 2), a]), axis=0).max()))
+    ends_out = _outside_ring(segs.reshape(-1, 2), a, tol).reshape(-1, 2)
+    p, q = segs[:, 0], segs[:, 1]
+    crosses = _segments_cross(p[:, None, :], q[:, None, :], a[None], b[None]).any(axis=1)
+    out = np.zeros(len(segs), dtype=bool)
+    e = b - a
+    # the other walls lie inside or on the polygon
+    for i in np.flatnonzero(ends_out.any(axis=1) | crosses):
+        d = q[i] - p[i]
+        den = d[0] * e[:, 1] - d[1] * e[:, 0]
+        ok = np.abs(den) > 0
+        w = a - p[i]
+        t = np.where(ok, (w[:, 0] * e[:, 1] - w[:, 1] * e[:, 0]) / np.where(ok, den, 1.0), -1.0)
+        u = np.where(ok, (w[:, 0] * d[1] - w[:, 1] * d[0]) / np.where(ok, den, 1.0), -1.0)
+        hit = ok & (t > 0) & (t < 1) & (u >= 0) & (u <= 1)
+        ts = np.unique(np.concatenate([[0.0, 1.0], t[hit]]))
+        mids = p[i] + ((ts[:-1] + ts[1:]) / 2)[:, None] * d
+        out[i] = np.diff(ts)[_outside_ring(mids, a, tol)].sum() > 0.5
+    return out
+
+
+def _outside_ring(points, ring, tol: float) -> np.ndarray:
+    """True for each point strictly outside the polygon ``ring`` (vertices in
+    order) and farther than ``tol`` from its edges (even-odd rule)."""
+    p = np.asarray(points, dtype=float)
+    a = np.asarray(ring, dtype=float)
+    b = np.roll(a, -1, axis=0)
+    d = b - a
+    dd = np.maximum((d * d).sum(axis=1), np.finfo(float).tiny)
+    out = np.zeros(len(p), dtype=bool)
+    for i in range(0, len(p), 4096):  # 4096 points x k edges per block
+        q = p[i:i + 4096, None, :]
+        t = np.clip(((q - a) * d).sum(axis=2) / dd, 0.0, 1.0)
+        near = (np.linalg.norm(q - (a + t[..., None] * d), axis=2) <= tol).any(axis=1)
+        y, x = q[..., 1], q[..., 0]
+        spans = (a[:, 1] > y) != (b[:, 1] > y)
+        xc = a[:, 0] + (y - a[:, 1]) * d[:, 0] / np.where(d[:, 1] == 0, 1.0, d[:, 1])
+        inside = (spans & (x < xc)).sum(axis=1) % 2 == 1
+        out[i:i + 4096] = ~near & ~inside
+    return out
+
+
+def _segments_cross(p, q, a, b) -> np.ndarray:
+    """Whether the segment p-q properly crosses each segment a[j]-b[j]."""
+    def side(o, u, v):
+        return ((u[..., 0] - o[..., 0]) * (v[..., 1] - o[..., 1])
+                - (u[..., 1] - o[..., 1]) * (v[..., 0] - o[..., 0]))
+    return ((side(p, q, a) * side(p, q, b) < 0) & (side(a, b, p) * side(a, b, q) < 0))
+
+
+def _point_segment_distance(points, p, q) -> np.ndarray:
+    """Distance of each point to the segment p-q."""
+    d = q - p
+    t = np.clip(((points - p) @ d) / max(float(d @ d), np.finfo(float).tiny), 0.0, 1.0)
+    return np.linalg.norm(points - (p + t[:, None] * d), axis=1)
 
 
 def _object_ids(ids, n: int) -> np.ndarray:

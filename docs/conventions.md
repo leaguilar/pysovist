@@ -22,7 +22,7 @@ A wall is a two-sided segment with no thickness and no inside. An observer insid
 
 The origin of a view volume is a 3D point `(x, y, z)` in the frame of the scene. Its z is an absolute coordinate. It is a height above the floor only when the floor lies at z = 0, as in a plan extruded with the default `floor=0.0`. The `--eye-height` option of the command line replaces the `z` column of the points file with one value.
 
-In an extruded plan the view volume does not depend on the eye height. Every eye strictly between floor and ceiling sees a volume equal to the height of the prism times the 2D isovist area at its plan position, in the plan closed along the same outline as the prism (its convex hull by default).
+In an extruded plan the view volume does not depend on the eye height. Every eye strictly between floor and ceiling sees a volume equal to the height of the prism times the 2D isovist area at its plan position, in the plan closed along the same outline as the prism (its convex hull by default). A closing polygon must hold the plan, because each of its edges becomes a wall.
 
 ## Flags
 

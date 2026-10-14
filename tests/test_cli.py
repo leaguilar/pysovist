@@ -218,3 +218,23 @@ def test_odtp_section_defaults_to_3600_rays(pillar_room, eyes, tmp_path, monkeyp
     assert meta["parameters"]["n_rays"] == 3600
     assert meta["parameters"]["eye_height"] == 1.2
     assert len(pd.read_csv(outp / "run1_section.csv")) == 6
+
+
+@pytest.mark.parametrize("command", ["isovist", "volume"])
+def test_a_closing_polygon_that_cuts_the_plan_is_refused(square_plan, points, tmp_path, command):
+    # three corners of the square room: the closing edge runs diagonally through it, and the walls
+    # along y = 10 and x = 0 touch the triangle only at a corner
+    ring = tmp_path / "ring.json"
+    ring.write_text(json.dumps([[0, 0], [10, 0], [10, 10]]))
+    refused = r"walls lie mostly outside the closing polygon"
+    with pytest.raises((SystemExit, ValueError), match=refused):
+        main([command, "--plan", str(square_plan), "--close", str(ring), "--points", str(points),
+              "--out", str(tmp_path / "out.csv")])
+
+
+def test_the_outline_of_a_closed_plan_closes_the_isovist_command(square_plan, points, tmp_path):
+    ring = tmp_path / "ring.json"
+    ring.write_text(json.dumps([[0, 0], [10, 0], [10, 10], [0, 10]]))
+    main(["isovist", "--plan", str(square_plan), "--close", str(ring), "--points", str(points),
+          "--out", str(tmp_path / "out.csv")])
+    assert pd.read_csv(tmp_path / "out.csv").area.tolist() == pytest.approx([100.0] * 3)

@@ -52,7 +52,7 @@ vv.metrics["escape_fraction"]  # 0.0, every ray hits a surface
 
 The 3D volume is estimated from 65,536 directions, and the residual of 9e-5 is the error of that estimate.
 
-By default, `Mesh.from_plan` closes the sides of the prism along the convex hull of the plan, so no ray from an eye inside the hull escapes. A polygon given as `close=` closes the domain along its own outline instead. A building footprint keeps a concave building concave, even when the plan holds only interior walls.
+By default, `Mesh.from_plan` closes the sides of the prism along the convex hull of the plan, so no ray from an eye inside the hull escapes. A plan that already includes its outline, such as a building plan with its exterior walls, needs nothing more: keep the default. A plan that holds only interior walls needs its outline as a polygon, given as `close=`. Every edge of the polygon becomes a wall, the edge from the last vertex back to the first included, so the polygon must be the whole outline, its vertices in order. A polygon that leaves walls outside would cut through the building, and `from_plan` raises a `ValueError` when a wall lies mostly outside it. The footprint below keeps a concave building concave.
 
 ```python
 footprint = np.array([(0, 0), (10, 0), (10, 4), (4, 4), (4, 9), (0, 9)], float)
@@ -149,7 +149,7 @@ Every run also writes a JSON file next to the CSV (`isovists.json` for `isovists
 | `--height` | `isovist` | | Height of the cut through an IFC model in metres, above the storey's elevation or the project origin. |
 | `--ifc-classes` | `isovist`, `volume` | walls | Presets and IFC classes to read, as in [BIM models](ifc.md#classes). |
 | `--ifc-storey` | `isovist`, `volume` | | Name or GlobalId of the storey to read. |
-| `--close` | `isovist`, `volume` | | JSON polygon `[[x, y], ...]` that closes the domain. For `isovist` its edges are added as walls. For `volume` it is the `close=` polygon of `Mesh.from_plan`, and without it the plan closes along its convex hull. |
+| `--close` | `isovist`, `volume` | | JSON polygon `[[x, y], ...]` that closes a plan without its outline. Its edges become walls, so a wall that lies mostly outside it is an error. For `volume` it is the `close=` polygon of `Mesh.from_plan`, and without it the plan closes along its convex hull. A plan that includes its outline needs no `--close`. |
 | `--points` | all three | | CSV with columns `x, y` and, for `volume` and `section`, `z`. |
 | `--out` | all three | | Output CSV. |
 | `--max-distance` | all three | inf | Range limit in metres. |

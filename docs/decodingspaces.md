@@ -27,6 +27,8 @@ one.polygon                        # the ring the component returns as Isovist P
 | Viewing Angle | `view_angle_deg` | 360 | Degrees. Values outside (0, 360] mean 360. |
 | Precision | `precision` | 360 | Sets the angular step, see below. |
 
+The component accepts any number. The module refuses with a `ValueError` a viewpoint that is not finite, a NaN range, view angle or Precision, a view direction without an x or y component, a partial view that holds a single ray, and an infinite range when a ray meets no line.
+
 ## The rays
 
 Precision sets an angular step, not a ray count. With \(\mathrm{Pr}\) the Precision input, the step is

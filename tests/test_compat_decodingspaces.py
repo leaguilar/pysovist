@@ -406,3 +406,73 @@ def test_hospital_areas_across_the_fallback(hospital):
                                    err_msg=f"{pr} rays")
     # At 3,000 rays and above the plugin returns its 360-ray areas.
     np.testing.assert_array_equal(_areas(walls, cand, 3000), _areas(walls, cand, 360))
+
+
+# --- inputs outside the component's domain ------------------------------------------------------
+
+SQUARE = rect(0, 0, 10, 10)
+
+
+@pytest.mark.parametrize("vp", [(np.nan, 5.0), (np.inf, 5.0), (2.0, -np.inf)])
+def test_viewpoint_must_be_finite(vp):
+    with pytest.raises(ValueError, match="viewpoint"):
+        ds_isovist(SQUARE, vp)
+    with pytest.raises(ValueError, match="viewpoint"):
+        ds_isovist_properties(SQUARE, [(5.0, 5.0), vp])
+
+
+@pytest.mark.parametrize("d", [(0.0, 0.0), (0.0, 0.0, 1.0), (np.nan, 1.0), (np.inf, 1.0)])
+def test_view_direction_must_be_a_finite_vector_in_the_plan(d):
+    with pytest.raises(ValueError, match="view_direction"):
+        ds_isovist(SQUARE, (2.0, 3.0), view_direction=d)
+
+
+@pytest.mark.parametrize("kw, name", [({"view_range": np.nan}, "view_range"),
+                                      ({"view_angle_deg": np.nan}, "view_angle_deg"),
+                                      ({"precision": np.nan}, "precision")])
+def test_nan_settings_are_refused(kw, name):
+    with pytest.raises(ValueError, match=name):
+        ds_isovist(SQUARE, (2.0, 3.0), **kw)
+
+
+def test_nan_precision_has_no_step():
+    with pytest.raises(ValueError, match="precision"):
+        ds_angular_step(np.nan)
+
+
+def test_infinite_range_is_refused_when_a_ray_meets_no_line():
+    """Closed room: an infinite range changes nothing. Open room: a ray without a hit has no
+    end, so the polygon does not exist."""
+    a = ds_isovist(SQUARE, (2.0, 3.0), view_range=np.inf).properties
+    b = ds_isovist(SQUARE, (2.0, 3.0), view_range=1000.0).properties
+    assert a == b
+    with pytest.raises(ValueError, match="view_range"):
+        ds_isovist(SQUARE[:3], (2.0, 3.0), view_range=np.inf)
+
+
+@pytest.mark.parametrize("va", [0.5, 1.0])
+def test_view_with_one_ray_is_refused(va):
+    """At one degree per ray a view of 1 degree or less holds one ray, and the polygon through
+    it and the viewpoint has no area."""
+    assert len(ds_ray_angles(360, view_angle_deg=va)) == 1
+    with pytest.raises(ValueError, match="one ray"):
+        ds_isovist(SQUARE, (2.0, 3.0), view_angle_deg=va)
+
+
+def test_two_rays_give_the_triangle_with_the_viewpoint():
+    """Closed form: a 2-degree view along +y from (5, 5) has rays at 91 and 90 degrees (and
+    stops short of 89), ending on the wall y = 10. The triangle with the viewpoint has area
+    25 tan(1 degree) / 2."""
+    res = ds_isovist(SQUARE, (5.0, 5.0), view_angle_deg=2.0)
+    assert len(res.angles) == 2
+    assert res.properties["Area"] == pytest.approx(12.5 * math.tan(math.radians(1)), rel=1e-12)
+
+
+def test_infinite_range_in_a_partial_view_that_meets_lines_only():
+    """An open room seen through a 90-degree view onto its closed side: every ray hits, so an
+    infinite range gives the rays of the default range."""
+    walls = SQUARE[:3]  # the side x = 0 is open
+    a = ds_isovist(walls, (2.0, 3.0), view_angle_deg=90.0, view_direction=(1, 0),
+                   view_range=np.inf).properties
+    b = ds_isovist(walls, (2.0, 3.0), view_angle_deg=90.0, view_direction=(1, 0)).properties
+    assert a == b

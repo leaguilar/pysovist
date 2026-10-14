@@ -112,15 +112,27 @@ def ds_angular_step(precision: float) -> float:
     -------
     float
         ``2 pi / Pr`` when ``10 < Pr < 3000``, otherwise one degree (360 rays
-        over a full view).
+        over a full view), as in the component, for 0, negative and infinite
+        values too.
+
+    Raises
+    ------
+    ValueError
+        If ``precision`` is NaN.
     """
     pr = float(precision)
+    if math.isnan(pr):
+        raise ValueError("precision is NaN: pass the component's Precision, a number of rays "
+                         "per turn such as 360")
     return 2 * math.pi / pr if 10.0 < pr < 3000.0 else ONE_DEGREE
 
 
 def _half_view(view_angle_deg: float) -> float:
     """Half the field of view in radians. Values outside (0, 360] mean a full view."""
     va = float(view_angle_deg)
+    if math.isnan(va):
+        raise ValueError("view_angle_deg is NaN: pass the component's Viewing Angle in degrees, "
+                         "360 for a full view")
     if not 0.0 < va <= 360.0:
         va = 360.0
     return va * math.pi / 180.0 / 2.0
@@ -132,8 +144,11 @@ def _is_full(view_angle_deg: float) -> bool:
 
 
 def _direction(view_direction) -> np.ndarray:
-    v = np.asarray(view_direction, dtype=float).ravel()
-    return v[:2]
+    v = np.asarray(view_direction, dtype=float).ravel()[:2]
+    if len(v) < 2 or not np.isfinite(v).all() or not v.any():
+        raise ValueError(f"view_direction must be a finite vector with a non-zero x or y "
+                         f"component, got {view_direction!r}")
+    return v
 
 
 def ds_ray_angles(precision: float = 360, *, view_angle_deg: float = 360.0,
@@ -150,6 +165,12 @@ def ds_ray_angles(precision: float = 360, *, view_angle_deg: float = 360.0,
         a full view.
     view_direction : (x, y) or (x, y, z)
         The component's Viewing Direction. Only its angle matters here.
+
+    Raises
+    ------
+    ValueError
+        If ``precision`` or ``view_angle_deg`` is NaN, or ``view_direction``
+        is not finite or has no x or y component.
 
     Returns
     -------
@@ -228,17 +249,42 @@ def ds_isovist(occluders, viewpoint, *, view_direction=(0.0, 1.0, 0.0), view_ran
     Returns
     -------
     DSIsovist
-        Rays, depths, hit lines, polygon and properties. A viewpoint on a line
-        gives NaN depths and NaN properties.
+        Rays, depths, hit lines, polygon and properties. A viewpoint closer
+        than 1e-9 m to a line gives NaN depths and NaN properties.
+
+    Raises
+    ------
+    ValueError
+        If the viewpoint is not finite, ``view_range``, ``view_angle_deg`` or
+        ``precision`` is NaN, ``view_direction`` is not a finite vector with an
+        x or y component, a partial view holds a single ray (its polygon has
+        no area), or ``view_range`` is infinite and a ray meets no line.
     """
     plan = occluders if isinstance(occluders, Plan) else Plan(occluders)
     o = np.asarray(viewpoint, dtype=float).ravel()[:2]
-    R = float(view_range) if float(view_range) > 0 else DS_DEFAULTS["view_range"]
+    if not np.isfinite(o).all():
+        raise ValueError(f"viewpoint must be finite, got {viewpoint!r}")
+    R = float(view_range)
+    if math.isnan(R):
+        raise ValueError("view_range is NaN: pass the Viewing Range in metres, 1000 by default")
+    R = R if R > 0 else DS_DEFAULTS["view_range"]
     dvec = _direction(view_direction)
     ang = ds_ray_angles(precision, view_angle_deg=view_angle_deg, view_direction=dvec)
     full = _is_full(view_angle_deg)
+    if not full and len(ang) < 2:
+        raise ValueError(f"a view angle of {float(view_angle_deg):g} degrees holds one ray at "
+                         f"precision {precision}, and the polygon through it and the viewpoint "
+                         f"has no area: widen view_angle_deg or raise precision")
     u = np.c_[np.cos(ang), np.sin(ang)]
 
+    hits = cast_rays(plan, o, ang, max_distance=R)
+    if math.isinf(R):
+        if not hits.hit.all():
+            raise ValueError("view_range is infinite and a ray meets no line, so the polygon has "
+                             "no end there: pass a finite range (the component's default is "
+                             "1000)")
+        # Every ray ends on a line: any finite range beyond the farthest hit gives the same rays.
+        R = 2.0 * float(hits.distance.max()) + 1.0 if len(ang) else 1.0
     iso = isovist(plan, o, max_distance=R)
     if iso.flags.on_wall:
         depths = np.full(len(ang), np.nan)
@@ -248,7 +294,6 @@ def ds_isovist(occluders, viewpoint, *, view_direction=(0.0, 1.0, 0.0), view_ran
         return DSIsovist(o, ang, depths, lines, pts, poly, dict.fromkeys(DS_PROPERTY_NAMES, np.nan))
 
     depths = iso.depth(ang)
-    hits = cast_rays(plan, o, ang, max_distance=R)
     lines = np.where(hits.distance[0] < R, hits.segment[0], -1)
     pts = o + depths[:, None] * u
     if full:

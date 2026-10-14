@@ -278,3 +278,9 @@ def test_observer_on_a_wall_is_named_in_plain_numbers():
         isovist(SQUARE, np.array([0.0, 5.0]), on_wall="raise")
     with pytest.raises(ValueError, match=r"observer \(0\.0, 5\.0\) is 0 m from a wall"):
         segment_visibility(SQUARE, np.array([0.0, 5.0]), on_wall="raise")
+
+
+def test_isovist_refuses_an_unknown_on_wall_policy_and_takes_a_large_eps():
+    with pytest.raises(ValueError, match="on_wall"):
+        isovist(SQUARE, (5.0, 5.0), on_wall="zero")
+    assert isovist(SQUARE, (5.0, 5.0), eps=6.0).flags.on_wall  # the walls are 5 m away

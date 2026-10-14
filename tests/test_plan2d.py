@@ -59,3 +59,12 @@ def test_from_json_reads_records_with_any_keys_and_drops_z(tmp_path):
     np.testing.assert_array_equal(plan.segments, [[[0, 0], [4, 0]], [[4, 0], [4, 3]]])
     with pytest.raises(KeyError):
         Plan.from_json(path)
+
+
+def test_flood_grid_over_a_domain_inside_one_room():
+    """Closed form: a 4 m x 4 m domain inside a 10 m square holds no wall, so the flood at
+    spacing 1 reaches all 16 cells, centred at 2.5 to 5.5 m."""
+    centres, cells = Plan(rect(0, 0, 10, 10)).flood_grid(1.0, (3.0, 3.0), domain=(2, 2, 6, 6))
+    assert len(centres) == 16
+    np.testing.assert_array_equal(np.unique(centres[:, 0]), [2.5, 3.5, 4.5, 5.5])
+    np.testing.assert_array_equal(cells[0], [2.0, 2.0, 3.0, 3.0])

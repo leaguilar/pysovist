@@ -536,3 +536,30 @@ def test_ray_hits_a_hair_in_front_of_a_wall_send_half_the_rays_onto_it():
     near = segment_ray_hits(rect(0, 0, 10, 10), (5.0, 1e-12), 360, direction=0.5 * math.pi / 180)
     on = segment_ray_hits(rect(0, 0, 10, 10), (5.0, 0.0), 360, direction=0.5 * math.pi / 180)
     assert near[0] == 180 and on[0] == 0
+
+
+def test_field_fractions_and_angles_in_closed_form():
+    """In a 10 m square every wall is fully visible from every inside point, so every visible
+    fraction is 1. From the centre each wall fills a quarter turn, and from (2, 3) the bottom
+    wall fills atan(2 / 3) + atan(8 / 3)."""
+    walls = rect(0, 0, 10, 10)
+    table, pairs = segment_visibility_field(walls, [(5.0, 5.0), (2.0, 3.0)], per_viewpoint=True)
+    np.testing.assert_allclose(table["visible_fraction_mean"], 1.0, rtol=1e-12)
+    np.testing.assert_allclose(table["length"], 10.0)
+    np.testing.assert_allclose(pairs["visible_fraction"], 1.0, rtol=1e-12)
+    centre = pairs[pairs["viewpoint"] == 0]
+    np.testing.assert_allclose(centre["visible_angle"], math.pi / 2, rtol=1e-12)
+    bottom = pairs[(pairs["viewpoint"] == 1) & (pairs["segment"] == 0)]
+    assert bottom["visible_angle"].iloc[0] == pytest.approx(math.atan(2 / 3) + math.atan(8 / 3),
+                                                            rel=1e-12)
+
+
+def test_clearance_is_the_distance_to_the_nearest_wall():
+    vis = segment_visibility(rect(0, 0, 10, 10), (2.0, 3.0))
+    assert vis.clearance == pytest.approx(2.0, rel=1e-12)
+    assert segment_visibility(np.empty((0, 2, 2)), (2.0, 3.0)).clearance == math.inf
+
+
+def test_a_larger_eps_puts_the_observer_on_the_wall():
+    vis = segment_visibility(rect(0, 0, 10, 10), (2.0, 3.0), eps=2.5)
+    assert vis.flags.on_wall and np.isnan(vis.visible_length).all()

@@ -18,6 +18,16 @@ from pysovist.cli import _odtp_argv, _parser, main
 from .geometry import polygon_walls, rect, room_walls, square_rule
 
 
+def _has_numba() -> bool:
+    try:
+        import numba  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+NEEDS_NUMBA = pytest.mark.skipif(not _has_numba(), reason="needs numba, from the pointcloud extra")
+
 @pytest.fixture
 def square_plan(tmp_path):
     walls = rect(0, 0, 10, 10)
@@ -130,6 +140,7 @@ def eyes(tmp_path):
       "--inside", "zero"],
      {"n_rays": 720, "radius": 0.03, "max_distance": 3.0, "escape": "zero", "inside": "zero"}),
 ])
+@NEEDS_NUMBA
 def test_section_command_equals_the_library_bit_for_bit(pillar_room, eyes, tmp_path, options, kw):
     out = tmp_path / "sections.csv"
     main(["section", "--cloud", str(pillar_room), "--points", str(eyes), "--out", str(out),
@@ -152,6 +163,7 @@ def test_section_command_equals_the_library_bit_for_bit(pillar_room, eyes, tmp_p
     assert df.unbounded.sum() == (0 if "max_distance" in kw else 1)
 
 
+@NEEDS_NUMBA
 def test_section_record_holds_version_parameters_and_input_checksums(pillar_room, eyes,
                                                                      tmp_path):
     out = tmp_path / "sections.csv"
@@ -170,6 +182,7 @@ def test_section_record_holds_version_parameters_and_input_checksums(pillar_room
     assert (pd.read_csv(out).z == 1.2).all()
 
 
+@NEEDS_NUMBA
 def test_section_command_on_a_sampled_square_room(tmp_path):
     side, s, radius, n = 10.0, 0.02, 0.03, 3600
     cloud = write_pts(tmp_path / "room.pts", room_walls(side, s))
@@ -204,6 +217,7 @@ def test_odtp_section_maps_its_own_variables_only():
         "--radius": "0.03", "--max-distance": "40", "--escape": "zero", "--inside": "zero"}
 
 
+@NEEDS_NUMBA
 def test_odtp_section_defaults_to_3600_rays(pillar_room, eyes, tmp_path, monkeypatch):
     inp, outp = tmp_path / "odtp-input", tmp_path / "odtp-output"
     inp.mkdir()
@@ -410,6 +424,7 @@ def closed_room_cloud(tmp_path):
      {"radius": 0.04, "max_distance": 2.5, "escape": "nan", "inside": "zero", "near_clip": 0.2,
       "n_jobs": 3}),
 ])
+@NEEDS_NUMBA
 def test_volume_command_on_a_cloud_equals_view_volume_field_bit_for_bit(closed_room_cloud,
                                                                         tmp_path, options, kw):
     from pysovist import view_volume_field
@@ -429,6 +444,7 @@ def test_volume_command_on_a_cloud_equals_view_volume_field_bit_for_bit(closed_r
     assert df.near_clipped.tolist() == [False, bool(options), False, bool(options)]
 
 
+@NEEDS_NUMBA
 def test_volume_command_eye_height_replaces_the_z_column(closed_room_cloud, tmp_path):
     from pysovist import view_volume_field
 
@@ -462,6 +478,7 @@ def test_isovist_record_holds_every_parameter_and_input(building, tmp_path):
     assert meta["n_points"] == 4 and meta["seconds"] >= 0
 
 
+@NEEDS_NUMBA
 def test_volume_record_holds_every_parameter_and_input(closed_room_cloud, tmp_path):
     pts = write_points(tmp_path / "pts.csv", x=[1.0], y=[1.0], z=[1.7])
     out = tmp_path / "vol.csv"
@@ -518,6 +535,7 @@ def test_odtp_volume_maps_the_variables_of_its_source(source, var, extra):
     assert dict(zip(argv[5::2], argv[6::2], strict=True)) == expected
 
 
+@NEEDS_NUMBA
 def test_odtp_volume_equals_the_command_bit_for_bit(closed_room_cloud, tmp_path, monkeypatch):
     inp, outp = tmp_path / "in", tmp_path / "out"
     inp.mkdir()
@@ -754,6 +772,7 @@ def test_a_cloud_file_without_points_is_refused(tmp_path, capsys, content):
                 out)
 
 
+@NEEDS_NUMBA
 def test_a_section_plane_that_cuts_no_ball_is_refused(pillar_room, tmp_path, capsys):
     # The walls stand from 0 to 2 m and the balls reach 5 cm beyond: a plane at 2.5 m, or at
     # 1700 for an eye height given in millimetres, cuts nothing. It gave the range disc, or inf.

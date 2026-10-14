@@ -343,6 +343,8 @@ def _read_cloud(path: Path, radius: float):
         cloud = PointCloud.read(path, radius=radius)
     except pd.errors.EmptyDataError:
         cloud = None
+    except ValueError as e:  # the reader names the file and what it lacks
+        raise SystemExit(str(e)) from None
     if cloud is None or len(cloud) == 0:
         raise SystemExit(f"the point cloud {path} holds no points")
     return cloud
@@ -414,7 +416,11 @@ def _volume(a: argparse.Namespace) -> None:
     elif a.mesh:
         from .mesh import Mesh
 
-        occ = Mesh.from_file(a.mesh)
+        try:
+            occ = Mesh.from_file(a.mesh)
+        except ValueError as e:  # the reader names the file and what it lacks
+            raise SystemExit(f"{e}. Give a triangle mesh in a format open3d reads, such as .ply, "
+                             ".obj or .stl") from None
         if len(occ.triangles) == 0:
             raise SystemExit(f"the mesh {a.mesh} holds no triangle: open3d reads a file it cannot "
                              "parse as an empty mesh. Give a triangle mesh in a format open3d "

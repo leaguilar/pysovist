@@ -11,8 +11,6 @@ from pysovist import Plan
 
 from .geometry import polygon_walls, rect, regular_ngon
 
-shapely = pytest.importorskip("shapely")
-
 L_ROOM = Plan(polygon_walls([(0, 0), (10, 0), (10, 4), (4, 4), (4, 9), (0, 9)]))
 
 
@@ -191,6 +189,7 @@ def free_walls(draw):
 @settings(max_examples=60, deadline=None)
 @given(free_walls())
 def test_fill_equals_a_breadth_first_fill_with_geos_distances(scene):
+    pytest.importorskip("shapely")
     walls, spacing, seed, eps = scene
     plan = Plan(walls)
     expected = _oracle_flood(plan.segments, spacing, seed, plan.bounds, eps)
@@ -210,6 +209,7 @@ def test_fill_equals_a_breadth_first_fill_with_geos_distances(scene):
 @given(n=st.integers(3, 12), rho=st.floats(1, 10), turn=st.floats(0, 2 * np.pi),
        spacing=st.floats(0.05, 1.0))
 def test_a_closed_polygon_never_leaks(n, rho, turn, spacing):
+    pytest.importorskip("shapely")
     from shapely.geometry import Point, Polygon
 
     k = np.arange(n)
@@ -225,6 +225,7 @@ def test_a_closed_polygon_never_leaks(n, rho, turn, spacing):
 
 
 def test_regular_polygon_fill_holds_every_interior_centre():
+    pytest.importorskip("shapely")
     plan = Plan(regular_ngon(8, 5.0))
     centres, _ = plan.flood_grid(0.25, (0.1, 0.1))
     from shapely.geometry import Point, Polygon

@@ -1,7 +1,6 @@
 """Methods of the 2D isovist result on flagged isovists and degenerate ray counts.
 
-The ``Isovist`` class lives in the module of result types shared with the 3D code. The cases
-marked ``xfail`` fail today and document the behaviour the 2D functions expect from it.
+The ``Isovist`` class lives in the module of result types shared with the 3D code.
 """
 
 import math
@@ -14,10 +13,8 @@ from pysovist import isovist
 from .geometry import rect
 
 SQUARE = rect(0, 0, 10, 10)
-OWNER = "Isovist methods live in results.py (3D row): reported, not fixed here"
 
 
-@pytest.mark.xfail(strict=True, raises=IndexError, reason=OWNER)
 def test_depth_of_an_observer_on_a_wall_is_nan():
     """An isovist flagged on_wall has no wedges, so its depth is NaN in every direction, as
     its metrics are. Today the lookup indexes an empty wedge list."""
@@ -25,13 +22,11 @@ def test_depth_of_an_observer_on_a_wall_is_nan():
     assert np.isnan(iso.depth([0.0, 1.0])).all()
 
 
-@pytest.mark.xfail(strict=True, raises=IndexError, reason=OWNER)
 def test_depth_of_an_unbounded_isovist_is_nan():
     iso = isovist(SQUARE[:3], (5.0, 5.0))
     assert np.isnan(iso.depth([0.0, 1.0])).all()
 
 
-@pytest.mark.xfail(strict=True, reason=OWNER)
 def test_radial_of_a_partial_view_needs_two_rays():
     """One ray across a field of view divides by n - 1 = 0 and returns NaN without a message."""
     iso = isovist(SQUARE, (5.0, 5.0), fov=math.pi / 2, direction=0.0)

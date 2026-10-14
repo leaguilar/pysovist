@@ -3,15 +3,15 @@
 The test suite compares pysovist with answers computed another way: closed forms, independent libraries, brute-force searches and an exact identity between the 2D and the 3D code. The tolerances below are the ones the tests assert.
 
 ```bash
-pip install -e ".[pointcloud,mesh,ifc]" pytest hypothesis shapely visilibity
+pip install -e ".[all]" pytest hypothesis shapely visilibity
 pytest
 ```
 
-`visilibity` needs SWIG to build. Tests that need open3d, visilibity, shapely, laspy, pye57 or ifcopenshell are skipped when the package is missing, and the Unity parity tests are skipped without the reference data.
+`visilibity` needs SWIG to build. The suite needs hypothesis, and numba for the point clouds (the `pointcloud` extra). Tests that need open3d, visilibity, shapely, laspy, pye57 or ifcopenshell are skipped when the package is missing. The Unity tests and the DeCodingSpaces tests on a hospital floor plan are skipped without their reference data.
 
 ## 2D isovists
 
-**Closed-form scenes agree to a relative 1e-9 (absolute 1e-9 for values of zero).**
+**Closed-form scenes agree to 1e-9, relative for values above 1 and absolute below.**
 
 | Scene | Observer | Checked |
 |---|---|---|
@@ -20,22 +20,22 @@ pytest
 | 40 m x 2 m hallway | three points | \(A = 80\), \(P = 84\) |
 | Regular n-gons of circumradius \(\rho\), n = 3, 6 and 17 | off-centre | \(A = \frac{n}{2}\rho^2 \sin(2\pi/n)\), \(P = 2n\rho\sin(\pi/n)\) |
 | Hallway with range 10 m | centre | \(A = 2(\sqrt{99} + 100 \arcsin 0.1)\), \(P = 4\sqrt{99} + 40\arcsin 0.1\), with no wall endpoint in range |
-| Empty plan with range 3 m | any | the disc, \(A = 9\pi\), \(P = 6\pi\) |
+| Empty plan with range 3 m | (1, 2) | the disc, \(A = 9\pi\), \(P = 6\pi\) |
 | L-shaped room | in one arm | \(A = 20.5\), occlusivity \(\sqrt{4.25}\), \(P = 22.5 + \sqrt{4.25}\) |
 | Room with a pillar | 2 m beside the pillar | \(A = 70\), occlusivity \(2\sqrt{45}\), \(P = 34 + 2\sqrt{45}\) |
 | 10 m square open on one side, range 40 m | centre | \(A = 75 + 400\pi\), occlusivity \(2(40 - \sqrt{50})\) |
 | Square, quarter field of view | centre | \(A = 25\), \(P = 10 + 10\sqrt{2}\) |
 | Two crossing walls in a room | below the crossing | \(A\) = 100 minus the hidden polygon |
 
-Six fields of view of 60 degrees add up to the area of the full isovist. A subdivided and partly duplicated outline gives the same isovist as the plain one. A wall seen almost edge-on, which gives a wedge of 5e-6 rad, scales area, perimeter and occlusivity under factors 0.01, 3 and 7, to a relative 1e-9. An observer on a wall is flagged `on_wall` with NaN metrics, and an open room without a range limit is flagged `unbounded` with infinite area.
+Six fields of view of 60 degrees add up to the area of the full isovist. A subdivided and partly duplicated outline gives the same isovist as the plain one. A wall seen almost edge-on, which gives a wedge of 5e-6 rad, scales area, perimeter and occlusivity under factors 0.01, 3 and 7, to a relative 1e-9. An observer on a wall is flagged `on_wall` with a NaN area, and an open room without a range limit is flagged `unbounded` with infinite area.
 
 **Random scenes agree with two independent references to 1e-7.** Rectangular rooms with up to nine rectangular pillars agree with the visibility polygon of the visilibity library. Square rooms with up to ten interior walls, which may cross, agree with the room's area minus the union of the walls' shadows, computed with shapely. Each property is checked on up to 150 random scenes.
 
-**Invariants hold on the same random scenes.**
+**Invariants hold on the random rooms with interior walls.**
 
-- A rigid motion (any rotation and a shift of up to 1,000 m) leaves area, perimeter, occlusivity, `r_mean`, `r_min`, `r_max` and drift unchanged, to 1e-7.
+- A rigid motion (any rotation and a shift of up to 1,000 m along each axis) leaves area, perimeter, occlusivity, `r_mean`, `r_min`, `r_max` and drift unchanged, to 1e-7.
 - Scaling by a factor k from 0.01 to 100 multiplies the area by k² and the perimeter by k, and leaves compactness unchanged, to 1e-7.
-- Adding a wall never increases the area. A longer range never decreases it, and the area under range R never exceeds \(\pi R^2\).
+- Adding a wall never increases the area. A longer range never decreases it, and the area under range R never exceeds \(\pi R^2\), each to a relative 1e-9.
 - The angular index used for large plans gives the same area and perimeter as the direct search, to 1e-12, on 25 observers among 800 random walls.
 
 **The metric definitions match direct computation.** `r_mean`, `r_mad` and `r_skew` agree with a numerical integration over 2,000,001 rays to 1e-5. A 40 m x 2 m hallway has elongation 20, its aspect ratio. The L-shaped room has convex deficiency \((22.5 - 20.5)/22.5\), and a convex room has 0. The boundary ring of the room with a pillar has area 70.
@@ -53,7 +53,7 @@ A closed convex enclosure is star-shaped from any eye inside it, so the view vol
 - Random convex hulls of 8 to 40 points agree to 2e-4.
 - A range limit of 1.2 m in a cube of half-side 1 m gives the ball minus six caps, 6.38372 m³.
 - A floor plate 1 m below the eye with a range of 2 m gives \(9\pi\), with `volume_up` \(= 16\pi/3\).
-- A box with its top removed is `unbounded`, and its `escape_fraction` is 1/6, the share of the sphere that the open face covers.
+- A box with its top removed is `unbounded`, and its `escape_fraction` is 1/6, the share of the sphere that the open face covers, to 2e-3 at 4,096 directions.
 - A cube shifted by 2.6e6 m in x and 1.2e6 m in y, as in a georeferenced frame, keeps the 1e-4 error.
 
 `view_volume_field` gives the same metrics as single `view_volume` calls to 1e-12. The clearance of an eye to random triangles is never larger than a dense sampling of the triangles, and smaller by at most one sampling step.
@@ -78,7 +78,9 @@ Inside a prism of height H (vertical walls between a horizontal floor and ceilin
 - In a model with two storeys 3 m apart, a height is measured from the storey's elevation: 0.5 m above the upper storey gives the same segments as 3.5 m above the origin. A storey is found by its Name or its GlobalId, and a storey without a placement takes its Elevation attribute.
 - The presets read exactly their classes and the subtypes of those classes, a curtain wall is read through its plate, and `"furnished"` reads the furnishing elements of an IFC2X3 model. An unknown class or storey is an error.
 - With a floor slab and a ceiling slab, the view volume of the room equals the wall height times its isovist area, to the 1e-3 of the extruded-plan identity at 65,536 directions, from eyes at 0.4, 1.6 and 2.6 m.
-- The `isovist` command gives exactly the table of `isovist_field` on `Plan.from_ifc`, and the `volume` command gives 3 m x 20.16 m² to 1e-3. Both record the sha256 of the IFC file.
+- The four walls enclose 11.52 m³, the volume of their boxes, to a relative 1e-12, in metres and in millimetres. A door opening of 1 m x 2.1 m takes its 0.42 m³ out of the wall, and an eye in the room sees out through it at 1.2 m. With `IfcDoor` the door closes the opening, and the room gives 20.16 m² again.
+- A cut at the top of the table leaves the table out, and a cut at 0 holds the walls. Parts are read through any depth of aggregation, a storey name held by two storeys asks for a GlobalId, and a map conversion in the file leaves the coordinates unchanged.
+- The `isovist` command gives exactly the table of `isovist_field` on `Plan.from_ifc`, and the `volume` command that of `view_volume_field` on `Mesh.from_ifc`, also for one storey of two. The `volume` command gives 3 m x 20.16 m² to 1e-3. Both record the sha256 of the IFC file.
 
 ## Point clouds
 
@@ -93,3 +95,9 @@ Inside a prism of height H (vertical walls between a horizontal floor and ceilin
 Fibonacci directions are unit vectors whose mean is within 2/N of zero, and the share of directions in a polar cap about z equals the cap's share of the sphere to 1/N. Random directions are reproducible from their seed. The weights sum to \(4\pi\) to 1e-14.
 
 The Unity frame transform equals the composition of the Unity loader's axis swap, the scene's rotation, scale and translation, and the swap back. The [Unity preset](unity.md) runs through `view_volume` with 20,070 random directions. Where the Unity reference volumes are available, a further test compares 100 standing eye points: the same eyes get a volume of 0, and the Spearman rank correlation exceeds 0.99. The mean relative difference from Unity lies within three standard errors of zero, with the standard error taken from the spread between two pysovist runs, and its spread is at most 1.5 times the spread between two pysovist runs with different seeds.
+
+## Command line and documentation
+
+**Every command gives the table of the library call it wraps, bit for bit.** `isovist` on a plan in JSON or CSV, closed by a polygon or not, with a range and on two processes, equals `isovist_field`. `volume` on an extruded plan, a mesh file, a point cloud and an IFC model, with every policy option, equals `view_volume_field`, and `section` equals one `section_isovist_area` call per point. ODTP mode maps every variable to its option and writes the same table as the command. Every kind of inconsistent input listed in the [quick start](quickstart.md#command-line) stops the command with a message, before it writes anything.
+
+**Every example in this documentation runs.** The Python blocks of each page run in order as one script in an empty directory, and the `pysovist` commands of the page run after them. Every value that a page states in a comment or in a printed table agrees with the output to the digits written, and so do the results that the quick start states in its sentences. The blocks that read a scan or a BIM model of the reader's own are not run, and the names they use are defined by the blocks before them.

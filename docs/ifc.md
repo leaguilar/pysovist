@@ -67,7 +67,7 @@ pysovist volume --ifc model.ifc --ifc-classes furnished IfcSlab IfcCovering IfcW
     --eye-height 1.6 --points points.csv --out volumes.csv
 ```
 
-The JSON record of the run holds the sha256 of the IFC file, the height, the classes and the storey. The [quick start](quickstart.md#command-line) lists every option.
+`--height` is measured from the storey's elevation, and `--eye-height` is the absolute z of the eye, as for any mesh. An eye 1.6 m above a storey at elevation e needs `--eye-height` e + 1.6, with or without `--ifc-storey`. The second command reads every storey, so the ceiling slab that belongs to the storey above closes the rooms. The `isovist` command stops with a message when its cut meets no element, and the `volume` command when an eye lies below or above every element it reads. Both messages give the heights that the elements span. The JSON record of the run holds the sha256 of the IFC file, the height, the classes and the storey. The [quick start](quickstart.md#command-line) lists every option.
 
 ## Scope
 

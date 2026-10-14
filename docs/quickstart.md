@@ -96,9 +96,9 @@ A scan file is read in one line. `.pts`, `.las`, `.laz`, `.e57`, `.ply` and `.pc
 
 ```python
 # Every point of the scan becomes a ball of radius 5 cm.
-cloud = pysovist.PointCloud.read("scan.las", radius=0.05)
-vv = pysovist.view_volume(cloud, (3.0, 0.0, 1.7), n_rays=262_144)
-vv.volume, vv.metrics["escape_fraction"]
+scan = pysovist.PointCloud.read("scan.las", radius=0.05)
+scan_vv = pysovist.view_volume(scan, (3.0, 0.0, 1.7), n_rays=262_144)
+scan_vv.volume, scan_vv.metrics["escape_fraction"]
 ```
 
 A ray that leaves through an opening of the scan makes the volume infinite under the default `max_distance=inf`. Set `max_distance`, or choose another `escape` policy, for scans that are not closed. `view_volume_field` evaluates many eye points in one call and returns one row per eye.
@@ -109,8 +109,8 @@ A ray that leaves through an opening of the scan makes the volume infinite under
 
 ```python
 # The walls and furniture of one storey of a model of your own, cut 1.2 m above its floor.
-plan = pysovist.Plan.from_ifc("model.ifc", 1.2, classes="furnished", storey="Level 1")
-iso = pysovist.isovist(plan, (3.0, 4.0))
+bim_plan = pysovist.Plan.from_ifc("model.ifc", 1.2, classes="furnished", storey="Level 1")
+bim_iso = pysovist.isovist(bim_plan, (3.0, 4.0))
 ```
 
 ## Command line
@@ -147,24 +147,26 @@ Every run also writes a JSON file next to the CSV (`isovists.json` for `isovists
 | `--plan` | `isovist`, `volume` | | Wall segments: JSON records with `start` and `end`, or a CSV with columns `x0, y0, x1, y1`. For `volume`, the plan is extruded with `Mesh.from_plan`. |
 | `--ifc` | `isovist`, `volume` | | IFC model. For `isovist` it is cut at `--height` with `Plan.from_ifc`, and for `volume` it is read with `Mesh.from_ifc`. |
 | `--height` | `isovist` | | Height of the cut through an IFC model in metres, above the storey's elevation or the project origin. |
-| `--ifc-classes` | `isovist`, `volume` | walls | Presets and IFC classes to read, as in [BIM models](ifc.md#classes). |
-| `--ifc-storey` | `isovist`, `volume` | | Name or GlobalId of the storey to read. |
+| `--ifc-classes` | `isovist`, `volume` | walls | Presets and IFC classes to read with `--ifc`, as in [BIM models](ifc.md#classes). |
+| `--ifc-storey` | `isovist`, `volume` | | Name or GlobalId of the storey to read with `--ifc`. |
 | `--close` | `isovist`, `volume` | | JSON polygon `[[x, y], ...]` that closes a plan without its outline. Its edges become walls, so a wall that lies mostly outside it is an error. For `volume` it is the `close=` polygon of `Mesh.from_plan`, and without it the plan closes along its convex hull. A plan that includes its outline needs no `--close`. |
-| `--points` | all three | | CSV with columns `x, y` and, for `volume` and `section`, `z`. |
+| `--points` | all three | | CSV with columns `x, y` and, for `volume` and `section`, `z`, in metres in the frame of the scene. |
 | `--out` | all three | | Output CSV. |
-| `--max-distance` | all three | inf | Range limit in metres. |
+| `--max-distance` | all three | inf | Range limit in metres, positive. |
 | `--n-jobs` | `isovist`, `volume` | 1 for `isovist`, -1 for `volume` | Processes for `isovist`, threads for `volume`. -1 uses all cores. |
 | `--cloud` | `volume`, `section` | | Point cloud file. |
 | `--mesh` | `volume` | | Mesh file in any format open3d reads. |
-| `--floor`, `--ceiling` | `volume` | 0.0, 2.5 | Heights of an extruded plan. |
-| `--eye-height` | `volume`, `section` | | Eye height that replaces the `z` column. |
+| `--floor`, `--ceiling` | `volume` | 0.0, 2.5 | Heights of the floor and the ceiling of an extruded plan, with `--plan`. |
+| `--eye-height` | `volume`, `section` | | The `z` of every eye, in place of the `z` column. It is absolute, as the `z` column is: with `--ifc-storey`, an eye 1.6 m above a storey at elevation e has z = e + 1.6. |
 | `--n-rays` | `volume`, `section` | 262144 for `volume`, 3600 for `section` | Directions per eye. |
-| `--radius` | `volume`, `section` | 0.05 | Ball radius of cloud points in metres. |
+| `--radius` | `volume`, `section` | 0.05 | Ball radius of cloud points in metres, with `--cloud`. |
 | `--escape` | `volume`, `section` | clip | `clip`, `zero` or `nan`. |
 | `--inside` | `volume`, `section` | nan | `nan` or `zero`. |
 | `--near-clip` | `volume` | 0.0 | Ignore occluders closer than this to the eye. |
 
-`isovist` takes exactly one of `--plan` and `--ifc`. `volume` takes exactly one of `--cloud`, `--mesh`, `--plan` and `--ifc`, and always uses Fibonacci directions. `section` cuts the cloud with the horizontal plane at each point's `z` and casts `--n-rays` rays at equal angle steps in that plane, as defined under [3D metrics](metrics.md#3d-metrics).
+`isovist` takes exactly one of `--plan` and `--ifc`. `volume` takes exactly one of `--cloud`, `--mesh`, `--plan` and `--ifc`, and always uses Fibonacci directions. `section` cuts the cloud with the horizontal plane at each point's `z` and casts `--n-rays` rays at equal angle steps in that plane, as defined under [3D metrics](metrics.md#3d-metrics). An option of another scene, such as `--radius` with `--plan`, is an error.
+
+A command checks its inputs before it computes. It stops with a message and writes nothing when an input file is missing or empty, when a column is missing or holds a value that is not a finite number, when an option lies outside its range, and when the table or its record would overwrite an input. It also stops when the cut of an IFC model meets no element, when the plane of a section cuts no ball of the cloud, when an eye of an extruded plan lies outside its prism, and when an eye lies outside an IFC model in height. A message names the rows of the points file at fault, counted from 1 below the header.
 
 ### As an ODTP component
 
@@ -194,4 +196,4 @@ pysovist odtp                  # writes output/pysovist_isovist.csv and .json
 | `FLOOR`, `CEILING` | `--floor`, `--ceiling` | Heights of an extruded plan. |
 | `OUTPUT_PREFIX` | | Prefix of the output files (default `pysovist`). |
 
-File names are relative to `ODTP_INPUT`. A variable applies to the tasks whose command takes its option, except that `N_RAYS` sets `--n-rays` for `volume` only and `SECTION_RAYS` sets it for `section` only.
+File names are relative to `ODTP_INPUT`. A task needs `QUERY_FILE` and one scene: `PLAN_FILE` for `isovist`, one of `POINTCLOUD_FILE`, `MESH_FILE` and `PLAN_FILE` for `volume`, and `POINTCLOUD_FILE` for `section`. A variable applies to the tasks whose command takes its option, and to its own scene: `CLOSE_FILE`, `FLOOR` and `CEILING` apply with `PLAN_FILE` only, and `SPLAT_RADIUS` with `POINTCLOUD_FILE` only. A component can therefore pass every variable with its default. `N_RAYS` sets `--n-rays` for `volume` only and `SECTION_RAYS` sets it for `section` only.

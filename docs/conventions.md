@@ -20,7 +20,7 @@ A wall is a two-sided segment with no thickness and no inside. An observer insid
 
 ## Eye heights
 
-The origin of a view volume is a 3D point `(x, y, z)` in the frame of the scene. Its z is an absolute coordinate. It is a height above the floor only when the floor lies at z = 0, as in a plan extruded with the default `floor=0.0`. The `--eye-height` option of the command line replaces the `z` column of the points file with one value.
+The origin of a view volume is a 3D point `(x, y, z)` in the frame of the scene. Its z is an absolute coordinate. It is a height above the floor only when the floor lies at z = 0, as in a plan extruded with the default `floor=0.0`. The `--eye-height` option of the command line replaces the `z` column of the points file with one value, which is absolute as well. A BIM model keeps the world frame of its file, so an eye 1.6 m above a storey at elevation e has z = e + 1.6, also when the command reads that storey alone.
 
 In an extruded plan the view volume does not depend on the eye height. Every eye strictly between floor and ceiling sees a volume equal to the height of the prism times the 2D isovist area at its plan position, in the plan closed along the same outline as the prism (its convex hull by default). A closing polygon must hold the plan, because each of its edges becomes a wall.
 
@@ -75,10 +75,16 @@ $$
 
 and the balls then fill the free space in front of it to a depth between \(\sqrt{r^2 - s^2/2}\) and \(r\). A radius just above the bound closes the surfaces and takes the least free space.
 
-Real scans are not lattices, so the spacing to use is a high percentile of the distance from each point to its nearest neighbour. `PointCloud.spacing()` returns the median, the 90th and the 99th percentile of that distance, measured for up to 200,000 random points against the whole cloud. Choose the radius above the 99th percentile divided by \(\sqrt{2}\). For the cloud of the [quick start](quickstart.md#a-view-volume-from-a-point-cloud):
+Real scans are not lattices, so the spacing to use is a high percentile of the distance from each point to its nearest neighbour. `PointCloud.spacing()` returns the median, the 90th and the 99th percentile of that distance, measured for up to 200,000 random points against the whole cloud. Choose the radius above the 99th percentile divided by \(\sqrt{2}\). For a floor sampled every 4 cm with balls of radius 4 cm, as in the [quick start](quickstart.md#a-view-volume-from-a-point-cloud):
 
 ```python
-sp = cloud.spacing()           # {'median': 0.04, 'p90': 0.04, 'p99': 0.04}
+import numpy as np
+import pysovist
+
+u = np.arange(0, 5 + 0.02, 0.04)  # a floor of 5 m x 5 m, sampled every 4 cm
+x, y = (g.ravel() for g in np.meshgrid(u, u))
+cloud = pysovist.PointCloud(np.c_[x, y, np.zeros_like(x)], radius=0.04)
+sp = cloud.spacing()            # {'median': 0.04, 'p90': 0.04, 'p99': 0.04}
 bound = sp["p99"] / np.sqrt(2)  # 0.028 m
 cloud.radius > bound            # True: 0.04 m seals the surfaces
 ```

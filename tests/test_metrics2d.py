@@ -78,3 +78,46 @@ def test_plan_from_json(tmp_path):
     plan = Plan.from_json(path)
     assert len(plan) == 4
     assert isovist(plan, (5, 5)).area == pytest.approx(100.0)
+
+
+def test_every_metric_of_a_disc():
+    """Closed form: with no walls and a range of 3 m the isovist is the disc of radius 3, seen
+    from its centre, wherever the observer stands."""
+    from pysovist import METRIC_NAMES
+
+    m = isovist(Plan(np.empty((0, 2, 2))), (1.0, 2.0), max_distance=3.0).metrics
+    expected = {
+        "area": 9 * math.pi, "perimeter": 6 * math.pi, "occlusivity": 0.0, "r_min": 3.0,
+        "r_max": 3.0, "r_mean": 3.0, "r_var": 0.0, "r_std": 0.0, "r_skew": 0.0, "r_mad": 0.0,
+        "dispersion": 0.0, "compactness": 1.0, "jaggedness": 4 * math.pi, "drift": 0.0,
+        "elongation": 1.0, "convex_deficiency": 0.0,
+    }
+    assert set(m) == set(METRIC_NAMES)
+    for k, v in expected.items():
+        assert m[k] == pytest.approx(v, rel=1e-12, abs=1e-12), k
+    assert -math.pi <= m["drift_angle"] <= math.pi  # the direction of a zero drift is arbitrary
+
+
+def test_spread_and_shape_of_the_square_from_its_centre():
+    """Closed form: r_var = 100 / pi - r_mean^2 with r_mean = (20 / pi) ln(1 + sqrt 2), so
+    r_std and dispersion follow; jaggedness is P^2 / A = 1600 / 100."""
+    m = isovist(Plan(rect(0, 0, 10, 10)), (5, 5)).metrics
+    r_mean = 20 / math.pi * math.log(1 + math.sqrt(2))
+    r_std = math.sqrt(100 / math.pi - r_mean**2)
+    assert m["r_std"] == pytest.approx(r_std, rel=1e-9)
+    assert m["dispersion"] == pytest.approx(r_std / r_mean, rel=1e-9)
+    assert m["jaggedness"] == pytest.approx(16.0, rel=1e-12)
+    assert m["elongation"] == pytest.approx(1.0, rel=1e-9)
+    assert m["r_skew"] == pytest.approx(_numeric_radial_moments(
+        isovist(Plan(rect(0, 0, 10, 10)), (5, 5)))["r_skew"], rel=1e-5)
+
+
+def test_a_quarter_view_of_the_square_keeps_the_mean_depth():
+    """Closed form: from the centre, the quarter turn centred on +x sees the same depths as the
+    full turn, by symmetry: r_mean = (20 / pi) ln(1 + sqrt 2), r_min = 5, r_max = 5 sqrt 2."""
+    m = isovist(Plan(rect(0, 0, 10, 10)), (5, 5), fov=math.pi / 2, direction=0.0).metrics
+    assert m["r_mean"] == pytest.approx(20 / math.pi * math.log(1 + math.sqrt(2)), rel=1e-12)
+    assert m["r_min"] == pytest.approx(5.0, rel=1e-12)
+    assert m["r_max"] == pytest.approx(5 * math.sqrt(2), rel=1e-12)
+    assert m["drift"] == pytest.approx(10 / 3, rel=1e-12)  # centroid of the triangle
+    assert m["drift_angle"] == pytest.approx(0.0, abs=1e-12)

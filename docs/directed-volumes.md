@@ -74,7 +74,7 @@ The building on the left, taller and seen higher in the field, takes 0.64 sr of 
 
 ## DeCodingSpaces Isovist3D
 
-`pysovist.compat.decodingspaces3d.isovist3d` reproduces the outputs of the Isovist3D component (DeCodingSpaces 2021.10.11) for one vantage point: the hit vector, length and surface id of every ray, the hits per obstacle mesh, the volume and the isovist mesh. It takes the component's inputs in its own units, with angles in degrees and the view direction as a vector, and the same defaults: range 1000 m, 180 x 90 degrees, 10 x 10 rays, an implicit ground plane at z = 0.
+`pysovist.compat.decodingspaces3d.isovist3d` reproduces the outputs of the Isovist3D component (DeCodingSpaces 2021.10.11) for one vantage point: the hit vector, length and surface id of every ray, the hits per obstacle mesh, the volume and the isovist mesh. It takes the component's inputs in its own units, with angles in degrees and the view direction as a vector, and the same defaults: range 1000 m, 180 x 90 degrees, 10 x 10 rays.
 
 ```python
 from pysovist import Mesh
@@ -83,7 +83,7 @@ from pysovist.compat.decodingspaces3d import isovist3d
 walls = [[(0, 0), (10, 0)], [(10, 0), (10, 10)], [(10, 10), (0, 10)], [(0, 10), (0, 0)]]
 room = Mesh.from_plan(walls, floor=0.0, ceiling=3.0)
 res = isovist3d((5, 5, 1.5), [room], (1, 0, 0), horizontal_angle=360, vertical_angle=180,
-                horizontal_rays=360, vertical_rays=180, ground_at_zero=False)
+                horizontal_rays=360, vertical_rays=180)
 res.volume                 # 299.08 m3 for a closed 10 x 10 x 3 m room, as the component
 res.object_visibility      # rays per obstacle mesh (output OV)
 res.rays, res.lengths, res.surface_ids
@@ -93,21 +93,25 @@ The component's rules, which differ from those of `view_volume`:
 
 | Output | Rule |
 |---|---|
-| Ray layout | Azimuth steps of 360 / HPr degrees and elevation steps of 360 / VPr degrees, whatever the viewing angles. Azimuths run from half the horizontal angle left of the view direction to half of it right, elevations from half the vertical angle below the offset to half of it above, all ends included. 12 x 6 rays give 52 rays over 360 x 180 degrees and 14 over 180 x 90 degrees. |
+| Ray layout | Azimuth steps of 360 / HPr degrees and elevation steps of 360 / VPr degrees, whatever the viewing angles, stepped in single precision. Azimuths run from half the horizontal angle left of the view direction to half of it right, elevations from half the vertical angle below the offset to half of it above, all ends included. 12 x 6 rays give 52 rays over 360 x 180 degrees and 14 over 180 x 90 degrees. A tilted view direction is laid flat. |
+| Fine vertical steps | The component lists the elevations up to 0.01 radian beyond the upper edge and hands them to the rays in turn. When the step after the upper edge stays within that margin (vertical steps below 0.57 degrees over 180 degrees, or below 1.15 degrees with an odd VPr), each azimuth starts where the previous one stopped, beyond the pole, and the rays leave the grid. |
 | Lengths | The distance to the first hit, or the full range for a ray that hits nothing. An open scene therefore has a volume of hundreds of millions of cubic metres. |
-| Surface ids | Obstacle meshes are numbered from 0 and ground meshes after them. -1 marks a ray that hits nothing, the implicit ground plane, or the last triangle of an obstacle mesh, which in the measured box rooms is one half of the floor. |
-| Hits per mesh | The number of rays with each obstacle id. Ground meshes and the plane do not count. |
-| Volume | The polyhedron through the hit points: each cell of the ray grid is cut into two triangles, and the tetrahedra from the eye to the triangles are summed. |
+| Surface ids | Obstacle meshes are numbered from 0 and ground meshes after them. -1 marks a ray that hits nothing, or one that hits the first triangle of the first obstacle mesh, which for a box from Rhino is half of its floor. |
+| Hits per mesh | The number of rays with each obstacle id. Ground meshes do not count. |
+| Volume | The polyhedron through the hit points: each cell of the ray grid is cut into two triangles, and the volumes of the tetrahedra from the eye to the triangles are summed, each counted positive. |
+| Ground at zero (isZero) | No effect. With it, the rays of a room without a floor that look down still escape. A ground plane at z = 0 is a ground mesh. |
 
-The volume is a polyhedron and not the solid-angle integral. On flat walls the two agree: 12 x 6 rays from the centre of the closed room give a 12-sided prism of 60.75 m3. Where a cell spans a near and a far surface, the polyhedron cuts the corner, so the component underestimates scenes with many occluding edges. On a hospital floor plan extruded to 3 m, from an eye with an exact volume of 200.01 m3, it returns 3.3 % less at 360 x 180 rays and 1.1 % less at 720 x 360. The same rule gives 0.5 % less at 1,440 x 720.
+The volume is a polyhedron and not the solid-angle integral. On flat walls the two agree: 12 x 6 rays from the centre of the closed room give a 12-sided prism of 60.75 m3. Where a cell spans a near and a far surface, the polyhedron cuts the corner, so the component underestimates scenes with many occluding edges. On a hospital floor plan extruded to 3 m, from an eye with an exact volume of 200.01 m3, it returns 3.3 % less at 360 x 180 rays and 1.1 % less at 720 x 360. At 1,440 x 720 rays the fine vertical step takes the rays off the grid, and it returns 3.4 % less (193.23 m3). The volume therefore does not converge with the ray count: for the closed room it moves between 297.24 and 299.90 m3 from one count to the next between 1000 x 500 and 1100 x 550 rays. `view_volume` gives the view volume itself.
 
 | Measurement | Largest relative difference to the component |
 |---|---|
-| Volumes of 12 views of three scenes (room, room with a block, block on a ground mesh), 12 x 6 and 360 x 180 rays | 2.4e-6 |
-| Lengths of all 240 rays of the nine 12 x 6 views | 1.1e-6 |
-| Closed room, five ray counts from 10 x 10 to 720 x 360 | 1.2e-6 |
-| Hospital plan, 10 x 10 to 720 x 360 rays | 1.8e-5 |
+| Lengths of all 779 rays of 28 views: three scenes at 12 x 6 rays, a single triangle, a room without a floor, reversed and triangulated faces, two boxes on two ground meshes, partial fields, odd counts, a tilted view direction, an offset over the pole and counts from 1 x 6 to 12 x 2 | 1.1e-6 |
+| Volumes of these views, and of three scenes at 360 x 180 rays | 1.2e-6 |
+| Closed room, five ray counts from 10 x 10 to 720 x 360 | 2.8e-6 |
+| Hospital plan, 10 x 10 to 720 x 360 rays | 1.4e-6 |
+| Hospital plan at 20 vantage points, 360 x 180 rays | 9.3e-5 |
+| Room and hospital, 53 measurements from 720 x 360 to 2,880 x 1,440 rays | 2e-4, except 1013 x 506 and 2,880 x 1,440 rays (up to 7.7e-4) |
 
-The surface ids agree on every ray except 13 that meet the room's floor exactly on the diagonal its two triangles share, where rounding picks the triangle. The hits per mesh agree exactly at 12 x 6 rays and, at 360 x 180 rays, for the room with a block (30,800 and 404) and the block on the ground (654). The closed room has 437 rays on that diagonal at 360 x 180 rays, and its count differs by 398 of them (25,813 against 26,211).
+The surface ids agree on all 779 rays. The hits per mesh agree exactly for the small views and, at 360 x 180 rays, for the room with a block (30,800 and 404) and the block on the ground (654). In the closed room 437 rays meet the floor on the diagonal that splits it, where rounding picks the triangle, and the count differs by 5 (26,216 against 26,211). On the hospital, at every count up to 2,880 x 1,440 rays, the hits per mesh differ by at most 8 of 2 million rays.
 
-At 1,440 x 720 rays on the hospital plan the component returns 193.23 m3, 2.9 % less than its own rules give (199.02 m3). The rules with 1,440 azimuth steps and any number of elevation steps up to 720, or with 720 elevation steps and any number of azimuth steps up to 1,440, miss that number by at least 8e-5, four times the agreement at coarser counts. The shortfall therefore comes from a step outside the layout and the volume formula. The compatibility module returns the value of the rules.
+Over 360 x 180 degrees the component stops with an index error, or crashes Rhino, at 64 of the 101 counts from 1000 x 500 to 1100 x 550 and at 1200 x 600, with no rule in the counts. `isovist3d` raises a `ValueError` at these 65 measured counts (`FAILING_COUNTS`), since the component has no output there to reproduce, and applies the rules at every other count. At 1003 x 501 rays the component returns one column of rays fewer than its layout, with the volume of the whole layout. Given several vantage points in one solution, it returns 0 for 13 of 20, different ones from run to run, so `isovist3d` takes one vantage point per call, as the component computes it alone.

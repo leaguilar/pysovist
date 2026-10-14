@@ -4,20 +4,31 @@
 ray layout, the length and surface id of every ray, the hits per obstacle
 mesh, the volume and the isovist mesh. It takes the component's own units:
 angles in degrees, the view direction as a vector. The rules below reproduce
-every measured output of DeCodingSpaces 2021.10.11 to single precision (see
-the documentation page on directed volumes for the measurements).
+the measured outputs of DeCodingSpaces 2021.10.11 (see the documentation page
+on directed volumes for the measurements and the agreement).
 
 Ray layout
 :   The horizontal step is ``360 / HPr`` degrees and the vertical step
-    ``360 / VPr`` degrees, whatever the viewing angles. Azimuths run from
-    ``HVA / 2`` to the left of the view direction to ``HVA / 2`` to its right,
-    both ends included, so a full turn lists its first azimuth twice.
-    Elevations run from ``-VVA / 2 + VAO`` up to ``VVA / 2 + VAO``, both ends
-    included. The rays are listed azimuth by azimuth, from left to right,
-    and from the lowest to the highest elevation within each azimuth. There
-    are ``floor(HVA HPr / 360) + 1`` azimuths and ``floor(VVA VPr / 360) + 1``
-    elevations: 52 rays for 12 x 6 over 360 x 180 degrees, 14 rays over
-    180 x 90 degrees.
+    ``360 / VPr`` degrees, whatever the viewing angles. There are
+    ``n_az = floor(HVA HPr / 360) + 1`` azimuths, from ``HVA / 2`` to the left
+    of the view direction to ``HVA / 2`` to its right, so a full turn lists its
+    first azimuth twice, and the component casts ``n_az n_el`` rays, with
+    ``n_el = floor(VVA VPr / 360) + 1``: 52 rays for 12 x 6 over 360 x 180
+    degrees, 14 rays over 180 x 90 degrees. It lists the elevations from
+    ``-VVA / 2 + VAO`` upwards in steps, up to 0.01 radian (0.57 degrees)
+    beyond ``VVA / 2 + VAO``, and gives the rays these elevations in turn:
+    ray ``k`` has the azimuth ``k // m`` and the elevation ``k mod m`` of the
+    ``m`` listed elevations. Both angles are stepped in single precision, in
+    radians. A view direction with a vertical component is laid flat.
+
+Fine vertical steps
+:   When the step after the upper edge stays within 0.01 radian of it
+    (vertical steps below 0.57 degrees for 180 degrees, or below 1.15 degrees
+    with an odd VPr), ``m`` exceeds ``n_el`` and the rays leave the grid:
+    each azimuth starts where the previous one stopped, beyond the pole. At
+    1,440 x 720 rays the component lists 362 elevations, and its volume of
+    the hospital plan is 3.4 % below the exact value. The measurements place
+    the limit between 0.5 degrees (listed) and 0.6545 degrees (not listed).
 
 Lengths
 :   The distance to the first surface hit within the viewing range VR. A ray
@@ -27,39 +38,48 @@ Lengths
 Surface ids
 :   Obstacle meshes are numbered 0, 1, ... in input order, and ground meshes
     continue the numbering after them. A ray that hits nothing has id -1, and
-    so does a ray that hits the implicit ground plane. A ray that hits the
-    last triangle of an obstacle mesh also reports -1, with its true length.
-    In the measured box rooms that triangle is one half of the floor, which
-    is why half of a closed room's floor reports -1.
+    so does a ray that hits the first triangle of the first obstacle mesh,
+    with its true length. For a box from Rhino that triangle is half of the
+    floor. The first triangle of any other mesh keeps its id.
 
 Hits per mesh (OV)
-:   The number of rays with each obstacle id. Ground meshes and the implicit
-    plane are not counted.
+:   The number of rays with each obstacle id. Ground meshes are not counted.
 
 Volume
-:   The volume of the polyhedron through the hit points: every cell of the
-    ray grid is split into two triangles, and the tetrahedra from the eye to
-    the triangles are summed. It is not the solid-angle integral
-    ``1/3 int r^3 d omega``. On flat walls the two agree. Where a cell spans a
-    near and a far surface, the polyhedron cuts the corner, so the volume of
-    a scene with many occluding edges falls short of the exact value, by less
-    as the ray count grows.
+:   The polyhedron through the hit points: every cell of the
+    ``n_az x n_el`` grid of rays is split into two triangles, and the volumes
+    of the tetrahedra from the eye to the triangles are summed, each counted
+    positive. It is not the solid-angle integral ``1/3 int r^3 d omega``. On
+    flat walls the two agree. Where a cell spans a near and a far surface, the
+    polyhedron cuts the corner, so the volume falls short of the exact value.
+    A grid with one azimuth or one elevation encloses nothing: volume 0.
 
 Implicit ground plane (isZero)
-:   With ``ground_at_zero=True`` (the component's default), the plane z = 0
-    is an occluder with surface id -1, and a mesh triangle wins a tie with
-    it.
+:   The input changes no output: with isZero true, the rays of a room without
+    a floor that look down still escape with the length VR. ``ground_at_zero``
+    is accepted and has no effect, as in the component. A ground plane at
+    z = 0 is a ground mesh.
+
+Counts at which the component fails
+:   Over 360 x 180 degrees the component stops with an index error, or
+    crashes Rhino, at the 65 counts of ``FAILING_COUNTS``, 64 of them among
+    the 101 counts from 1000 x 500 to 1100 x 550. No rule found in the counts predicts them.
+    ``isovist3d`` raises a ``ValueError`` at these counts. At counts and angles
+    that were not measured, it applies the rules above.
 
 What is not reproduced
-:   At 1,440 x 720 rays on the extruded hospital plan the component returns
-    193.23 m3, while its own layout and volume rule give 199.02 m3 (exact:
-    200.01 m3). Every coarser measurement agrees to 2e-5. A view direction
-    with a vertical component and viewing angles that are not multiples of
-    the step were not measured, and ``isovist3d`` rejects the former.
+:   At 1003 x 501 rays the component returns one column of rays fewer than
+    its layout (251,753 rays instead of 252,004), with the volume of the whole
+    layout. At 1013 x 506 and 2,880 x 1,440 rays its volumes differ from the
+    rules by up to 8e-4. Every other measured volume agrees to 2e-4. Several
+    vantage points in one solution return 0 for some of them, different ones
+    from run to run: each call takes one vantage point, as the component
+    computes it alone.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -78,6 +98,32 @@ DEFAULTS = {
 }
 """The component's default inputs, under the keyword names of ``isovist3d``."""
 
+_ERROR, _CRASH = "stops with the error 'Index was outside the bounds of the array'", "crashes Rhino"
+FAILING_COUNTS = {
+    **{c: _ERROR for c in [
+        (1000, 500), (1002, 501), (1010, 505), (1019, 509), (1026, 513), (1029, 514),
+        (1030, 515), (1050, 525), (1053, 526), (1055, 527), (1059, 529), (1067, 533),
+        (1070, 535), (1071, 535), (1074, 537), (1078, 539), (1079, 539), (1083, 541),
+        (1085, 542), (1090, 545), (1099, 549)]},
+    **{c: _CRASH for c in [
+        (1001, 500), (1004, 502), (1005, 502), (1008, 504), (1009, 504), (1011, 505),
+        (1016, 508), (1017, 508), (1020, 510), (1021, 510), (1022, 511), (1023, 511),
+        (1027, 513), (1031, 515), (1035, 517), (1039, 519), (1040, 520), (1041, 520),
+        (1044, 522), (1045, 522), (1047, 523), (1048, 524), (1049, 524), (1051, 525),
+        (1054, 527), (1056, 528), (1057, 528), (1060, 530), (1061, 530), (1062, 531),
+        (1068, 534), (1069, 534), (1073, 536), (1076, 538), (1077, 538), (1080, 540),
+        (1081, 540), (1091, 545), (1092, 546), (1093, 546), (1094, 547), (1096, 548),
+        (1097, 548), (1200, 600)]},
+}
+"""Ray counts ``(HPr, VPr)`` at which the component fails over 360 x 180 degrees, measured.
+
+Each maps to what the component does: it stops with an index error, or it
+crashes Rhino. ``isovist3d`` and ``ray_layout`` raise a ``ValueError`` at these
+counts with the full field of view (360 x 180 degrees, no vertical offset).
+"""
+
+_ELEVATION_SLACK = 0.01  # radians: elevations are listed up to this far beyond the upper edge
+
 
 @dataclass(frozen=True)
 class Isovist3D:
@@ -86,21 +132,24 @@ class Isovist3D:
     Attributes
     ----------
     origin : ndarray of shape (3,)
-        Vantage point.
+        Vantage point in metres.
     directions : ndarray of shape (n, 3)
         Unit direction of every ray, in the component's order.
     lengths : ndarray of shape (n,)
-        Length of every ray (output Len): the distance to the first hit, or
-        the viewing range for a ray that hits nothing.
+        Length of every ray in metres (output Len): the distance to the first
+        hit, or the viewing range for a ray that hits nothing.
     surface_ids : ndarray of shape (n,)
-        Surface id of every ray (output StR).
+        Surface id of every ray (output StR): the index of the mesh hit,
+        obstacles first and ground meshes after them, -1 for no hit and for
+        the first triangle of the first obstacle mesh.
     volume : float
         Volume of the isovist polyhedron in cubic metres (output Vol).
     object_visibility : ndarray of shape (k,)
         Number of rays that hit each of the k obstacle meshes (output OV).
     grid_shape : tuple of int
-        Number of azimuths and of elevations. ``reshape(*grid_shape)``
-        arranges any per-ray array on the grid.
+        ``(n_az, n_el)``, the number of azimuths and of elevations of the
+        grid. ``reshape(*grid_shape)`` arranges any per-ray array as the
+        component triangulates it.
     view_range : float
         Viewing range in metres.
     mesh : Mesh or None
@@ -127,44 +176,69 @@ class Isovist3D:
 def ray_layout(view_direction, *, horizontal_angle: float = 180.0, vertical_angle: float = 90.0,
                horizontal_rays: int = 10, vertical_rays: int = 10,
                vertical_offset: float = 0.0) -> np.ndarray:
-    """Unit directions of the component's rays on its grid.
+    """Unit directions of the component's rays, arranged on its grid.
 
     Parameters
     ----------
     view_direction : (x, y, z)
-        View direction (input VD), a horizontal vector.
+        View direction (input VD). Its vertical component is dropped, as the
+        component does.
     horizontal_angle, vertical_angle : float
-        Horizontal and vertical viewing angle in degrees (HVA, VVA).
+        Horizontal and vertical viewing angle in degrees (HVA, VVA), in
+        (0, 360] and (0, 180]. Defaults 180 and 90.
     horizontal_rays, vertical_rays : int
-        Horizontal and vertical precision (HPr, VPr). The angular steps are
-        ``360 / HPr`` and ``360 / VPr`` degrees.
+        Horizontal and vertical precision (HPr, VPr), whole numbers of at
+        least 1. The angular steps are ``360 / HPr`` and ``360 / VPr``
+        degrees. Default 10 each.
     vertical_offset : float
         Vertical angle offset in degrees (VAO), added to every elevation.
+        Default 0.
 
     Returns
     -------
-    ndarray of shape (n_azimuth, n_elevation, 3)
-        Azimuths from left to right of the view direction, elevations from
-        bottom to top.
+    ndarray of shape (n_az, n_el, 3)
+        The rays in the component's order: azimuths from left to right of
+        the view direction, elevations from bottom to top. With fine vertical
+        steps the rays leave the grid (see the module documentation).
+
+    Raises
+    ------
+    ValueError
+        When the view direction has no horizontal part or is not finite, an
+        angle or count lies outside its domain, or the counts are among
+        [`FAILING_COUNTS`][pysovist.compat.decodingspaces3d.FAILING_COUNTS]
+        with the full field of view.
     """
-    vd = np.asarray(view_direction, dtype=float).reshape(3)
-    norm = np.linalg.norm(vd)
-    if not norm > 0:
-        raise ValueError("view_direction must be a non-zero vector")
-    if abs(vd[2]) > 1e-12 * norm:
-        raise ValueError("only horizontal view directions are reproduced: give z = 0")
-    hva, vva = float(horizontal_angle), float(vertical_angle)
-    hpr, vpr = int(horizontal_rays), int(vertical_rays)
-    if hpr < 1 or vpr < 1:
-        raise ValueError("horizontal_rays and vertical_rays must be at least 1")
-    if not (hva > 0 and vva > 0):
-        raise ValueError("the viewing angles must be positive")
-    n_az = int(np.floor(hva * hpr / 360.0 + 1e-9)) + 1
-    n_el = int(np.floor(vva * vpr / 360.0 + 1e-9)) + 1
-    az = np.radians(np.degrees(np.arctan2(vd[1], vd[0])) + hva / 2 - 360.0 / hpr * np.arange(n_az))
-    el = np.radians(-vva / 2 + float(vertical_offset) + 360.0 / vpr * np.arange(n_el))
-    a, e = np.meshgrid(az, el, indexing="ij")
-    return np.stack([np.cos(e) * np.cos(a), np.cos(e) * np.sin(a), np.sin(e)], axis=-1)
+    vd = np.asarray(view_direction, dtype=float).reshape(-1)
+    if vd.shape != (3,) or not np.all(np.isfinite(vd)):
+        raise ValueError("view_direction must be a finite vector (x, y, z)")
+    if not math.hypot(vd[0], vd[1]) > 1e-12 * float(np.linalg.norm(vd)):
+        raise ValueError("view_direction must have a horizontal part: the component lays the "
+                         "view direction flat, and a vertical one has no azimuth")
+    hva = _angle(horizontal_angle, 360.0, "horizontal_angle")
+    vva = _angle(vertical_angle, 180.0, "vertical_angle")
+    hpr = _count(horizontal_rays, "horizontal_rays")
+    vpr = _count(vertical_rays, "vertical_rays")
+    vao = float(vertical_offset)
+    if not math.isfinite(vao):
+        raise ValueError("vertical_offset must be a finite angle in degrees")
+    if (hpr, vpr) in FAILING_COUNTS and hva == 360.0 and vva == 180.0 and vao == 0.0:
+        raise ValueError(
+            f"DeCodingSpaces Isovist3D fails at {hpr} x {vpr} rays over 360 x 180 degrees: it "
+            f"{FAILING_COUNTS[(hpr, vpr)]} (measured), so it has no output to reproduce. Counts "
+            "that work include 720 x 360, 1024 x 512, 1440 x 720 and 2048 x 1024. For the exact "
+            "view volume, use pysovist.view_volume.")
+    h_step, v_step = 360.0 / hpr, 360.0 / vpr
+    n_az = math.floor(hva / h_step + 1e-9) + 1
+    n_el = math.floor(vva / v_step + 1e-9) + 1
+    m = math.floor((vva + math.degrees(_ELEVATION_SLACK)) / v_step + 1e-9) + 1
+    start = math.degrees(math.atan2(vd[1], vd[0])) + hva / 2
+    az = _steps(math.radians(start), -math.radians(h_step), n_az)
+    el = _steps(math.radians(-vva / 2 + vao), math.radians(v_step), m)
+    k = np.arange(n_az * n_el)
+    a, e = az[k // m], el[k % m]
+    d = np.stack([np.cos(e) * np.cos(a), np.cos(e) * np.sin(a), np.sin(e)], axis=-1)
+    return d.reshape(n_az, n_el, 3)
 
 
 def isovist3d(vantage_point, obstacles, view_direction, *, ground=(),
@@ -177,38 +251,56 @@ def isovist3d(vantage_point, obstacles, view_direction, *, ground=(),
     Parameters
     ----------
     vantage_point : (x, y, z)
-        Vantage point (input VP).
+        One vantage point (input VP), in metres. The component returns 0 for
+        some of several vantage points solved together, so each call takes one.
     obstacles : Mesh or sequence of Mesh
         Obstacle meshes (input OS), numbered 0, 1, ... in order.
     view_direction : (x, y, z)
         View direction (input VD), required as in the component, which fails
-        without one even for a full view. It must be horizontal.
+        without one even for a full view. Its vertical component is dropped.
     ground : sequence of Mesh
-        Ground meshes (input GS), numbered after the obstacles.
+        Ground meshes (input GS), numbered after the obstacles. Default none.
     view_range : float
-        Viewing range in metres (VR).
+        Viewing range in metres (VR), positive and finite. Default 1000.
     horizontal_angle, vertical_angle : float
-        Viewing angles in degrees (HVA, VVA).
+        Viewing angles in degrees (HVA, VVA), in (0, 360] and (0, 180].
+        Defaults 180 and 90.
     horizontal_rays, vertical_rays : int
-        Horizontal and vertical precision (HPr, VPr).
+        Horizontal and vertical precision (HPr, VPr), whole numbers of at
+        least 1. Default 10 each. The component casts one column of rays for
+        HPr = 0 and fails for negative counts.
     vertical_offset : float
-        Vertical angle offset in degrees (VAO).
+        Vertical angle offset in degrees (VAO). Default 0.
     geometry : bool
-        Also build the isovist mesh (isGI).
+        Also build the isovist mesh (isGI). Default False.
     ground_at_zero : bool
-        Treat the plane z = 0 as ground with surface id -1 (isZero).
+        The input isZero. Default True. It has no effect, as in the component.
 
     Returns
     -------
     Isovist3D
         Per-ray outputs, hits per obstacle mesh, volume and mesh.
+
+    Raises
+    ------
+    ValueError
+        For more than one vantage point, a coordinate that is not finite, a
+        viewing range that is not positive and finite, and the inputs that
+        [`ray_layout`][pysovist.compat.decodingspaces3d.ray_layout] refuses,
+        among them the counts at which the component fails.
     """
+    del ground_at_zero  # measured: the component's outputs do not depend on it
     obstacles = [obstacles] if isinstance(obstacles, Mesh) else list(obstacles)
     ground = [ground] if isinstance(ground, Mesh) else list(ground)
-    o = np.asarray(vantage_point, dtype=float).reshape(3)
+    o = np.asarray(vantage_point, dtype=float)
+    if o.size != 3 or not np.all(np.isfinite(o)):
+        raise ValueError("isovist3d takes one finite vantage point (x, y, z): call it once per "
+                         "point, since the component returns 0 for some of several vantage "
+                         "points solved together")
+    o = o.reshape(3)
     R = float(view_range)
-    if not R > 0:
-        raise ValueError("view_range must be positive")
+    if not (R > 0 and math.isfinite(R)):
+        raise ValueError("view_range must be a positive, finite distance in metres")
     grid = ray_layout(view_direction, horizontal_angle=horizontal_angle,
                       vertical_angle=vertical_angle, horizontal_rays=horizontal_rays,
                       vertical_rays=vertical_rays, vertical_offset=vertical_offset)
@@ -223,28 +315,43 @@ def isovist3d(vantage_point, obstacles, view_direction, *, ground=(),
         t, tri = tt[0], tri[0]
         hit = tri >= 0
         ids[hit] = scene.object_ids[tri[hit]]
-        ends = np.cumsum([len(m.triangles) for m in meshes]) - 1
-        last = [ends[k] for k, m in enumerate(obstacles) if len(m.triangles)]
-        ids[np.isin(tri, last) & hit] = -1
-    if ground_at_zero:
-        with np.errstate(divide="ignore", invalid="ignore"):
-            tp = -o[2] / d[:, 2]
-        # A mesh surface at z = 0 keeps its hits: Embree's single-precision depth may exceed
-        # the plane's by rounding, so the plane must be nearer by more than that.
-        plane = (tp > 0) & (tp <= R) & (tp < t * (1 - 1e-6))
-        t[plane], ids[plane] = tp[plane], -1
+        ids[tri == 0] = -1  # the first triangle of the scene reports no surface
     lengths = np.where(np.isfinite(t) & (t <= R), t, R)
 
-    points = (d * lengths[:, None]).reshape(grid.shape)
+    points = (d * lengths[:, None])
     tris = _grid_triangles(*grid.shape[:2])
-    p = points.reshape(-1, 3)
-    volume = abs(float(np.einsum("ij,ij->i", p[tris[:, 0]],
-                                 np.cross(p[tris[:, 1]], p[tris[:, 2]])).sum()) / 6)
+    tets = np.einsum("ij,ij->i", points[tris[:, 0]],
+                     np.cross(points[tris[:, 1]], points[tris[:, 2]]))
+    volume = float(np.abs(tets).sum() / 6)
     ov = np.bincount(ids[(ids >= 0) & (ids < len(obstacles))], minlength=len(obstacles))
-    mesh = _isovist_mesh(o, p, tris) if geometry else None
+    mesh = _isovist_mesh(o, points, tris) if geometry else None
     return Isovist3D(origin=o, directions=d, lengths=lengths, surface_ids=ids, volume=volume,
                      object_visibility=ov[:len(obstacles)], grid_shape=tuple(grid.shape[:2]),
                      view_range=R, mesh=mesh)
+
+
+def _angle(value, top, name) -> float:
+    v = float(value)
+    if not 0 < v <= top:
+        raise ValueError(f"{name} must lie in (0, {top:g}] degrees")
+    return v
+
+
+def _count(value, name) -> int:
+    v = float(value)
+    if not (math.isfinite(v) and v == int(v)):
+        raise ValueError(f"{name} must be a whole number")
+    if v < 1:
+        raise ValueError(f"{name} must be at least 1: the component casts a single column of "
+                         "rays at 0, which encloses no volume, and fails below 0")
+    return int(v)
+
+
+def _steps(start, step, n) -> np.ndarray:
+    """``start, start + step, ...`` (n angles in radians), stepped in single precision."""
+    a = np.full(n, step, dtype=np.float32)
+    a[0] = start
+    return np.add.accumulate(a, dtype=np.float32).astype(float)
 
 
 def _grid_triangles(n_az: int, n_el: int) -> np.ndarray:

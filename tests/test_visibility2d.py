@@ -7,8 +7,7 @@ import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
-from pysovist import Plan, isovist
-from pysovist import visibility2d
+from pysovist import Plan, isovist, visibility2d
 from pysovist.results import SEGMENT
 from pysovist.visibility2d import segment_ray_hits, segment_visibility, segment_visibility_field
 
@@ -280,16 +279,37 @@ def _shadow(a, b, o, far=1e4):
     return Polygon(np.vstack([a, far_pts, b])).buffer(0)
 
 
+def _overlapping(walls, tol=1e-9):
+    """True when two walls lie on one line and share a stretch of positive length."""
+    a, d = walls[:, 0], walls[:, 1] - walls[:, 0]
+    for i in range(len(walls)):
+        for j in range(i + 1, len(walls)):
+            w = a[j] - a[i]
+            if abs(d[i, 0] * d[j, 1] - d[i, 1] * d[j, 0]) > tol or \
+                    abs(d[i, 0] * w[1] - d[i, 1] * w[0]) > tol:
+                continue
+            dd = d[i] @ d[i]
+            s = sorted([(a[j] - a[i]) @ d[i] / dd, (walls[j, 1] - a[i]) @ d[i] / dd])
+            if min(1.0, s[1]) - max(0.0, s[0]) > tol:
+                return True
+    return False
+
+
 @pytest.mark.skipif(LineString is None, reason="the shadow oracle needs shapely")
 @SETTINGS
 @given(room_with_free_walls())
 def test_matches_shadow_subtraction(scene):
     # Independent oracle: the visible part of wall j is wall j minus the shadows of all others.
+    # Overlapping walls hide each other in this oracle, so they are left to the analytic tests.
     walls, o = scene
+    assume(not _overlapping(walls))
     v = segment_visibility(walls, o)
     assume(not v.flags.on_wall and v.clearance > 1e-3)
     shadows = [_shadow(a, b, o) for a, b in walls]
     for j, (a, b) in enumerate(walls):
+        if shadows[j] is None:  # a wall seen edge-on shows no length
+            assert v.visible_length[j] == 0.0
+            continue
         others = [s for k, s in enumerate(shadows) if k != j and s is not None]
         line = LineString([a, b])
         seen = line.difference(unary_union(others)).length if others else line.length
@@ -356,7 +376,7 @@ def test_field_in_parallel_equals_serial():
     walls = pillar_scene()
     rng = np.random.default_rng(0)
     pts = rng.uniform(0.2, 5.8, size=(60, 2))
-    serial = segment_visibility_field(walls, pts, n_jobs=1, max_distance=6)
+    serial = segment_visibility_field(walls, pts, n_jobs=1, chunk=16, max_distance=6)
     parallel = segment_visibility_field(walls, pts, n_jobs=2, chunk=16, max_distance=6)
     np.testing.assert_array_equal(serial.to_numpy(), parallel.to_numpy())
 
@@ -463,3 +483,15 @@ def test_ray_hits_converge_to_the_visible_angle(scene):
     step = TWO_PI / n
     pieces = np.array([len(iv) for iv in v.intervals])
     assert np.all(np.abs(hits * step - v.visible_angle) <= (pieces + 1) * step + 1e-12)
+
+
+def test_binned_candidate_search_gives_the_same_visibility(monkeypatch):
+    rng = np.random.default_rng(3)
+    inner = rng.uniform(1, 19, size=(60, 2, 2))
+    walls = np.concatenate([rect(0, 0, 20, 20), inner])
+    pts = rng.uniform(0.5, 19.5, size=(10, 2))
+    direct = [segment_visibility(walls, p, max_distance=12) for p in pts]
+    monkeypatch.setattr(visibility2d, "_DIRECT_WORK", 0)
+    binned = [segment_visibility(walls, p, max_distance=12) for p in pts]
+    for a, b in zip(direct, binned, strict=True):
+        np.testing.assert_array_equal(a.visible_length, b.visible_length)

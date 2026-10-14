@@ -101,7 +101,7 @@ A viewpoint closer than `eps` to a wall sees nothing and is left out of the mean
 The DeCodingSpaces Isovist component casts rays from the viewpoint and reports, for every obstacle line, how many rays hit it first. `segment_ray_hits` counts the same hits. With `layout="decodingspaces"` it casts the component's rays:
 
 - The angular step is 2π / n for a requested ray count n with 10 < n < 3000, and one degree for any other n.
-- The rays run from one edge of the view to the other and include both edges, so a full turn casts n + 1 rays and the ray straight behind the view direction is cast twice.
+- The rays start at one edge of the view and step towards the other. A full turn casts n + 1 rays, so the ray straight behind the view direction is cast twice.
 - The component's default view direction (0, 1) is `direction=math.pi / 2`, and its default range is 1,000 m.
 
 ```python

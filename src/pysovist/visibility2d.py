@@ -351,10 +351,11 @@ def segment_ray_hits(
         ``"decodingspaces"``: the rays of the DeCodingSpaces Isovist
         component. The angular step is ``2 pi / n_rays`` for
         ``10 < n_rays < 3000`` and one degree otherwise, and rays are cast
-        from ``direction - fov / 2`` up to and including
-        ``direction + fov / 2``. A full turn thus casts ``n_rays + 1`` rays,
-        and the direction opposite to ``direction`` is cast twice. The
-        component's default view direction (0, 1) is ``direction = pi / 2``.
+        from ``direction - fov / 2`` in steps towards ``direction + fov / 2``,
+        which is reached when ``fov`` is a whole number of steps. A full turn
+        thus casts ``n_rays + 1`` rays, and the direction opposite to
+        ``direction`` is cast twice. The component's default view direction
+        (0, 1) is ``direction = pi / 2``.
 
     Returns
     -------

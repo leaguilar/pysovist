@@ -38,9 +38,11 @@ Lengths
 Surface ids
 :   Obstacle meshes are numbered 0, 1, ... in input order, and ground meshes
     continue the numbering after them. A ray that hits nothing has id -1, and
-    so does a ray that hits the first triangle of the first obstacle mesh,
-    with its true length. For a box from Rhino that triangle is half of the
-    floor. The first triangle of any other mesh keeps its id.
+    so does a ray that hits the first triangle of the scene, the first
+    triangle of the first obstacle mesh, with its true length. For a box from
+    Rhino that triangle is half of the floor. The first triangle of any other
+    mesh keeps its id. Without obstacle meshes the rule marks the first
+    triangle of the first ground mesh, a case that was not measured.
 
 Hits per mesh (OV)
 :   The number of rays with each obstacle id. Ground meshes are not counted.
@@ -141,7 +143,7 @@ class Isovist3D:
     surface_ids : ndarray of shape (n,)
         Surface id of every ray (output StR): the index of the mesh hit,
         obstacles first and ground meshes after them, -1 for no hit and for
-        the first triangle of the first obstacle mesh.
+        the first triangle of the scene (of the first obstacle mesh).
     volume : float
         Volume of the isovist polyhedron in cubic metres (output Vol).
     object_visibility : ndarray of shape (k,)

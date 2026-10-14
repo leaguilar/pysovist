@@ -299,7 +299,7 @@ class PointCloud:
     def grid(self, cell_size: float | None = None):
         """Ball grid for ray casting, built once per radius and cell size.
 
-        See [`build_ball_grid`][pysovist.raycast.build_ball_grid] for the
+        See `pysovist.raycast.build_ball_grid` for the
         cell size (default twice the radius) and the errors.
         """
         from .raycast import build_ball_grid
@@ -317,7 +317,7 @@ class PointCloud:
         within ``max_distance`` (default: none). Balls whose centre is closer
         than ``near_clip`` (default 0) to the ray's origin are ignored.
         ``n_threads`` sets the threads, all by default. The errors are those
-        of [`cast_balls`][pysovist.raycast.cast_balls].
+        of `pysovist.raycast.cast_balls`.
         """
         from .raycast import cast_balls
 

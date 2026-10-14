@@ -165,7 +165,7 @@ def segment_visibility(
         ``ValueError``.
     eps : float
         Distance in metres, positive, below which the observer counts as
-        standing on a wall.
+        standing on a wall. Default 1e-9.
 
     Returns
     -------
@@ -359,8 +359,10 @@ def segment_ray_hits(
     occluders : Plan or array_like of shape (n, 2, 2)
         Wall segments. The result has one count per segment, in this order.
     origin : (x, y) or (x, y, z)
-        Observer position. A third coordinate is ignored. On a wall, the
-        rays leave the observer and that wall is never hit.
+        Observer position. A third coordinate is ignored. There is no
+        on-wall flag: from an observer exactly on a wall, the rays leave the
+        observer and that wall is never hit, while an observer a hair in
+        front of a wall sends about half its rays onto it.
     n_rays : int
         Ray count. Its meaning depends on ``layout``: a whole number of at
         least 1 for ``"even"``, any number (the component's Precision) for
@@ -455,7 +457,7 @@ def _visible_pieces(plan, o, R, fov, direction, eps, on_wall):
     clearance = float(dist.min()) if len(dist) else np.inf
     if clearance < eps:
         if on_wall == "raise":
-            raise ValueError(f"observer {tuple(o)} is {clearance:.3g} m from a wall")
+            raise ValueError(f"observer {tuple(o.tolist())} is {clearance:.3g} m from a wall")
         return clearance, None
 
     # The events of the isovist's wedge sweep: walls beyond the range never bound it.

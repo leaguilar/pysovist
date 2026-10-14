@@ -261,3 +261,20 @@ def test_plan_needs_a_finite_non_negative_eps(eps):
     """A NaN eps used to drop every segment, so the room came back unbounded."""
     with pytest.raises(ValueError, match="eps"):
         Plan(SQUARE, eps=eps)
+
+
+def test_isovist_field_checks_its_options_without_observers():
+    """An unknown option or a bad value used to pass when there were no observers."""
+    with pytest.raises(TypeError, match="foo"):
+        isovist_field(SQUARE, np.empty((0, 2)), foo=1)
+    with pytest.raises(ValueError, match="on_wall"):
+        isovist_field(SQUARE, np.empty((0, 2)), on_wall="bad")
+    with pytest.raises(ValueError, match="max_distance"):
+        isovist_field(SQUARE, np.empty((0, 2)), max_distance=-1.0)
+
+
+def test_observer_on_a_wall_is_named_in_plain_numbers():
+    with pytest.raises(ValueError, match=r"observer \(0\.0, 5\.0\) is 0 m from a wall"):
+        isovist(SQUARE, np.array([0.0, 5.0]), on_wall="raise")
+    with pytest.raises(ValueError, match=r"observer \(0\.0, 5\.0\) is 0 m from a wall"):
+        segment_visibility(SQUARE, np.array([0.0, 5.0]), on_wall="raise")

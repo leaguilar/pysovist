@@ -56,7 +56,7 @@ def isovist(
         ``ValueError``.
     eps : float
         Distance in metres, positive, below which the observer counts as
-        standing on a wall.
+        standing on a wall. Default 1e-9.
 
     Returns
     -------
@@ -90,7 +90,7 @@ def isovist(
 
     if clearance < eps:
         if on_wall == "raise":
-            raise ValueError(f"observer {tuple(o)} is {clearance:.3g} m from a wall")
+            raise ValueError(f"observer {tuple(o.tolist())} is {clearance:.3g} m from a wall")
         empty = np.empty(0)
         return result(empty, empty, empty.astype(np.int8), empty, empty,
                       Flags(on_wall=True), nan_metrics())

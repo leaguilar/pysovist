@@ -10,14 +10,13 @@ $$
 r(\theta) = \frac{p}{\cos u}, \qquad u = \theta - \varphi,
 $$
 
-where \(p\) is the perpendicular distance from the observer to the line that carries the wall and \(\varphi\) is the direction of that perpendicular. Over a wall piece from \(u_0\) to \(u_1\), every power of \(r\) that the metrics need has a closed form:
+where \(p\) is the perpendicular distance from the observer to the line that carries the wall and \(\varphi\) is the direction of that perpendicular. Over a wall piece from \(u_0\) to \(u_1\), the three powers of \(r\) that the metrics need have closed forms:
 
 $$
 \begin{aligned}
 \int_{u_0}^{u_1} r \, du &= p \, \Big[\operatorname{arsinh}(\tan u)\Big]_{u_0}^{u_1}, \\
 \int_{u_0}^{u_1} r^2 \, du &= p^2 \, \Big[\tan u\Big]_{u_0}^{u_1}, \\
-\int_{u_0}^{u_1} r^3 \, du &= \frac{p^3}{2} \, \Big[\sec u \tan u + \operatorname{arsinh}(\tan u)\Big]_{u_0}^{u_1}, \\
-\int_{u_0}^{u_1} r^4 \, du &= p^4 \, \Big[\tan u + \tfrac{1}{3}\tan^3 u\Big]_{u_0}^{u_1}.
+\int_{u_0}^{u_1} r^3 \, du &= \frac{p^3}{2} \, \Big[\sec u \tan u + \operatorname{arsinh}(\tan u)\Big]_{u_0}^{u_1}.
 \end{aligned}
 $$
 
@@ -132,27 +131,7 @@ The area of the sampled polygon converges to the exact area as \(N^{-2}\) in a c
 
 ## Grasshopper isovist outputs
 
-The isovist components of the DeCodingSpaces toolbox for Grasshopper return 17 outputs. The tool casts a fixed number \(N\) of rays. The table maps each output to pysovist. `sampled_metrics(iso, N)` gives the values of the polygon through those \(N\) hit points.
-
-| Grasshopper output | pysovist | Note |
-|---|---|---|
-| `Area` | `area` | The sampled value is `sampled_metrics(iso, N)["area"]`. |
-| `Perimeter` | `sampled_metrics(iso, N)["perimeter"]` | The perimeter of the sampled polygon. |
-| `MinRadial` | `r_min` | |
-| `MaxRadial` | `r_max` | |
-| `MeanRadial` | `r_mean` | |
-| `Variance` | `r_var` | |
-| `StandardDeviation` | `r_mad` | The output is smaller than the standard deviation, as a mean absolute deviation is. |
-| `Circularity` | `compactness` | \(4 \pi A / P^2\). |
-| `Compactness` | no equivalent | Equals \(\sqrt{\text{Circularity}} / \pi^2\), so it ranks observers as `compactness` does. |
-| `Occlusivity` | `occlusivity` | |
-| `Skewness` | not comparable | Its values track `Variance` in that tool, so it is not a skewness. |
-| `Dispersion` | not identified | |
-| `Elogation` | not identified | |
-| `DistanceWeightedArea` | about \(\pi \cdot\) `r_mean` | |
-| `Drift` | `drift` | Not computed by that tool. pysovist computes it. |
-| `DriftAngle` | `drift_angle` | Not computed by that tool. pysovist computes it. |
-| `ConvexDeficiency` | `convex_deficiency` | Not computed by that tool. pysovist computes it. |
+The Isovist component of the DeCodingSpaces toolbox for Grasshopper returns 17 Isovist Properties computed from its rays. `pysovist.compat.decodingspaces` reproduces all 17, and the [DeCodingSpaces compatibility](decodingspaces.md) page maps each to the metric above that measures the same idea. Its Area and Perimeter are those of the sampled polygon: for a full view in the default direction at a Precision \(N\) from 11 to 2,999, `sampled_metrics(iso, N, offset=-np.pi / 2)` gives both.
 
 ## References
 

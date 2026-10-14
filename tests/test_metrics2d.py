@@ -121,3 +121,26 @@ def test_a_quarter_view_of_the_square_keeps_the_mean_depth():
     assert m["r_max"] == pytest.approx(5 * math.sqrt(2), rel=1e-12)
     assert m["drift"] == pytest.approx(10 / 3, rel=1e-12)  # centroid of the triangle
     assert m["drift_angle"] == pytest.approx(0.0, abs=1e-12)
+
+
+def test_drift_of_a_circular_sector():
+    """Closed form: with no walls, range 3 and a quarter view along +y, the isovist is a sector
+    whose centroid lies 4 R sin(pi / 4) / (3 pi / 2) from the observer, along +y."""
+    m = isovist(Plan(np.empty((0, 2, 2))), (1.0, 2.0), max_distance=3.0, fov=math.pi / 2,
+                direction=math.pi / 2).metrics
+    assert m["area"] == pytest.approx(9 * math.pi / 4, rel=1e-12)
+    assert m["drift"] == pytest.approx(4 * 3 * math.sin(math.pi / 4) / (3 * math.pi / 2),
+                                       rel=1e-12)
+    assert m["drift_angle"] == pytest.approx(math.pi / 2, rel=1e-12)
+
+
+@pytest.mark.parametrize("origin", [(5, 5), (2, 3)])
+def test_radial_moments_with_range_arcs_match_fine_integration(origin):
+    """The range of 6 m turns the far corners into arcs, so the r_mad and r_skew integrals run
+    over wall pieces and arcs (reference: a sum over 2,000,001 equally spaced rays)."""
+    walls = np.concatenate([rect(0, 0, 10, 10), rect(4, 6, 6, 7)])
+    iso = isovist(Plan(walls), origin, max_distance=6.0)
+    assert (iso.kind == 0).any()
+    num = _numeric_radial_moments(iso)
+    for key, value in num.items():
+        assert iso.metrics[key] == pytest.approx(value, rel=1e-5), key

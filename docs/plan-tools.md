@@ -82,7 +82,7 @@ df[["s", "x", "y", "direction", "area"]].iloc[4:8]
 | 6.0 | 2.0 | 2.0 | 1.571 | 26.309 |
 | 7.0 | 2.0 | 3.0 | 1.571 | 21.691 |
 
-Walking left along the lower wing, the observer sees less of the room as the end wall comes closer, from 33.7 m² at the start of the path to 12.6 m² one metre before the corner. At the corner the view turns up the other wing and opens to 26.3 m².
+Walking left along the lower wing, the visible area falls from 33.7 m² at the start of the path to 12.6 m² one metre before the corner, where the end wall fills the view. At the corner the view turns up the other wing and opens to 26.3 m².
 
 The observers stand at the arc lengths 0, `spacing`, 2 `spacing` and so on. When the length of the path is not a multiple of `spacing`, an observer also stands on the last vertex, unless `endpoint=False`. An observer on a vertex looks along the segment that leaves it, and the observer on the last vertex looks along the segment that ends there. Repeated vertices are skipped. A spacing that is not positive and finite, a vertex that is not finite, or a path with fewer than two distinct vertices raises a `ValueError`. `sample_path` returns the arc lengths, points and directions alone. With the default full turn as the field of view, the direction plays no role, and the rows equal those of `isovist_field` at the same points.
 

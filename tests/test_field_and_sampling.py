@@ -26,7 +26,8 @@ def test_field_in_parallel_equals_serial():
     rng = np.random.default_rng(0)
     origins = rng.uniform(-4.9, 4.9, size=(200, 2))
     serial = isovist_field(plan, origins, n_jobs=1, max_distance=6)
-    parallel = isovist_field(plan, origins, n_jobs=2, max_distance=6)
+    # 200 observers in chunks of 37 reach the process pool (the default chunk of 256 would not).
+    parallel = isovist_field(plan, origins, n_jobs=2, chunk=37, max_distance=6)
     np.testing.assert_array_equal(serial.to_numpy(), parallel.to_numpy())
 
 

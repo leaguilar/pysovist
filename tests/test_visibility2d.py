@@ -510,3 +510,29 @@ def test_ray_hits_from_an_observer_on_a_wall_never_count_that_wall():
     hits = segment_ray_hits(rect(0, 0, 10, 10), (0.0, 5.0), 36, direction=0.005)
     assert hits[3] == 0
     assert hits.sum() == 18
+
+
+def test_ray_hits_ignore_a_wall_along_the_ray():
+    """A wall from (1, 0) to (3, 0) lies along the even layout's first ray from the origin; that
+    ray passes it and ends on the far wall x = 5 of the room."""
+    walls = np.concatenate([rect(-5, -5, 5, 5), [[(1.0, 0.0), (3.0, 0.0)]]])
+    hits = segment_ray_hits(walls, (0.0, 0.0), 4, direction=0.0)
+    assert hits.tolist() == [1, 1, 1, 1, 0]
+
+
+@pytest.mark.parametrize("gap, top, front", [(1e-9, 10.0, 0.0), (1e-7, 4.0, 6.0)])
+def test_walls_closer_than_a_relative_1e9_in_depth_overlap(gap, top, front):
+    """A 6 m wall just in front of the top wall of a 10 m square, seen from (5, 5): at 1e-9 m,
+    a relative 2e-10 of the 5 m depth, the two overlap and the top wall, listed first, keeps the
+    stretch. At 1e-7 m the front wall hides 6 m of the top wall (closed form)."""
+    walls = np.concatenate([rect(0, 0, 10, 10), [[(2.0, 10.0 - gap), (8.0, 10.0 - gap)]]])
+    vis = segment_visibility(walls, (5.0, 5.0))
+    np.testing.assert_allclose(vis.visible_length[[2, 4]], [top, front], atol=1e-6)
+
+
+def test_ray_hits_a_hair_in_front_of_a_wall_send_half_the_rays_onto_it():
+    """360 rays offset by half a degree from (5, 1e-12) in a 10 m square: the 180 that point
+    below the horizon end on the bottom wall at once. From (5, 0), on that wall, none do."""
+    near = segment_ray_hits(rect(0, 0, 10, 10), (5.0, 1e-12), 360, direction=0.5 * math.pi / 180)
+    on = segment_ray_hits(rect(0, 0, 10, 10), (5.0, 0.0), 360, direction=0.5 * math.pi / 180)
+    assert near[0] == 180 and on[0] == 0

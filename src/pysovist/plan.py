@@ -24,15 +24,18 @@ class Plan:
         shape (2, 2) or (2, 3).
     eps : float
         Length in metres, finite and not negative, below which a segment
-        counts as zero-length. It is also the tolerance of the search for
-        crossing points.
+        counts as zero-length. Default 1e-12. The search for crossing points
+        uses it too: two segments whose direction vectors have a cross
+        product of at most ``eps`` (in square metres) count as parallel and
+        do not cross.
 
     Attributes
     ----------
     segments : ndarray of shape (n, 2, 2)
         The segments that remain.
     vertices : ndarray of shape (k, 2)
-        Every segment endpoint and every crossing point, without duplicates.
+        Every segment endpoint and every crossing point, without duplicates:
+        points that round to the same multiple of 1e-9 m count once.
 
     Raises
     ------
@@ -209,9 +212,11 @@ class Plan:
         Raises
         ------
         ValueError
-            When ``seed`` lies outside the cells of the grid, or when the
-            segment from ``seed`` to the centre of its cell passes closer
-            than ``eps`` to a wall.
+            When ``seed`` lies outside the cells of the grid or is not one
+            finite point, when the segment from ``seed`` to the centre of its
+            cell passes closer than ``eps`` to a wall, when ``spacing`` or
+            ``eps`` is not a positive number (``spacing`` also finite), or for
+            a ``domain`` that ``grid`` refuses.
 
         Notes
         -----

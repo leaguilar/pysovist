@@ -188,3 +188,11 @@ def test_a_ray_from_an_origin_on_a_wall_leaves_through_it():
     hits = cast_rays(rect(0, 0, 10, 10), (0.0, 5.0), [0.0, np.pi])
     np.testing.assert_array_equal(hits.distance, [[10.0, np.inf]])
     assert hits.segment.tolist() == [[1, NO_HIT]]
+
+
+def test_a_ray_through_the_free_end_of_a_wall_hits_it():
+    """Closed form: a wall from (2, -1) to (2, 1) seen from the origin. The ray at
+    atan2(1, 2) passes exactly through its upper end and hits it at sqrt(5)."""
+    hits = cast_rays([[(2.0, -1.0), (2.0, 1.0)]], (0.0, 0.0), [math.atan2(1.0, 2.0)])
+    assert hits.segment.tolist() == [[0]]
+    assert hits.distance[0, 0] == pytest.approx(math.sqrt(5), rel=1e-12)

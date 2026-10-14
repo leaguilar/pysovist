@@ -17,6 +17,8 @@ from pysovist.raycast import (
 
 from .geometry import room_walls, square_rule
 
+pytest.importorskip("numba")  # the ball and disk ray casters
+
 
 def assert_same_hits(t_grid, t_ref):
     np.testing.assert_array_equal(np.isinf(t_grid), np.isinf(t_ref))

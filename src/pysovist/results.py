@@ -109,11 +109,41 @@ class Isovist:
         """Exact visible depth along ``n`` equally spaced rays.
 
         The rays start at ``offset`` (radians, absolute) for a full circle, or
-        span the field of view otherwise. Returns ``(angles, depths)``.
-        This is how a ray-sampling tool, such as the Grasshopper isovist
-        components, sees the same scene.
+        span the field of view otherwise, both edges included. This is how a
+        ray-sampling tool, such as the Grasshopper isovist components, sees
+        the same scene.
+
+        Parameters
+        ----------
+        n : int
+            Number of rays.
+        offset : float
+            Angle of the first ray of a full circle, in radians, finite.
+            Default 0. Unused for a field of view below a full turn.
+
+        Returns
+        -------
+        angles : ndarray of shape (n,)
+            Absolute ray angles in radians.
+        depths : ndarray of shape (n,)
+            Visible depth along each ray in metres, NaN for a flagged isovist.
+
+        Raises
+        ------
+        ValueError
+            When ``n`` is not a whole number of at least 1, or at least 2 for a
+            field of view below a full turn, whose two edges take a ray each,
+            or ``offset`` is not finite.
         """
+        from .directions import _count
+
+        n = _count(n)
+        if not np.isfinite(offset):
+            raise ValueError("offset must be a finite angle in radians")
         full = self.fov >= 2 * np.pi - 1e-12
+        if not full and n < 2:
+            raise ValueError("n must be at least 2 for a field of view: its two edges take a "
+                             "ray each")
         if full:
             ang = offset + 2 * np.pi * np.arange(n) / n
         else:
@@ -122,8 +152,14 @@ class Isovist:
         return ang, self.depth(ang)
 
     def depth(self, angles) -> np.ndarray:
-        """Exact visible depth at absolute angles (NaN outside the field of view)."""
+        """Exact visible depth in metres at absolute angles (radians).
+
+        NaN outside the field of view, and everywhere for a flagged isovist
+        (``on_wall`` or ``unbounded``), which has no wedges.
+        """
         ang = np.asarray(angles, dtype=float)
+        if len(self.theta0) == 0:
+            return np.full(ang.shape, np.nan)
         base = self.theta0[0] if len(self.theta0) else 0.0
         rel = np.mod(ang - base, 2 * np.pi)
         edges = self.theta1 - base
@@ -140,8 +176,18 @@ class Isovist:
     def polygon(self, arc_step: float = np.radians(0.5)) -> np.ndarray:
         """Boundary as a closed ring, shape (k, 2), in absolute coordinates.
 
-        Wall pieces are exact. Range arcs are sampled every ``arc_step`` radians.
+        The last point repeats the first. A field of view below a full turn
+        starts and ends at the observer. Wall pieces are exact. Range arcs are
+        sampled every ``arc_step`` radians (default half a degree). Flagged
+        isovists give an empty ring.
+
+        Raises
+        ------
+        ValueError
+            When ``arc_step`` is not a positive angle.
         """
+        if not arc_step > 0:
+            raise ValueError("arc_step must be a positive angle in radians")
         if self.flags.on_wall or self.flags.unbounded or len(self.theta0) == 0:
             return np.empty((0, 2))
         pts = []
@@ -158,6 +204,8 @@ class Isovist:
                 th = np.linspace(t0, t1, m)
                 r = np.full(m, self.max_distance)
             pts.append(np.c_[r * np.cos(th), r * np.sin(th)])
+        if not full:
+            pts.append(np.zeros((1, 2)))
         ring = np.concatenate(pts)
         keep = np.r_[True, np.linalg.norm(np.diff(ring, axis=0), axis=1) > 1e-12]
         return ring[keep] + self.origin

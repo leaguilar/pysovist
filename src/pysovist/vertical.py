@@ -50,10 +50,18 @@ def vertical_section(mesh, eye, azimuth: float) -> Plan:
     -------
     Plan
         One segment per crossing triangle, in plane coordinates.
+
+    Raises
+    ------
+    ValueError
+        When ``eye`` is not a finite point (x, y, z) or ``azimuth`` is not a
+        finite angle.
     """
     v = np.asarray(mesh.vertices, dtype=float)
     t = np.asarray(mesh.triangles, dtype=np.int64).reshape(-1, 3)
-    e = np.asarray(eye, dtype=float)
+    e = _eye(eye)
+    if not np.isfinite(azimuth):
+        raise ValueError("azimuth must be a finite angle in radians")
     c, s = np.cos(azimuth), np.sin(azimuth)
     rel = v[:, :2] - e[:2]
     uz = np.c_[rel[:, 0] * c + rel[:, 1] * s, v[:, 2]]
@@ -97,17 +105,20 @@ def vertical_isovist(
         from +x.
     elevation : float
         Centre of the field of view in the plane, in radians above the
-        forward horizontal. Used only when ``fov`` is below a full turn.
+        forward horizontal, finite. Default 0. Used only when ``fov`` is below
+        a full turn.
     fov : float
-        Field of view in the plane, in radians. Default: the full turn.
+        Field of view in the plane, in radians, in (0, 2 pi]. Default: the
+        full turn.
     max_distance : float
-        Range limit in metres. A section that is open, for example with no
-        ceiling, needs it for finite metrics.
+        Range limit in metres, positive. Default: none. A section that is
+        open, for example with no ceiling, needs it for finite metrics.
     on_wall : {"nan", "raise"}
         What to do when the eye is closer than ``eps`` to a surface, as in
-        ``isovist``.
+        ``isovist``. Default ``"nan"``.
     eps : float
-        Distance below which the eye counts as standing on a surface.
+        Distance in metres below which the eye counts as standing on a
+        surface, non-negative. Default 1e-9.
 
     Returns
     -------
@@ -115,8 +126,23 @@ def vertical_isovist(
         Wedges, flags and the standard metrics, in plane coordinates. Its
         ``origin`` is ``(0, z_eye)``, its angles are elevations, and
         ``plane_to_world`` maps its points back to the scene.
+
+    Raises
+    ------
+    ValueError
+        When the eye or the azimuth is not finite, an option lies outside
+        the domain given above, or ``on_wall="raise"`` and the eye stands on
+        a surface.
     """
-    e = np.asarray(eye, dtype=float)
+    e = _eye(eye)
+    if not 0 < fov <= TWO_PI:
+        raise ValueError("fov must lie in (0, 2 pi] radians")
+    if not np.isfinite(elevation):
+        raise ValueError("elevation must be a finite angle in radians")
+    if not max_distance > 0:
+        raise ValueError("max_distance must be positive")
+    if not eps >= 0:
+        raise ValueError("eps must be a non-negative distance in metres")
     section = vertical_section(mesh, e, azimuth)
     return isovist(section, (0.0, e[2]), max_distance=max_distance, fov=fov,
                    direction=elevation, on_wall=on_wall, eps=eps)
@@ -127,6 +153,21 @@ def plane_to_world(points, eye, azimuth: float) -> np.ndarray:
 
     The point ``(u, z)`` lies at ``(x_eye + u cos(azimuth),
     y_eye + u sin(azimuth), z)``.
+
+    Parameters
+    ----------
+    points : array_like of shape (k, 2)
+        Points ``(u, z)`` of the plane, in metres.
+    eye : (x, y, z)
+        The eye that placed the plane. Only its x and y are used.
+    azimuth : float
+        Horizontal direction of the plane, in radians counter-clockwise
+        from +x.
+
+    Returns
+    -------
+    ndarray of shape (k, 3)
+        The points in scene coordinates.
     """
     p = np.asarray(points, dtype=float).reshape(-1, 2)
     e = np.asarray(eye, dtype=float)
@@ -144,3 +185,10 @@ def _crossing(uz, w, a, b, left):
     hi = np.where(left[a], a, b)
     f = w[lo] / (w[lo] - w[hi])
     return uz[lo] + f[:, None] * (uz[hi] - uz[lo])
+
+
+def _eye(eye) -> np.ndarray:
+    e = np.asarray(eye, dtype=float).reshape(-1)
+    if e.shape != (3,) or not np.all(np.isfinite(e)):
+        raise ValueError("eye must be one finite point (x, y, z)")
+    return e

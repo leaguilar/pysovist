@@ -165,6 +165,9 @@ class ViewVolume:
         ``view_volume(..., object_ids=True)``, else None. For a mesh it is the
         object id of the triangle hit, for a point cloud the index of the
         point whose ball is hit.
+    n_objects : int or None
+        Number of objects of the scene, set with ``object_ids``: the
+        ``n_objects`` of a mesh, the number of points of a point cloud.
     """
 
     origin: np.ndarray
@@ -178,6 +181,7 @@ class ViewVolume:
     near_clipped: bool = False
     metrics: dict = field(default_factory=dict)
     object_ids: np.ndarray | None = None
+    n_objects: int | None = None
 
     @property
     def volume(self) -> float:
@@ -222,9 +226,9 @@ class ViewVolume:
         Parameters
         ----------
         ground : sequence of int or array_like of bool
-            The object ids that count as ground, or a boolean mask indexed by
-            object id. For a point cloud, the indices of the ground points or
-            a mask over the points.
+            The object ids that count as ground, or a boolean mask with one
+            entry per object. For a point cloud, the indices of the ground
+            points or a mask over the points. Default: no ground.
 
         Returns
         -------
@@ -233,10 +237,17 @@ class ViewVolume:
             the names of [`FACTOR_NAMES`][pysovist.volume3d.FACTOR_NAMES].
             They sum to 1. They are NaN for an eye flagged ``on_wall`` or
             ``inside_occluder``.
+
+        Raises
+        ------
+        ValueError
+            When the view volume has no object ids, or ``ground`` names an
+            object the scene does not have, holds ids that are not whole
+            numbers, or is a mask without one entry per object.
         """
         ids = self._ids()
         blocked = np.array([self.flags.on_wall or self.flags.inside_occluder])
-        f = _factors(ids[None], self.weights, _ground_ids(ground), blocked)
+        f = _factors(ids[None], self.weights, _ground_ids(ground, self.n_objects), blocked)
         return {k: float(v[0]) for k, v in f.items()}
 
     def _ids(self) -> np.ndarray:
@@ -273,22 +284,28 @@ def view_volume(
     occluders3d : Mesh or PointCloud
         The scene.
     origin : (x, y, z)
-        Eye position in metres.
+        One eye position in metres.
     n_rays : int
-        Number of directions, ignored when ``directions`` is an array.
+        Number of directions over the whole sphere, a whole number of at
+        least 1, ignored when ``directions`` is an array. Default 16384. The
+        quadrature error falls as the count grows: on a cube seen from an
+        off-centre eye it is 3.7e-4 at 1,024 Fibonacci directions and 3.2e-6
+        at 65,536.
     directions : str or array_like of shape (n, 3)
-        Direction set: ``"fibonacci"`` (an equal-area spiral), ``"random"``
-        (independent uniform directions) or an array. An array is normalised
-        and each row weighted 4 pi / n, so it should be an equal-area design.
+        Direction set: ``"fibonacci"`` (an equal-area spiral, the default),
+        ``"random"`` (independent uniform directions) or an array of finite,
+        non-zero vectors. An array is normalised and each row weighted
+        4 pi / n, so it should be an equal-area design.
     seed : int or numpy.random.Generator, optional
         Seed for ``directions="random"``.
     max_distance : float
-        Range limit R in metres. Each depth is clipped to R.
+        Range limit R in metres, positive. Each depth is clipped to R.
+        Default: none.
     near_clip : float
-        Distance in metres below which occluders are ignored. For a point
-        cloud, the balls whose centre lies within ``near_clip`` of the eye are
-        ignored. For a mesh, each ray starts at distance ``near_clip`` from
-        the eye.
+        Distance in metres below which occluders are ignored, non-negative
+        and below ``max_distance``. Default 0. For a point cloud, the balls
+        whose centre lies within ``near_clip`` of the eye are ignored. For a
+        mesh, each ray starts at distance ``near_clip`` from the eye.
     escape : {"clip", "zero", "nan"}
         Depth counted for a ray that hits nothing within R: R, 0 or NaN. With
         ``"clip"`` and no range limit, one escaping ray makes the volume
@@ -297,11 +314,13 @@ def view_volume(
         ``volume_down`` when no ray escapes through that half.
     inside : {"nan", "zero"}
         Metrics of an eye inside an occluder or closer than ``eps`` to one:
-        NaN or 0.
+        NaN (the default) or 0.
     eps : float
-        Clearance in metres below which the eye counts as inside.
+        Clearance in metres below which the eye counts as inside,
+        non-negative. Default 1e-9.
     radius : float, optional
-        Ball radius for a point cloud, overriding the cloud's own radius.
+        Ball radius in metres for a point cloud, positive and finite,
+        overriding the cloud's own radius.
     hfov : float
         Horizontal field of view in radians, centred on ``direction``.
         Default: full turn.
@@ -310,31 +329,41 @@ def view_volume(
         pole to pole.
     direction : float
         Azimuth of the centre of the view, in radians counter-clockwise from
-        +x. Used only when ``hfov`` is below a full turn.
+        +x, finite. Default 0. Used only when ``hfov`` is below a full turn.
     elevation : float
         Elevation of the centre of the view, in radians above the eye's
-        horizontal plane (the vertical offset of the view). The vertical field
-        must lie between the poles.
+        horizontal plane (the vertical offset of the view). Default 0. The
+        vertical field must lie between the poles.
     weights : array_like of shape (n,), optional
-        Solid angle of each direction of an array ``directions``, for example
-        the cell solid angles of
+        Solid angle of each direction of an array ``directions``, positive,
+        for example the cell solid angles of
         [`angle_grid`][pysovist.directions.angle_grid]. Default: ``4 pi / n``
         each.
     object_ids : bool
         Also report, for every ray, the object it hits (``ViewVolume.object_ids``),
         which [`ViewVolume.factors`][pysovist.ViewVolume.factors] and
         [`ViewVolume.hits_per_object`][pysovist.ViewVolume.hits_per_object] use.
+        Default False.
 
     Returns
     -------
     ViewVolume
         Depths, flags and metrics of the eye.
+
+    Raises
+    ------
+    ValueError
+        When the scene is empty (a mesh with no triangles, a point cloud with
+        no points), the origin is not one finite point, an option lies outside
+        the domain given above, or no direction lies inside the field of view.
+    TypeError
+        When ``radius`` is given for a mesh.
     """
     occ = _occluder(occluders3d, radius)
     d = _directions(directions, n_rays, seed)
-    R = _check(escape, inside, max_distance, near_clip)
+    R = _check(escape, inside, max_distance, near_clip, eps)
     d, w = _field(d, weights, hfov, vfov, direction, elevation)
-    o = np.asarray(origin, dtype=float).reshape(3)
+    o = _eye(origin)
     if object_ids:
         t, ids = _cast_ids(occ, o[None], d, R, near_clip)
     else:
@@ -354,6 +383,7 @@ def view_volume(
         flags=flags, near_clipped=bool(near_clip > 0 and clearance < near_clip),
         metrics={k: float(v[0]) for k, v in metrics.items()},
         object_ids=None if ids is None else ids[0],
+        n_objects=_n_objects(occ) if object_ids else None,
     )
 
 
@@ -365,12 +395,12 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
     occluders3d : Mesh or PointCloud
         The scene.
     origins : array_like of shape (m, 3) or DataFrame
-        Eye positions in metres. A DataFrame gives them in its columns
-        ``x, y, z``.
+        Eye positions in metres, finite. A DataFrame gives them in its
+        columns ``x, y, z``. No origins give an empty table.
     n_jobs : int
-        Threads for ray casting, ``-1`` for all cores. Both back ends are
-        multi-threaded (numba for point clouds, Embree for meshes), so the
-        observers are batched into one kernel call per chunk.
+        Threads for ray casting, ``-1`` (the default) for all cores. Both back
+        ends are multi-threaded (numba for point clouds, Embree for meshes), so
+        the observers are batched into one kernel call per chunk.
     **kw
         Keyword arguments of [`view_volume`][pysovist.view_volume], including
         a field of view and ``weights``, except ``object_ids``. Every origin
@@ -387,6 +417,15 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
         ``unbounded`` and ``near_clipped``. With ``ground``, the factors
         follow in the order of [`FACTOR_NAMES`][pysovist.volume3d.FACTOR_NAMES],
         NaN for flagged rows.
+
+    Raises
+    ------
+    ValueError
+        For the inputs that ``view_volume`` refuses, an origin that is not
+        finite, ``n_jobs`` that is neither -1 nor positive, and a ``ground``
+        that names an object the scene does not have.
+    TypeError
+        For a keyword argument that ``view_volume_field`` does not take.
     """
     unknown = set(kw) - _FIELD_KEYS
     if unknown:
@@ -397,11 +436,11 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
     d = _directions(kw.get("directions", "fibonacci"), kw.get("n_rays", 16384), kw.get("seed"))
     escape, inside = kw.get("escape", "clip"), kw.get("inside", "nan")
     near_clip, eps = kw.get("near_clip", 0.0), kw.get("eps", 1e-9)
-    R = _check(escape, inside, kw.get("max_distance", np.inf), near_clip)
+    R = _check(escape, inside, kw.get("max_distance", np.inf), near_clip, eps)
     d, w = _field(d, kw.get("weights"), kw.get("hfov", 2 * np.pi), kw.get("vfov", np.pi),
                   kw.get("direction", 0.0), kw.get("elevation", 0.0))
     ground = kw.get("ground")
-    ground_ids = None if ground is None else _ground_ids(ground)
+    ground_ids = None if ground is None else _ground_ids(ground, _n_objects(occ))
     o = _origins(origins)
     threads = None if n_jobs == -1 else int(n_jobs)
 
@@ -484,12 +523,12 @@ def _directions(directions, n_rays, seed) -> np.ndarray:
         raise ValueError(f"directions must be one of {DIRECTION_SETS} or an (n, 3) array")
     d = np.asarray(directions, dtype=float).reshape(-1, 3)
     norm = np.linalg.norm(d, axis=1)
-    if len(d) == 0 or np.any(norm == 0):
-        raise ValueError("directions must be non-zero vectors")
+    if len(d) == 0 or not np.all(np.isfinite(norm) & (norm > 0)):
+        raise ValueError("directions must be finite, non-zero vectors")
     return d / norm[:, None]
 
 
-def _check(escape, inside, max_distance, near_clip) -> float:
+def _check(escape, inside, max_distance, near_clip, eps) -> float:
     if escape not in ESCAPE_POLICIES:
         raise ValueError(f"escape must be one of {ESCAPE_POLICIES}")
     if inside not in INSIDE_POLICIES:
@@ -497,17 +536,39 @@ def _check(escape, inside, max_distance, near_clip) -> float:
     R = float(max_distance)
     if not R > 0:
         raise ValueError("max_distance must be positive")
-    if near_clip < 0:
-        raise ValueError("near_clip must be non-negative")
+    if not near_clip >= 0:
+        raise ValueError("near_clip must be a non-negative distance in metres")
+    if not near_clip < R:
+        raise ValueError("near_clip must be smaller than max_distance, or every occluder is "
+                         "ignored")
+    if not eps >= 0:
+        raise ValueError("eps must be a non-negative distance in metres")
     return R
 
 
 def _occluder(occ, radius):
-    if radius is None:
-        return occ
-    if not hasattr(occ, "with_radius"):
-        raise TypeError("radius applies to point clouds only")
-    return occ.with_radius(radius)
+    if radius is not None:
+        if not hasattr(occ, "with_radius"):
+            raise TypeError("radius applies to point clouds only")
+        occ = occ.with_radius(radius)
+    if _n_objects(occ) == 0 or (hasattr(occ, "triangles") and len(occ.triangles) == 0):
+        raise ValueError("the scene is empty: a mesh with no triangles or a point cloud with no "
+                         "points hides nothing. Check the file, the crop or the classes that "
+                         "produced it")
+    return occ
+
+
+def _n_objects(occ) -> int:
+    """Objects of a scene: the objects of a mesh, the points of a point cloud."""
+    return int(occ.n_objects) if hasattr(occ, "n_objects") else len(occ.points)
+
+
+def _eye(origin) -> np.ndarray:
+    o = np.asarray(origin, dtype=float)
+    if o.size != 3 or not np.all(np.isfinite(o)):
+        raise ValueError("view_volume takes one finite eye point (x, y, z): for many points "
+                         "use view_volume_field")
+    return o.reshape(3)
 
 
 def _origins(origins) -> np.ndarray:
@@ -516,6 +577,10 @@ def _origins(origins) -> np.ndarray:
     o = np.asarray(origins, dtype=float)
     if o.ndim != 2 or o.shape[1] != 3:
         raise ValueError("origins must have shape (m, 3)")
+    bad = int((~np.isfinite(o).all(axis=1)).sum())
+    if bad:
+        raise ValueError(f"{bad} of {len(o)} origins are not finite: remove those rows or give "
+                         "their coordinates")
     return np.ascontiguousarray(o)
 
 
@@ -528,6 +593,8 @@ def _field(d, weights, hfov, vfov, direction, elevation):
     whose arithmetic stays that of 0.1.2.
     """
     check_field_of_view(hfov, vfov, elevation)
+    if not np.isfinite(direction):
+        raise ValueError("direction must be a finite angle in radians")
     full = hfov >= 2 * np.pi and vfov >= np.pi
     if weights is None and full:
         return d, None
@@ -619,11 +686,26 @@ def _ball_ids(cloud, origins, d, t, near_clip) -> np.ndarray:
     return ids
 
 
-def _ground_ids(ground) -> np.ndarray:
+def _ground_ids(ground, n_objects=None) -> np.ndarray:
+    """Object ids of the ground, checked against the ``n_objects`` objects of the scene."""
     g = np.asarray(ground)
     if g.dtype == bool:
+        if n_objects is not None and g.shape != (n_objects,):
+            raise ValueError(f"a ground mask needs one entry per object: {n_objects} entries, "
+                             f"not {g.size}")
         return np.flatnonzero(g)
-    return g.astype(np.int64).reshape(-1)
+    g = g.reshape(-1)
+    if g.dtype.kind not in "iu":
+        f = g.astype(float)
+        if not np.all(np.isfinite(f) & (f == np.round(f))):
+            raise ValueError("ground ids must be whole numbers, the object ids of the ground")
+    g = g.astype(np.int64)
+    top = np.inf if n_objects is None else n_objects
+    bad = g[(g < 0) | (g >= top)]
+    if len(bad):
+        have = "" if n_objects is None else f": its objects are 0 to {n_objects - 1}"
+        raise ValueError(f"ground names object {bad[0]}, which the scene does not have{have}")
+    return g
 
 
 def _factors(ids, w, ground_ids, blocked=None) -> dict:

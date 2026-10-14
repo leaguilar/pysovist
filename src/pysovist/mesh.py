@@ -20,7 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from scipy.spatial import ConvexHull
+from scipy.spatial import ConvexHull, QhullError
 
 _CHUNK_RAYS = 1 << 21  # rays per Embree call (48 MB of single-precision rays)
 CLOSE_OPTIONS = ("hull", None)
@@ -37,11 +37,20 @@ class Mesh:
         Vertex coordinates in metres. They are copied.
     triangles : array_like of shape (m, 3)
         Integer vertex indices of each triangle. Orientation does not matter
-        for ray casting.
+        for ray casting. Quads must be split first: (a, b, c, d) into
+        (a, b, c) and (a, c, d).
     object_ids : array_like of shape (m,), optional
         Index of the object each triangle belongs to, a non-negative integer.
         Default: 0 for every triangle, one object. ``Mesh.combine`` sets them
         for a scene made of several meshes.
+
+    Raises
+    ------
+    ValueError
+        When ``vertices`` is not of shape (n, 3) or holds a coordinate that is
+        not finite, ``triangles`` is not of shape (m, 3), holds indices that
+        are not whole numbers or lie outside the vertices, or ``object_ids``
+        does not give one non-negative integer per triangle.
 
     Attributes
     ----------
@@ -59,9 +68,12 @@ class Mesh:
 
     def __init__(self, vertices, triangles, object_ids=None):
         v = np.array(vertices, dtype=float, copy=True)
-        t = np.array(triangles, dtype=np.int64, copy=True).reshape(-1, 3)
         if v.ndim != 2 or v.shape[1] != 3:
             raise ValueError("vertices must have shape (n, 3)")
+        if not np.all(np.isfinite(v)):
+            raise ValueError("vertices must be finite: remove or repair the vertices with NaN or "
+                             "infinite coordinates")
+        t = _triangle_indices(triangles)
         if len(t) and (t.min() < 0 or t.max() >= len(v)):
             raise ValueError("triangle indices out of range")
         v.setflags(write=False)
@@ -102,6 +114,11 @@ class Mesh:
         -------
         Mesh
             The combined scene, with ``object_ids`` set.
+
+        Raises
+        ------
+        ValueError
+            When ``meshes`` is empty.
         """
         meshes = list(meshes)
         if not meshes:
@@ -114,10 +131,30 @@ class Mesh:
 
     @classmethod
     def from_file(cls, path) -> Mesh:
-        """Read any triangle mesh format open3d reads (``.ply``, ``.obj``, ``.stl``, ...)."""
+        """Read any triangle mesh format open3d reads (``.ply``, ``.obj``, ``.stl``, ...).
+
+        Parameters
+        ----------
+        path : str or os.PathLike
+            Mesh file, in metres.
+
+        Raises
+        ------
+        FileNotFoundError
+            When the file does not exist.
+        ValueError
+            When the file holds no triangles, for example a point cloud,
+            which [`PointCloud.read`][pysovist.PointCloud.read] reads.
+        """
         import open3d as o3d
 
-        m = o3d.io.read_triangle_mesh(str(Path(path)))
+        path = Path(path)
+        if not path.is_file():
+            raise FileNotFoundError(f"no mesh file at {path}")
+        m = o3d.io.read_triangle_mesh(str(path))
+        if len(m.triangles) == 0:
+            raise ValueError(f"no triangles read from {path}: a point cloud is read with "
+                             "PointCloud.read")
         return cls(np.asarray(m.vertices), np.asarray(m.triangles))
 
     @staticmethod
@@ -128,6 +165,20 @@ class Mesh:
         Every edge of a closing polygon becomes a wall, so a polygon that
         leaves walls outside cuts through the building. A wall may end on the
         polygon, run along it or reach past it.
+
+        Parameters
+        ----------
+        plan : Plan or array_like of shape (n, 2, 2)
+            Wall segments in metres.
+        polygon : array_like of shape (k, 2)
+            Closing polygon, vertices in order, the last joined to the first.
+
+        Raises
+        ------
+        ValueError
+            When a wall lies mostly outside the polygon, or the polygon has a
+            coordinate that is not finite or fewer than three distinct corners
+            enclosing an area.
         """
         from .plan import Plan
 
@@ -135,7 +186,7 @@ class Mesh:
             segs = plan.segments
         else:
             segs = np.asarray(plan, dtype=float).reshape(-1, 2, 2)
-        out = _walls_outside_ring(segs, np.asarray(polygon, dtype=float).reshape(-1, 2)[:, :2])
+        out = _walls_outside_ring(segs, _closing_ring(polygon))
         if out.any():
             raise ValueError(
                 f"{int(out.sum())} of {len(segs)} walls lie mostly outside the closing polygon. "
@@ -162,9 +213,9 @@ class Mesh:
         plan : Plan or array_like of shape (n, 2, 2)
             Wall segments.
         floor : float
-            Height of the floor plane in metres.
+            Height of the floor plane in metres. Default 0.
         ceiling : float
-            Height of the ceiling plane in metres, above ``floor``.
+            Height of the ceiling plane in metres, above ``floor``. Default 2.5.
         close : "hull", None or array_like of shape (k, 2)
             Close the sides along the convex hull, not at all, or along the
             given polygon (vertices in order, the last joins the first). Every
@@ -175,20 +226,33 @@ class Mesh:
             plan that already includes its outline needs no polygon: keep the
             default.
 
+        Returns
+        -------
+        Mesh
+            The walls, the floor and the ceiling, as one object. An eye outside
+            the closed domain (beside the building, in the notch of a concave
+            outline, above the ceiling) sees out of it: its rays escape, so
+            ``view_volume`` flags it ``unbounded`` without a range limit and
+            reports the share that escapes as ``escape_fraction``.
+
         Raises
         ------
         ValueError
-            If a wall lies mostly outside the closing polygon.
+            If a wall lies mostly outside the closing polygon, the polygon has
+            fewer than three distinct corners enclosing an area, the walls lie
+            on one line with no closing polygon, ``close`` is not one of its
+            options, or ``floor`` and ``ceiling`` are not finite heights with
+            the ceiling above the floor.
         """
         from .plan import Plan
 
         ring_close = None
         if not isinstance(close, str) and close is not None:
-            ring_close = np.asarray(close, dtype=float).reshape(-1, 2)
-            if len(ring_close) < 3:
-                raise ValueError("a closing polygon needs at least three vertices")
+            ring_close = _closing_ring(close)
         elif close not in CLOSE_OPTIONS:
             raise ValueError(f"close must be one of {CLOSE_OPTIONS} or a polygon")
+        if not (np.isfinite(floor) and np.isfinite(ceiling)):
+            raise ValueError("floor and ceiling must be finite heights in metres")
         if not ceiling > floor:
             raise ValueError("ceiling must lie above floor")
         segs = (plan if isinstance(plan, Plan) else Plan(plan)).segments
@@ -197,7 +261,12 @@ class Mesh:
             cls.check_closing(segs, ring_close)
         if ring_close is not None:
             pts = np.vstack([pts, ring_close])
-        ring = pts[ConvexHull(pts).vertices]  # counter-clockwise, floor and ceiling cover it
+        try:
+            ring = pts[ConvexHull(pts).vertices]  # counter-clockwise, floor and ceiling cover it
+        except QhullError:
+            raise ValueError("the walls lie on one line, so the floor and the ceiling would "
+                             "cover no area: give walls that enclose an area, or a closing "
+                             "polygon") from None
         walls = [segs]
         if ring_close is not None:
             walls.append(np.stack([ring_close, np.roll(ring_close, -1, axis=0)], axis=1))
@@ -240,10 +309,19 @@ class Mesh:
             Name or GlobalId of an IfcBuildingStorey. Only the elements in
             that storey are read. By default all elements are read.
 
+        Returns
+        -------
+        Mesh
+            The bodies of the elements, as one object, in metres.
+
         Raises
         ------
         ValueError
-            When no element of the chosen classes has a body.
+            When no element of the chosen classes has a body, a class is
+            neither a preset nor an IFC class of the file's schema, or no
+            storey (or more than one) has the given name.
+        ImportError
+            When ifcopenshell is not installed.
         """
         from .ifc import read_ifc
 
@@ -271,9 +349,16 @@ class Mesh:
         -------
         Plan
             One wall segment per crossing triangle.
+
+        Raises
+        ------
+        ValueError
+            When ``z`` is not finite.
         """
         from .plan import Plan
 
+        if not np.isfinite(z):
+            raise ValueError("z must be a finite height in metres")
         v, t = self.vertices, self.triangles
         above = v[:, 2] > z
         n_above = above[t].sum(axis=1)
@@ -321,14 +406,36 @@ class Mesh:
              near_clip: float = 0.0, n_threads: int | None = None) -> np.ndarray:
         """First-hit distance (m, n) of rays from ``origins`` (m, 3) along ``directions`` (n, 3).
 
-        ``inf`` when nothing is hit within ``max_distance``. Surfaces closer
-        than ``near_clip`` along a ray are skipped: the ray starts at that distance.
+        Parameters
+        ----------
+        origins : array_like of shape (m, 3)
+            Ray origins in metres.
+        directions : array_like of shape (n, 3)
+            Ray directions, normalised internally.
+        max_distance : float
+            Range limit in metres. Default: none.
+        near_clip : float
+            Surfaces closer than this along a ray are skipped: the ray starts
+            at that distance. Default 0.
+        n_threads : int, optional
+            Threads for Embree. Default: all.
+
+        Returns
+        -------
+        ndarray of shape (m, n)
+            Distance in metres to the first hit, ``inf`` when nothing is hit
+            within ``max_distance``.
+
+        Raises
+        ------
+        ValueError
+            When an origin or a direction is not finite, a direction is zero,
+            ``near_clip`` is negative or ``max_distance`` is not positive.
         """
         import open3d as o3d
 
-        o = np.asarray(origins, dtype=float).reshape(-1, 3) - self._shift
-        d = np.asarray(directions, dtype=float).reshape(-1, 3)
-        d = d / np.linalg.norm(d, axis=1)[:, None]
+        o, d = _rays(origins, directions, max_distance, near_clip)
+        o = o - self._shift
         out = np.full((len(o), len(d)), np.inf)
         if len(self.triangles) == 0 or out.size == 0:
             return out
@@ -351,7 +458,8 @@ class Mesh:
                   n_threads: int | None = None) -> tuple[np.ndarray, np.ndarray]:
         """First-hit distance and the triangle hit, for rays as in [`cast`][pysovist.Mesh.cast].
 
-        The distances are those of ``cast``, to the last bit.
+        The distances are those of ``cast``, to the last bit. The parameters
+        and errors are those of ``cast``.
 
         Returns
         -------
@@ -363,9 +471,8 @@ class Mesh:
         """
         import open3d as o3d
 
-        o = np.asarray(origins, dtype=float).reshape(-1, 3) - self._shift
-        d = np.asarray(directions, dtype=float).reshape(-1, 3)
-        d = d / np.linalg.norm(d, axis=1)[:, None]
+        o, d = _rays(origins, directions, max_distance, near_clip)
+        o = o - self._shift
         out = np.full((len(o), len(d)), np.inf)
         tri = np.full((len(o), len(d)), -1, dtype=np.int64)
         if len(self.triangles) == 0 or out.size == 0:
@@ -388,10 +495,16 @@ class Mesh:
         return out, tri
 
     def clearance(self, origins) -> np.ndarray:
-        """Distance from each origin (m, 3) to the nearest triangle."""
+        """Distance in metres from each origin (m, 3) to the nearest triangle, ``inf`` for none.
+
+        Raises
+        ------
+        ValueError
+            When an origin is not finite.
+        """
         import open3d as o3d
 
-        o = np.asarray(origins, dtype=float).reshape(-1, 3) - self._shift
+        o = _finite_points(origins) - self._shift
         if len(self.triangles) == 0:
             return np.full(len(o), np.inf)
         res = self._raycasting_scene().compute_closest_points(
@@ -401,9 +514,76 @@ class Mesh:
         return np.linalg.norm(o - _closest_on_triangles(o, a, b, c), axis=1)
 
     def blocked(self, origins, eps: float, near_clip: float = 0.0) -> np.ndarray:
-        """True where an origin is closer than ``eps`` to a surface that ``near_clip`` keeps."""
+        """True where an origin is closer than ``eps`` to a surface that ``near_clip`` keeps.
+
+        Parameters
+        ----------
+        origins : array_like of shape (m, 3)
+            Points in metres, finite.
+        eps : float
+            Clearance in metres below which a point counts as on a surface.
+        near_clip : float
+            Surfaces closer than this to the point are ignored, as in
+            ``cast``. Default 0.
+
+        Returns
+        -------
+        ndarray of shape (m,)
+            True for the points on a surface.
+        """
         cl = self.clearance(origins)
         return (cl < eps) & (cl >= near_clip)
+
+
+def _triangle_indices(triangles) -> np.ndarray:
+    """Read-only int64 triangles of shape (m, 3), refusing other shapes and fractional indices."""
+    t = np.asarray(triangles)
+    if t.size == 0:
+        return np.empty((0, 3), dtype=np.int64)
+    if t.ndim != 2 or t.shape[1] != 3:
+        raise ValueError(f"triangles must have shape (m, 3), not {t.shape}: split each quad "
+                         "(a, b, c, d) into (a, b, c) and (a, c, d)")
+    if t.dtype.kind not in "iu":
+        f = t.astype(float)
+        if not np.all(np.isfinite(f) & (f == np.round(f))):
+            raise ValueError("triangle indices must be whole numbers")
+    return np.array(t, dtype=np.int64, copy=True)
+
+
+def _finite_points(points) -> np.ndarray:
+    """Points of shape (m, 3), refusing coordinates that are not finite."""
+    p = np.asarray(points, dtype=float).reshape(-1, 3)
+    if not np.all(np.isfinite(p)):
+        raise ValueError("origins must be finite points (x, y, z)")
+    return p
+
+
+def _rays(origins, directions, max_distance, near_clip):
+    """Origins (m, 3) and unit directions (n, 3) of a ray cast, after checking them."""
+    o = _finite_points(origins)
+    d = np.asarray(directions, dtype=float).reshape(-1, 3)
+    norm = np.linalg.norm(d, axis=1)
+    if not np.all(np.isfinite(norm) & (norm > 0)):
+        raise ValueError("directions must be finite, non-zero vectors")
+    if not near_clip >= 0:
+        raise ValueError("near_clip must be a non-negative distance in metres")
+    if not max_distance > 0:
+        raise ValueError("max_distance must be positive")
+    return o, d / norm[:, None]
+
+
+def _closing_ring(polygon) -> np.ndarray:
+    """A closing polygon (k, 2), refusing coordinates that are not finite and rings without area."""
+    ring = np.asarray(polygon, dtype=float).reshape(-1, 2)
+    if not np.all(np.isfinite(ring)):
+        raise ValueError("a closing polygon must have finite coordinates")
+    span = float(np.ptp(ring, axis=0).max()) if len(ring) else 0.0
+    x, y = ring[:, 0], ring[:, 1]
+    area = 0.5 * abs(float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))))
+    if len(np.unique(ring, axis=0)) < 3 or not area > 1e-12 * span * span:
+        raise ValueError("a closing polygon needs at least three distinct corners that enclose an "
+                         "area: give the building outline, vertices in order")
+    return ring
 
 
 def _walls_outside_ring(segments, ring, rel_tol: float = 1e-6) -> np.ndarray:

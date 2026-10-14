@@ -110,7 +110,16 @@ def read_unity_volumes(path) -> pd.DataFrame:
     -------
     DataFrame
         Columns ``x, y`` (plan), ``z`` (eye height) and ``volume`` (cubic metres).
+
+    Raises
+    ------
+    ValueError
+        When a column of ``x, y, z`` and ``volume`` is missing.
     """
     df = pd.read_csv(path)
+    missing = [c for c in ("x", "y", "z", "volume") if c not in df.columns]
+    if missing:
+        raise ValueError(f"{path} lacks the Unity columns {missing}: a Unity output file has the "
+                         "columns x, y, z and volume")
     return pd.DataFrame({"x": df["x"].to_numpy(float), "y": df["z"].to_numpy(float),
                          "z": df["y"].to_numpy(float), "volume": df["volume"].to_numpy(float)})

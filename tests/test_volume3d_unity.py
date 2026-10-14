@@ -45,6 +45,7 @@ def test_transform_is_the_scene_chain():
 
 
 def test_preset_runs_view_volume():
+    pytest.importorskip("numba")
     assert UNITY_PRESET == {"directions": "random", "n_rays": 20070, "seed": 1337,
                             "max_distance": math.inf, "escape": "zero", "inside": "zero",
                             "radius": 0.05}
@@ -102,6 +103,7 @@ def test_parity_with_unity_on_100_standing_points(scan):
     rays carry much of a volume. Unity's differences must match that spread and show no
     bias beyond it.
     """
+    pytest.importorskip("numba")
     ref = read_unity_volumes(UNITY / "output" / "query_points_standing_volume.csv")
     sample = ref.iloc[np.linspace(0, len(ref) - 1, 100).round().astype(int)]
     sample = sample.reset_index(drop=True)

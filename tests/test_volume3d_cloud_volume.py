@@ -10,6 +10,8 @@ from pysovist.directions import fibonacci_sphere
 from pysovist.pointcloud import PointCloud
 from pysovist.volume3d import VOLUME_METRIC_NAMES, ViewVolume, view_volume, view_volume_field
 
+pytest.importorskip("numba")  # the ball and disk ray casters
+
 # Relative quadrature error of 65536 Fibonacci directions on piecewise smooth depth fields
 # (measured on the cube and the prisms in the mesh tests: below 3e-4).
 QUAD_REL = 1e-3

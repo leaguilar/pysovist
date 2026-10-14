@@ -446,3 +446,23 @@ def test_field_factors_are_nan_for_blocked_eyes(two_objects):
     assert df["on_wall"].tolist() == [True, False]
     assert all(math.isnan(df[k].iloc[0]) for k in FACTOR_NAMES)
     assert df[list(FACTOR_NAMES)].iloc[1].sum() == pytest.approx(1.0, abs=1e-14)
+
+
+@pytest.mark.slow
+def test_worked_example_of_the_documentation():
+    # The street of the directed-volumes page: the estimate from 2^18 directions lies 0.05 %
+    # above the one from 2^22 directions, 137,406 m3.
+    def box(x0, y0, z0, x1, y1, z1):
+        v = [(x, y, z) for x in (x0, x1) for y in (y0, y1) for z in (z0, z1)]
+        quads = [(0, 2, 6, 4), (1, 5, 7, 3), (0, 4, 5, 1), (2, 3, 7, 6), (0, 1, 3, 2),
+                 (4, 6, 7, 5)]
+        return Mesh(v, [t for a, b, c, d in quads for t in ((a, b, c), (a, c, d))])
+
+    ground = quad_mesh((-50, -50, 0), (50, -50, 0), (50, 50, 0), (-50, 50, 0))
+    scene = Mesh.combine([ground, box(-30, 6, 0, 30, 16, 12), box(-30, -16, 0, 30, -6, 9)])
+    field = {"hfov": math.radians(120), "vfov": math.radians(60), "direction": 0.0,
+             "elevation": math.radians(10), "max_distance": 100.0}
+    coarse = view_volume(scene, (0.0, 0.0, 1.7), n_rays=1 << 18, **field)
+    fine = view_volume(scene, (0.0, 0.0, 1.7), n_rays=1 << 22, **field)
+    assert coarse.n_rays == 43028 and round(fine.volume) == 137406
+    assert round(100 * (coarse.volume / fine.volume - 1), 2) == 0.05

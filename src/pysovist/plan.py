@@ -67,7 +67,27 @@ class Plan:
     def from_json(cls, path, keys=("start", "end")) -> Plan:
         """Read a list of ``{"start": [x, y(, z)], "end": [x, y(, z)]}`` records.
 
-        ``keys`` names the two endpoint fields of a record.
+        Parameters
+        ----------
+        path : str or os.PathLike
+            JSON file holding a list of records.
+        keys : (str, str)
+            Names of the two endpoint fields of a record. A third coordinate
+            is dropped.
+
+        Returns
+        -------
+        Plan
+            One segment per record, in file order, less zero-length ones.
+
+        Raises
+        ------
+        FileNotFoundError
+            When ``path`` does not exist.
+        KeyError
+            When a record lacks one of ``keys``.
+        ValueError
+            When a coordinate is not finite.
         """
         records = json.loads(Path(path).read_text())
         return cls([[r[keys[0]][:2], r[keys[1]][:2]] for r in records])

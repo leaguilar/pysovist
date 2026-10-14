@@ -52,6 +52,34 @@ Metrics
   hit within ``R``.
 - ``volume_up``, ``volume_down``: the parts of V above and below the eye's
   horizontal plane (directions in the plane count half to each).
+
+Directed views
+--------------
+A field of view (``hfov``, ``vfov``, ``direction``, ``elevation``, see
+``pysovist.directions.in_field_of_view``) restricts the volume to the wedge of
+directions inside it, V = 1/3 int_{field} r^3 d omega. Only the directions
+inside the field are cast, each still carrying its solid angle ``w_i``
+(``4 pi / N`` for the N directions of an equal-area set, or the cell solid
+angles of ``angle_grid`` passed as ``weights``), so that
+
+    V = 1/3 sum_i w_i r_i^3.
+
+The depth statistics become averages weighted by solid angle over the field,
+and ``escape_fraction``, ``volume_up`` and ``volume_down`` refer to the field.
+With the default full field and no weights, the metrics are those above, to
+the last bit.
+
+Objects and view factors
+------------------------
+With ``object_ids=True`` every ray reports the object it hits: the object id
+of the triangle hit in a mesh (``Mesh.combine`` gives one id per input mesh),
+or the index of the point whose ball is hit in a point cloud, and -1 when it
+hits nothing within R. ``ViewVolume.factors`` splits the field's solid angle
+into three shares that sum to 1:
+
+- ``sky_factor``: the rays that hit nothing within R (``escape_fraction``),
+- ``ground_factor``: the rays that hit an object designated as ground,
+- ``object_factor``: the rays that hit any other object.
 """
 
 from __future__ import annotations
@@ -61,7 +89,13 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from .directions import fibonacci_sphere, random_sphere, solid_angle_weights
+from .directions import (
+    check_field_of_view,
+    fibonacci_sphere,
+    in_field_of_view,
+    random_sphere,
+    solid_angle_weights,
+)
 from .results import Flags
 
 VOLUME_METRIC_NAMES = (
@@ -78,7 +112,15 @@ INSIDE_POLICIES = ("nan", "zero")
 DIRECTION_SETS = ("fibonacci", "random")
 _CHUNK_RAYS = 1 << 22  # rays per batch of observers in view_volume_field
 _FIELD_KEYS = frozenset({"n_rays", "directions", "seed", "max_distance", "near_clip", "escape",
-                         "inside", "eps", "radius"})
+                         "inside", "eps", "radius", "hfov", "vfov", "direction", "elevation",
+                         "weights", "ground"})
+FACTOR_NAMES = ("sky_factor", "ground_factor", "object_factor")
+"""Names of the view factors, in order.
+
+They are the keys of [`ViewVolume.factors`][pysovist.ViewVolume.factors] and
+the factor columns of [`view_volume_field`][pysovist.view_volume_field] when it
+is given ``ground``.
+"""
 
 
 @dataclass(frozen=True)
@@ -88,6 +130,7 @@ class ViewVolume:
     ``distances[i]`` is the depth along ``directions[i]``, clipped to
     ``max_distance``, and ``hit[i]`` tells whether an occluder was hit within
     ``max_distance``. Each direction carries the solid angle ``weights[i]``.
+    A directed view holds only the directions inside its field of view.
 
     Attributes
     ----------
@@ -96,7 +139,9 @@ class ViewVolume:
     directions : ndarray of shape (n, 3)
         Unit ray directions.
     weights : ndarray of shape (n,)
-        Solid angle of each direction, ``4 pi / n``.
+        Solid angle of each direction: ``4 pi / n`` for a full view, the
+        share ``4 pi / N`` of the N directions of the full set for a directed
+        view, or the weights given to ``view_volume``.
     distances : ndarray of shape (n,)
         Depth along each direction, clipped to ``max_distance``. It is ``inf``
         where a ray escapes with no range limit. The escape policy does not
@@ -115,6 +160,11 @@ class ViewVolume:
     metrics : dict
         The metrics, keyed by the names of
         [`VOLUME_METRIC_NAMES`][pysovist.VOLUME_METRIC_NAMES].
+    object_ids : ndarray of shape (n,) or None
+        The object each ray hits within ``max_distance``, -1 for none. Set by
+        ``view_volume(..., object_ids=True)``, else None. For a mesh it is the
+        object id of the triangle hit, for a point cloud the index of the
+        point whose ball is hit.
     """
 
     origin: np.ndarray
@@ -127,6 +177,7 @@ class ViewVolume:
     flags: Flags = field(default_factory=Flags)
     near_clipped: bool = False
     metrics: dict = field(default_factory=dict)
+    object_ids: np.ndarray | None = None
 
     @property
     def volume(self) -> float:
@@ -142,6 +193,58 @@ class ViewVolume:
         """End point of every ray, shape (n, 3) (``inf`` where a ray escapes to infinity)."""
         return self.origin + self.directions * self.distances[:, None]
 
+    def hits_per_object(self, minlength: int = 0) -> np.ndarray:
+        """Number of rays that hit each object, indexed by object id.
+
+        Parameters
+        ----------
+        minlength : int
+            Minimum length of the result, for example the number of objects
+            of the scene, so that objects no ray hits count 0.
+        """
+        ids = self._ids()
+        return np.bincount(ids[ids >= 0], minlength=minlength)
+
+    def solid_angle_per_object(self, minlength: int = 0) -> np.ndarray:
+        """Solid angle in steradians in which each object is seen, indexed by object id.
+
+        It is the sum of the weights of the rays that hit the object, so it
+        counts only the part of the object inside the field of view and not
+        hidden by nearer objects.
+        """
+        ids = self._ids()
+        hit = ids >= 0
+        return np.bincount(ids[hit], weights=self.weights[hit], minlength=minlength)
+
+    def factors(self, ground=()) -> dict:
+        """Sky, ground and object factors: shares of the field's solid angle.
+
+        Parameters
+        ----------
+        ground : sequence of int or array_like of bool
+            The object ids that count as ground, or a boolean mask indexed by
+            object id. For a point cloud, the indices of the ground points or
+            a mask over the points.
+
+        Returns
+        -------
+        dict
+            ``sky_factor``, ``ground_factor`` and ``object_factor``, keyed by
+            the names of [`FACTOR_NAMES`][pysovist.volume3d.FACTOR_NAMES].
+            They sum to 1. They are NaN for an eye flagged ``on_wall`` or
+            ``inside_occluder``.
+        """
+        ids = self._ids()
+        blocked = np.array([self.flags.on_wall or self.flags.inside_occluder])
+        f = _factors(ids[None], self.weights, _ground_ids(ground), blocked)
+        return {k: float(v[0]) for k, v in f.items()}
+
+    def _ids(self) -> np.ndarray:
+        if self.object_ids is None:
+            raise ValueError("this view volume has no object ids: call view_volume with "
+                             "object_ids=True")
+        return self.object_ids
+
 
 def view_volume(
     occluders3d,
@@ -156,8 +259,14 @@ def view_volume(
     inside: str = "nan",
     eps: float = 1e-9,
     radius: float | None = None,
+    hfov: float = 2 * np.pi,
+    vfov: float = np.pi,
+    direction: float = 0.0,
+    elevation: float = 0.0,
+    weights=None,
+    object_ids: bool = False,
 ) -> ViewVolume:
-    """View volume of one eye point.
+    """View volume of one eye point, over the full sphere or a field of view.
 
     Parameters
     ----------
@@ -193,6 +302,28 @@ def view_volume(
         Clearance in metres below which the eye counts as inside.
     radius : float, optional
         Ball radius for a point cloud, overriding the cloud's own radius.
+    hfov : float
+        Horizontal field of view in radians, centred on ``direction``.
+        Default: full turn.
+    vfov : float
+        Vertical field of view in radians, centred on ``elevation``. Default:
+        pole to pole.
+    direction : float
+        Azimuth of the centre of the view, in radians counter-clockwise from
+        +x. Used only when ``hfov`` is below a full turn.
+    elevation : float
+        Elevation of the centre of the view, in radians above the eye's
+        horizontal plane (the vertical offset of the view). The vertical field
+        must lie between the poles.
+    weights : array_like of shape (n,), optional
+        Solid angle of each direction of an array ``directions``, for example
+        the cell solid angles of
+        [`angle_grid`][pysovist.directions.angle_grid]. Default: ``4 pi / n``
+        each.
+    object_ids : bool
+        Also report, for every ray, the object it hits (``ViewVolume.object_ids``),
+        which [`ViewVolume.factors`][pysovist.ViewVolume.factors] and
+        [`ViewVolume.hits_per_object`][pysovist.ViewVolume.hits_per_object] use.
 
     Returns
     -------
@@ -202,19 +333,27 @@ def view_volume(
     occ = _occluder(occluders3d, radius)
     d = _directions(directions, n_rays, seed)
     R = _check(escape, inside, max_distance, near_clip)
+    d, w = _field(d, weights, hfov, vfov, direction, elevation)
     o = np.asarray(origin, dtype=float).reshape(3)
-    t = occ.cast(o[None], d, max_distance=R, near_clip=near_clip)
+    if object_ids:
+        t, ids = _cast_ids(occ, o[None], d, R, near_clip)
+    else:
+        t, ids = occ.cast(o[None], d, max_distance=R, near_clip=near_clip), None
     clearance = float(occ.clearance(o[None])[0])
     blocked = occ.blocked(o[None], eps, near_clip)
-    metrics = _metrics(t, d[:, 2], R, escape, blocked, inside)
+    if w is None:
+        metrics = _metrics(t, d[:, 2], R, escape, blocked, inside)
+    else:
+        metrics = _weighted_metrics(t, d[:, 2], w, R, escape, blocked, inside)
     hit = np.isfinite(t[0]) & (t[0] <= R)
     unbounded = bool(not blocked[0] and np.isinf(R) and not hit.all())
     flags = Flags(unbounded=unbounded, **{occ.block_flag: bool(blocked[0])})
     return ViewVolume(
-        origin=o, directions=d, weights=solid_angle_weights(len(d)),
+        origin=o, directions=d, weights=solid_angle_weights(len(d)) if w is None else w,
         distances=np.minimum(t[0], R), hit=hit, max_distance=R, clearance=clearance,
         flags=flags, near_clipped=bool(near_clip > 0 and clearance < near_clip),
         metrics={k: float(v[0]) for k, v in metrics.items()},
+        object_ids=None if ids is None else ids[0],
     )
 
 
@@ -233,8 +372,11 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
         multi-threaded (numba for point clouds, Embree for meshes), so the
         observers are batched into one kernel call per chunk.
     **kw
-        Keyword arguments of [`view_volume`][pysovist.view_volume]. Every
-        origin uses the same directions.
+        Keyword arguments of [`view_volume`][pysovist.view_volume], including
+        a field of view and ``weights``, except ``object_ids``. Every origin
+        uses the same directions. ``ground`` (the object ids that count as
+        ground, as in [`ViewVolume.factors`][pysovist.ViewVolume.factors])
+        adds the view factors.
 
     Returns
     -------
@@ -242,7 +384,9 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
         One row per origin, in order. The columns are ``x, y, z``, the metrics
         in the order of [`VOLUME_METRIC_NAMES`][pysovist.VOLUME_METRIC_NAMES],
         ``clearance`` and the flags ``on_wall``, ``inside_occluder``,
-        ``unbounded`` and ``near_clipped``.
+        ``unbounded`` and ``near_clipped``. With ``ground``, the factors
+        follow in the order of [`FACTOR_NAMES`][pysovist.volume3d.FACTOR_NAMES],
+        NaN for flagged rows.
     """
     unknown = set(kw) - _FIELD_KEYS
     if unknown:
@@ -254,19 +398,33 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
     escape, inside = kw.get("escape", "clip"), kw.get("inside", "nan")
     near_clip, eps = kw.get("near_clip", 0.0), kw.get("eps", 1e-9)
     R = _check(escape, inside, kw.get("max_distance", np.inf), near_clip)
+    d, w = _field(d, kw.get("weights"), kw.get("hfov", 2 * np.pi), kw.get("vfov", np.pi),
+                  kw.get("direction", 0.0), kw.get("elevation", 0.0))
+    ground = kw.get("ground")
+    ground_ids = None if ground is None else _ground_ids(ground)
     o = _origins(origins)
     threads = None if n_jobs == -1 else int(n_jobs)
 
     clearance = occ.clearance(o)
     blocked = occ.blocked(o, eps, near_clip)
     metrics = {k: np.full(len(o), np.nan) for k in VOLUME_METRIC_NAMES}
+    factors = {k: np.full(len(o), np.nan) for k in FACTOR_NAMES}
     unbounded = np.zeros(len(o), dtype=bool)
     active = np.flatnonzero(~blocked)
     step = max(1, _CHUNK_RAYS // len(d))
     for i0 in range(0, len(active), step):
         rows = active[i0:i0 + step]
-        t = occ.cast(o[rows], d, max_distance=R, near_clip=near_clip, n_threads=threads)
-        part = _metrics(t, d[:, 2], R, escape, np.zeros(len(rows), dtype=bool), inside)
+        if ground_ids is None:
+            t = occ.cast(o[rows], d, max_distance=R, near_clip=near_clip, n_threads=threads)
+        else:
+            t, ids = _cast_ids(occ, o[rows], d, R, near_clip, threads)
+            for k, v in _factors(ids, _weights(w, len(d)), ground_ids).items():
+                factors[k][rows] = v
+        none = np.zeros(len(rows), dtype=bool)
+        if w is None:
+            part = _metrics(t, d[:, 2], R, escape, none, inside)
+        else:
+            part = _weighted_metrics(t, d[:, 2], w, R, escape, none, inside)
         for k in VOLUME_METRIC_NAMES:
             metrics[k][rows] = part[k]
         if np.isinf(R):
@@ -281,6 +439,7 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
         "x": o[:, 0], "y": o[:, 1], "z": o[:, 2], **metrics, "clearance": clearance,
         **flags, "unbounded": unbounded,
         "near_clipped": (near_clip > 0) & (clearance < near_clip),
+        **({} if ground_ids is None else factors),
     })
 
 
@@ -358,3 +517,126 @@ def _origins(origins) -> np.ndarray:
     if o.ndim != 2 or o.shape[1] != 3:
         raise ValueError("origins must have shape (m, 3)")
     return np.ascontiguousarray(o)
+
+
+# --- directed views, object ids and view factors -----------------------------------------------
+
+def _field(d, weights, hfov, vfov, direction, elevation):
+    """Directions inside the field of view and their solid angles.
+
+    The weights are None for the full field without given weights, the case
+    whose arithmetic stays that of 0.1.2.
+    """
+    check_field_of_view(hfov, vfov, elevation)
+    full = hfov >= 2 * np.pi and vfov >= np.pi
+    if weights is None and full:
+        return d, None
+    if weights is None:
+        w = solid_angle_weights(len(d))
+    else:
+        w = np.array(weights, dtype=float, copy=True).reshape(-1)
+        if len(w) != len(d):
+            raise ValueError("weights needs one solid angle per direction")
+        if not np.all(np.isfinite(w) & (w > 0)):
+            raise ValueError("weights must be positive solid angles")
+    if not full:
+        keep = in_field_of_view(d, hfov=hfov, vfov=vfov, direction=direction,
+                                elevation=elevation)
+        if not keep.any():
+            raise ValueError("no direction lies inside the field of view: use more rays")
+        d, w = np.ascontiguousarray(d[keep]), w[keep]
+    return d, w
+
+
+def _weights(w, n):
+    return solid_angle_weights(n) if w is None else w
+
+
+def _weighted_metrics(t, dz, w, R, escape, blocked, inside) -> dict:
+    """Metric arrays over the rows of ``t`` (m, n), each direction weighted by its solid angle."""
+    hit = np.isfinite(t) & (t <= R)
+    fill = {"clip": R, "zero": 0.0, "nan": np.nan}[escape]
+    r = np.where(hit, np.minimum(t, R), fill)
+    total = w.sum()
+    up, down, flat = dz > 0, dz < 0, dz == 0
+    with np.errstate(invalid="ignore"):
+        wr3 = w * r**3
+        half = 0.5 * wr3[:, flat].sum(axis=1)
+        volume = wr3.sum(axis=1) / 3
+        mean = (w * r).sum(axis=1) / total
+        var = (w * (r - mean[:, None]) ** 2).sum(axis=1) / total
+        out = {
+            "volume": volume,
+            "r_mean": mean,
+            "r_std": np.sqrt(var),
+            "r_min": r.min(axis=1),
+            "r_max": r.max(axis=1),
+            "equivalent_radius": np.cbrt(3 * volume / (4 * np.pi)),
+            "escape_fraction": 1.0 - (w * hit).sum(axis=1) / total,
+            "volume_up": (wr3[:, up].sum(axis=1) + half) / 3,
+            "volume_down": (wr3[:, down].sum(axis=1) + half) / 3,
+        }
+    value = np.nan if inside == "nan" else 0.0
+    for v in out.values():
+        v[blocked] = value
+    return out
+
+
+def _cast_ids(occ, origins, d, R, near_clip, n_threads=None):
+    """First-hit distances (m, n) and the object hit by each ray, -1 for none."""
+    if hasattr(occ, "cast_hits"):
+        t, tri = occ.cast_hits(origins, d, max_distance=R, near_clip=near_clip,
+                               n_threads=n_threads)
+        ids = np.where(tri >= 0, occ.object_ids[np.maximum(tri, 0)], -1)
+        return t, ids
+    t = occ.cast(origins, d, max_distance=R, near_clip=near_clip, n_threads=n_threads)
+    return t, _ball_ids(occ, origins, d, t, near_clip)
+
+
+def _ball_ids(cloud, origins, d, t, near_clip) -> np.ndarray:
+    """Index of the ball each ray hits: the centre nearest to the hit point.
+
+    A first hit lies on the surface of the ball it enters and outside every
+    other ball the ray meets, so no centre lies nearer to it than the radius.
+    Balls ignored by ``near_clip`` may still contain the hit point, so among
+    the nearest centres the first one outside ``near_clip`` is taken.
+    """
+    ids = np.full(t.shape, -1, dtype=np.int64)
+    i, j = np.nonzero(np.isfinite(t))
+    if len(i) == 0:
+        return ids
+    o = np.asarray(origins, dtype=float).reshape(-1, 3)
+    p = o[i] + d[j] * t[i, j][:, None]
+    tree = cloud._tree()
+    if near_clip <= 0:
+        ids[i, j] = tree.query(p)[1]
+        return ids
+    k = min(16, len(cloud.points))
+    _, near = tree.query(p, k=k)
+    near = near.reshape(len(p), k)
+    far = np.linalg.norm(cloud.points[near] - o[i][:, None, :], axis=2) >= near_clip
+    ids[i, j] = near[np.arange(len(p)), far.argmax(axis=1)]
+    return ids
+
+
+def _ground_ids(ground) -> np.ndarray:
+    g = np.asarray(ground)
+    if g.dtype == bool:
+        return np.flatnonzero(g)
+    return g.astype(np.int64).reshape(-1)
+
+
+def _factors(ids, w, ground_ids, blocked=None) -> dict:
+    """Sky, ground and object factors of the rows of ``ids`` (m, n)."""
+    total = w.sum()
+    hit = ids >= 0
+    on_ground = hit & np.isin(ids, ground_ids)
+    out = {
+        "sky_factor": (w * ~hit).sum(axis=1) / total,
+        "ground_factor": (w * on_ground).sum(axis=1) / total,
+        "object_factor": (w * (hit & ~on_ground)).sum(axis=1) / total,
+    }
+    if blocked is not None:
+        for v in out.values():
+            v[blocked] = np.nan
+    return out

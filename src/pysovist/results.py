@@ -109,11 +109,23 @@ class Isovist:
         """Exact visible depth along ``n`` equally spaced rays.
 
         The rays start at ``offset`` (radians, absolute) for a full circle, or
-        span the field of view otherwise. Returns ``(angles, depths)``.
-        This is how a ray-sampling tool, such as the Grasshopper isovist
-        components, sees the same scene.
+        span the field of view otherwise, both edges included. Returns
+        ``(angles, depths)``. This is how a ray-sampling tool, such as the
+        Grasshopper isovist components, sees the same scene.
+
+        Raises
+        ------
+        ValueError
+            When ``n`` is not a whole number of at least 1, or at least 2 for a
+            field of view below a full turn, whose two edges take a ray each.
         """
+        from .directions import _count
+
+        n = _count(n)
         full = self.fov >= 2 * np.pi - 1e-12
+        if not full and n < 2:
+            raise ValueError("n must be at least 2 for a field of view: its two edges take a "
+                             "ray each")
         if full:
             ang = offset + 2 * np.pi * np.arange(n) / n
         else:
@@ -140,8 +152,16 @@ class Isovist:
     def polygon(self, arc_step: float = np.radians(0.5)) -> np.ndarray:
         """Boundary as a closed ring, shape (k, 2), in absolute coordinates.
 
-        Wall pieces are exact. Range arcs are sampled every ``arc_step`` radians.
+        Wall pieces are exact. Range arcs are sampled every ``arc_step``
+        radians (default half a degree). Flagged isovists give an empty ring.
+
+        Raises
+        ------
+        ValueError
+            When ``arc_step`` is not a positive angle.
         """
+        if not arc_step > 0:
+            raise ValueError("arc_step must be a positive angle in radians")
         if self.flags.on_wall or self.flags.unbounded or len(self.theta0) == 0:
             return np.empty((0, 2))
         pts = []

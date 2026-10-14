@@ -24,9 +24,21 @@ and upper edge.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 GOLDEN_ANGLE = np.pi * (3.0 - np.sqrt(5.0))
+
+
+def _count(n, name: str = "n") -> int:
+    """A whole number of at least 1, or a ValueError naming ``name``."""
+    v = float(n)
+    if not (math.isfinite(v) and v == int(v)):
+        raise ValueError(f"{name} must be a whole number")
+    if v < 1:
+        raise ValueError(f"{name} must be at least 1")
+    return int(v)
 
 
 def fibonacci_sphere(n: int) -> np.ndarray:
@@ -35,10 +47,13 @@ def fibonacci_sphere(n: int) -> np.ndarray:
     Direction ``i`` has height ``z = 1 - (2 i + 1) / n`` and azimuth
     ``i * pi (3 - sqrt 5)``. The heights split the sphere into ``n`` bands of
     equal area, so each direction stands for the same solid angle.
+
+    Raises
+    ------
+    ValueError
+        When ``n`` is not a whole number of at least 1.
     """
-    n = int(n)
-    if n < 1:
-        raise ValueError("n must be at least 1")
+    n = _count(n)
     i = np.arange(n, dtype=float)
     z = 1.0 - (2.0 * i + 1.0) / n
     rho = np.sqrt(np.maximum(1.0 - z * z, 0.0))
@@ -52,13 +67,17 @@ def random_sphere(n: int, seed=None) -> np.ndarray:
     Parameters
     ----------
     n : int
-        Number of directions.
+        Number of directions, a whole number of at least 1.
     seed : int or numpy.random.Generator, optional
         Seed of the generator. The same seed gives the same directions.
+        Default: fresh entropy, different directions on every call.
+
+    Raises
+    ------
+    ValueError
+        When ``n`` is not a whole number of at least 1.
     """
-    n = int(n)
-    if n < 1:
-        raise ValueError("n must be at least 1")
+    n = _count(n)
     rng = np.random.default_rng(seed)
     # Uniform height and azimuth give a uniform direction (Archimedes' hat-box theorem).
     z = rng.uniform(-1.0, 1.0, n)
@@ -69,29 +88,57 @@ def random_sphere(n: int, seed=None) -> np.ndarray:
 
 
 def equiangular(n: int) -> np.ndarray:
-    """``n`` horizontal unit vectors at angles ``2 pi k / n`` from +x, shape (n, 3)."""
-    n = int(n)
-    if n < 1:
-        raise ValueError("n must be at least 1")
+    """``n`` horizontal unit vectors at angles ``2 pi k / n`` from +x, shape (n, 3).
+
+    Raises
+    ------
+    ValueError
+        When ``n`` is not a whole number of at least 1.
+    """
+    n = _count(n)
     theta = 2 * np.pi * np.arange(n) / n
     return np.c_[np.cos(theta), np.sin(theta), np.zeros(n)]
 
 
 def solid_angle_weights(n: int) -> np.ndarray:
-    """Solid angle carried by each of ``n`` equal-area directions: ``4 pi / n`` each."""
-    return np.full(int(n), 4 * np.pi / int(n))
+    """Solid angle in steradians carried by each of ``n`` equal-area directions: ``4 pi / n`` each.
+
+    Raises
+    ------
+    ValueError
+        When ``n`` is not a whole number of at least 1.
+    """
+    n = _count(n)
+    return np.full(n, 4 * np.pi / n)
 
 
 def check_field_of_view(hfov: float, vfov: float, elevation: float) -> tuple[float, float]:
     """Lower and upper elevation of a field of view, after checking that it lies on the sphere.
 
+    Parameters
+    ----------
+    hfov : float
+        Horizontal field of view in radians.
+    vfov : float
+        Vertical field of view in radians.
+    elevation : float
+        Elevation of the centre of the field, in radians.
+
+    Returns
+    -------
+    tuple of float
+        Elevations of the lower and upper edge, in radians.
+
     Raises
     ------
     ValueError
-        When ``hfov`` is not in (0, 2 pi], ``vfov`` is not in (0, pi], or the
-        vertical field reaches beyond a pole.
+        When ``hfov`` is not in (0, 2 pi], ``vfov`` is not in (0, pi],
+        ``elevation`` is not finite, or the vertical field reaches beyond a
+        pole.
     """
     hfov, vfov, elevation = float(hfov), float(vfov), float(elevation)
+    if not math.isfinite(elevation):
+        raise ValueError("elevation must be a finite angle in radians")
     if not 0 < hfov <= 2 * np.pi:
         raise ValueError("hfov must lie in (0, 2 pi]")
     if not 0 < vfov <= np.pi:
@@ -117,7 +164,7 @@ def in_field_of_view(directions, *, hfov: float = 2 * np.pi, vfov: float = np.pi
     Parameters
     ----------
     directions : array_like of shape (n, 3)
-        Unit vectors.
+        Unit vectors, to 1e-9.
     hfov : float
         Horizontal field of view in radians, centred on ``direction``. Default:
         full turn.
@@ -125,18 +172,30 @@ def in_field_of_view(directions, *, hfov: float = 2 * np.pi, vfov: float = np.pi
         Vertical field of view in radians, centred on ``elevation``. Default:
         pole to pole.
     direction : float
-        Azimuth of the centre of the field, in radians counter-clockwise from +x.
+        Azimuth of the centre of the field, in radians counter-clockwise from
+        +x, finite. Default 0.
     elevation : float
         Elevation of the centre of the field, in radians above the horizontal
-        plane. The vertical field must lie between the poles.
+        plane. Default 0. The vertical field must lie between the poles.
 
     Returns
     -------
     ndarray of shape (n,)
         True for the directions inside the field.
+
+    Raises
+    ------
+    ValueError
+        When a direction is not a unit vector, or the field is one that
+        [`check_field_of_view`][pysovist.directions.check_field_of_view]
+        refuses or has a direction that is not finite.
     """
     lo, hi = check_field_of_view(hfov, vfov, elevation)
+    _check_direction(direction)
     d = np.asarray(directions, dtype=float).reshape(-1, 3)
+    norm = np.linalg.norm(d, axis=1)
+    if not np.all(np.abs(norm - 1.0) <= 1e-9):
+        raise ValueError("directions must be unit vectors: divide each by its length")
     keep = np.ones(len(d), dtype=bool)
     if hfov < 2 * np.pi:
         az = np.arctan2(d[:, 1], d[:, 0])
@@ -167,9 +226,11 @@ def angle_grid(n_azimuth: int, n_elevation: int, *, hfov: float = 2 * np.pi,
     Parameters
     ----------
     n_azimuth, n_elevation : int
-        Number of cells along azimuth and along elevation.
+        Number of cells along azimuth and along elevation, whole numbers of at
+        least 1.
     hfov, vfov, direction, elevation : float
         The field of view, as in [`in_field_of_view`][pysovist.directions.in_field_of_view].
+        Default: the full sphere.
 
     Returns
     -------
@@ -179,11 +240,16 @@ def angle_grid(n_azimuth: int, n_elevation: int, *, hfov: float = 2 * np.pi,
         n_elevation, 3)`` gives the grid.
     weights : ndarray of shape (n_azimuth * n_elevation,)
         Solid angle of each cell in steradians.
+
+    Raises
+    ------
+    ValueError
+        When a count is not a whole number of at least 1, or the field is one
+        that [`in_field_of_view`][pysovist.directions.in_field_of_view] refuses.
     """
-    na, ne = int(n_azimuth), int(n_elevation)
-    if na < 1 or ne < 1:
-        raise ValueError("the grid needs at least one cell along each axis")
+    na, ne = _count(n_azimuth, "n_azimuth"), _count(n_elevation, "n_elevation")
     lo, hi = check_field_of_view(hfov, vfov, elevation)
+    _check_direction(direction)
     step = hfov / na
     az = direction - hfov / 2 + step * (np.arange(na) + 0.5)
     edges = lo + (hi - lo) * np.arange(ne + 1) / ne
@@ -192,3 +258,8 @@ def angle_grid(n_azimuth: int, n_elevation: int, *, hfov: float = 2 * np.pi,
     a, e = np.meshgrid(az, el, indexing="ij")
     d = np.stack([np.cos(e) * np.cos(a), np.cos(e) * np.sin(a), np.sin(e)], axis=-1)
     return d.reshape(-1, 3), np.tile(w, na)
+
+
+def _check_direction(direction) -> None:
+    if not math.isfinite(float(direction)):
+        raise ValueError("direction must be a finite angle in radians")

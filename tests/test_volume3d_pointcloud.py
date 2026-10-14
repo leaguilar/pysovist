@@ -64,6 +64,24 @@ def test_read_e57_with_two_scans(tmp_path, cloud_xyz):
     np.testing.assert_allclose(pc.points, cloud_xyz, atol=1e-9)
 
 
+def test_pts_reads_coordinates_exactly(tmp_path):
+    # Reference: Python's float(), which rounds each decimal correctly.
+    rng = np.random.default_rng(3)
+    text = [[f"{x:.17g}" for x in row] for row in rng.uniform(-1e3, 1e3, size=(200, 3))]
+    (tmp_path / "scan.pts").write_text("\n".join(" ".join(r) for r in text) + "\n")
+    pc = PointCloud.read(tmp_path / "scan.pts")
+    np.testing.assert_array_equal(pc.points, [[float(x) for x in r] for r in text])
+
+
+@pytest.mark.parametrize("content", ["", "0\n"])
+def test_read_refuses_missing_and_empty_files(tmp_path, content):
+    with pytest.raises(FileNotFoundError):
+        PointCloud.read(tmp_path / "missing.pts")
+    (tmp_path / "empty.pts").write_text(content)
+    with pytest.raises(ValueError, match="no points read from .*empty.pts"):
+        PointCloud.read(tmp_path / "empty.pts")
+
+
 def test_read_unknown_extension(tmp_path):
     (tmp_path / "scan.xyz9").write_text("1 2 3\n")
     with pytest.raises(ValueError, match="xyz9"):

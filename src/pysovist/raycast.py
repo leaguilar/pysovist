@@ -171,21 +171,36 @@ def build_ball_grid(points, radius: float, cell_size: float | None = None,
     Parameters
     ----------
     points : array_like of shape (n, 3)
-        Ball centres in metres.
+        Ball centres in metres, finite.
     radius : float
-        Ball radius in metres.
+        Ball radius in metres, positive and finite.
     cell_size : float, optional
-        Cell edge. Default ``2 * radius``. The result does not depend on it,
-        only the speed does. The grid coarsens when it would exceed
-        ``max_cells`` cells.
+        Cell edge, positive. Default ``2 * radius``. The result does not
+        depend on it, only the speed does. The grid coarsens when it would
+        exceed ``max_cells`` cells.
     max_cells : int
-        Largest number of grid cells.
+        Largest number of grid cells. Default 2^27.
+
+    Returns
+    -------
+    BallGrid
+        The balls sorted into the grid.
+
+    Raises
+    ------
+    ValueError
+        When a centre is not finite, or the radius or the cell size is not
+        positive and finite.
     """
     _require_numba()
     pts = np.ascontiguousarray(np.asarray(points, dtype=float).reshape(-1, 3))
+    if not np.all(np.isfinite(pts)):
+        raise ValueError("ball centres must be finite")
     r = float(radius)
-    if r <= 0:
-        raise ValueError("radius must be positive")
+    if not (r > 0 and np.isfinite(r)):
+        raise ValueError("radius must be a positive, finite distance in metres")
+    if cell_size is not None and not (float(cell_size) > 0 and np.isfinite(float(cell_size))):
+        raise ValueError("cell_size must be positive and finite")
     if len(pts) == 0:
         z3 = np.zeros(3)
         return BallGrid(pts, r, z3, 1.0, np.ones(3, np.int64), np.zeros(2, np.int32),
@@ -314,9 +329,16 @@ def _cast_balls_kernel(origins, dirs, pts, r2, nc2, lo, h, dims, starts, items, 
 def _unit(directions, dim):
     d = np.asarray(directions, dtype=float).reshape(-1, dim)
     norm = np.linalg.norm(d, axis=1)
-    if np.any(norm == 0):
-        raise ValueError("directions must be non-zero")
+    if not np.all(np.isfinite(norm) & (norm > 0)):
+        raise ValueError("directions must be finite, non-zero vectors")
     return np.ascontiguousarray(d / norm[:, None])
+
+
+def _finite_origins(origins, dim):
+    o = np.ascontiguousarray(np.asarray(origins, dtype=float).reshape(-1, dim))
+    if not np.all(np.isfinite(o)):
+        raise ValueError("origins must be finite points")
+    return o
 
 
 def cast_balls(grid: BallGrid, origins, directions, *, max_distance: float = np.inf,
@@ -343,9 +365,14 @@ def cast_balls(grid: BallGrid, origins, directions, *, max_distance: float = np.
     ndarray of shape (m, n)
         Distance to the first ball, ``0`` for a ray that starts inside a ball,
         ``inf`` when no ball is hit within ``max_distance``.
+
+    Raises
+    ------
+    ValueError
+        When an origin or a direction is not finite, or a direction is zero.
     """
     _require_numba()
-    o = np.ascontiguousarray(np.asarray(origins, dtype=float).reshape(-1, 3))
+    o = _finite_origins(origins, 3)
     d = _unit(directions, 3)
     out = np.full((len(o), len(d)), np.inf)
     if len(grid.points) == 0 or out.size == 0:
@@ -455,10 +482,18 @@ def build_disk_grid(centers, radii, cell_size: float | None = None,
     """Sort disks (centres (k, 2), radii (k,)) into a 2D grid of cell edge ``cell_size``.
 
     The default cell edge is the largest disk diameter.
+
+    Raises
+    ------
+    ValueError
+        When a centre or a radius is not finite, or the cell size is not
+        positive.
     """
     _require_numba()
     c = np.ascontiguousarray(np.asarray(centers, dtype=float).reshape(-1, 2))
     r = np.ascontiguousarray(np.asarray(radii, dtype=float).reshape(-1))
+    if not (np.all(np.isfinite(c)) and np.all(np.isfinite(r))):
+        raise ValueError("disk centres and radii must be finite")
     if len(c) == 0:
         return DiskGrid(c, r, np.zeros(2), 1.0, np.ones(2, np.int64), np.zeros(2, np.int32),
                         np.empty(0, np.int32))
@@ -549,9 +584,14 @@ def cast_disks(grid: DiskGrid, origins, directions, *, max_distance: float = np.
 
     ``0`` for rays that start inside a disk, ``inf`` when no disk is hit
     within ``max_distance``.
+
+    Raises
+    ------
+    ValueError
+        When an origin or a direction is not finite, or a direction is zero.
     """
     _require_numba()
-    o = np.ascontiguousarray(np.asarray(origins, dtype=float).reshape(-1, 2))
+    o = _finite_origins(origins, 2)
     d = _unit(directions, 2)
     out = np.full((len(o), len(d)), np.inf)
     if len(grid.centers) == 0 or out.size == 0:
@@ -651,43 +691,66 @@ def section_isovist_area(pointcloud, origin_xy, z_eye: float, *, n_rays: int = 3
     Parameters
     ----------
     pointcloud : PointCloud or array_like of shape (n, 3)
-        The scan. An array is read as points of a cloud of radius 0.05 m.
+        The scan, not empty. An array is read as points of a cloud of radius
+        0.05 m.
     origin_xy : (x, y)
-        Eye position in plan.
+        Eye position in plan, finite. A third coordinate is ignored.
     z_eye : float
-        Eye height in metres.
+        Eye height in metres, finite.
     n_rays : int
-        Number of equiangular rays, starting along +x.
+        Number of equiangular rays, starting along +x, a whole number of at
+        least 1. Default 3600.
     radius : float, optional
-        Ball radius in metres. Default: the cloud's own radius.
+        Ball radius in metres, positive and finite. Default: the cloud's own
+        radius.
     max_distance : float
-        Range limit R in metres. Each depth is clipped to R.
+        Range limit R in metres, positive. Each depth is clipped to R.
+        Default: none.
     escape : {"clip", "zero", "nan"}
-        Depth counted for a ray that hits no disk within R: R, 0 or NaN. With
-        ``"clip"`` and no range limit, one escaping ray makes the area
-        ``inf``. With ``"nan"``, it makes the area NaN.
+        Depth counted for a ray that hits no disk within R: R (the default),
+        0 or NaN. With ``"clip"`` and no range limit, one escaping ray makes
+        the area ``inf``. With ``"nan"``, it makes the area NaN.
     inside : {"nan", "zero"}
-        Area of an eye inside a disk or closer than ``eps`` to one: NaN or 0.
+        Area of an eye inside a disk or closer than ``eps`` to one: NaN (the
+        default) or 0.
     eps : float
-        Clearance in metres below which the eye counts as inside.
+        Clearance in metres below which the eye counts as inside,
+        non-negative. Default 1e-9.
 
     Returns
     -------
     SectionIsovist
-        Depths, flags and area of the section.
+        Depths, flags and area of the section. A plane that cuts no ball
+        gives a section in which every ray escapes.
+
+    Raises
+    ------
+    ValueError
+        When the cloud is empty, the eye is not finite, or an option lies
+        outside the domain given above.
     """
-    from .pointcloud import PointCloud
+    from .directions import _count
+    from .pointcloud import PointCloud, _radius
 
     if escape not in ESCAPE_POLICIES:
         raise ValueError(f"escape must be one of {ESCAPE_POLICIES}")
     if inside not in INSIDE_POLICIES:
         raise ValueError(f"inside must be one of {INSIDE_POLICIES}")
     pc = pointcloud if isinstance(pointcloud, PointCloud) else PointCloud(pointcloud)
-    r_ball = pc.radius if radius is None else float(radius)
-    centers, radii = section_disks(pc.points, r_ball, z_eye)
-    o = np.asarray(origin_xy, dtype=float).reshape(-1)[:2]
+    if len(pc) == 0:
+        raise ValueError("the point cloud is empty: it hides nothing. Check the file or the crop "
+                         "that produced it")
+    r_ball = pc.radius if radius is None else _radius(radius)
     R = float(max_distance)
-    n = int(n_rays)
+    if not R > 0:
+        raise ValueError("max_distance must be positive")
+    if not eps >= 0:
+        raise ValueError("eps must be a non-negative distance in metres")
+    o = np.asarray(origin_xy, dtype=float).reshape(-1)[:2]
+    if len(o) != 2 or not (np.all(np.isfinite(o)) and np.isfinite(float(z_eye))):
+        raise ValueError("the eye must be finite: origin_xy (x, y) and z_eye")
+    n = _count(n_rays, "n_rays")
+    centers, radii = section_disks(pc.points, r_ball, z_eye)
     t = cast_disks(build_disk_grid(centers, radii), o[None], equiangular(n)[:, :2],
                    max_distance=R)[0]
     clearance = float((np.hypot(*(centers - o).T) - radii).min()) if len(radii) else np.inf

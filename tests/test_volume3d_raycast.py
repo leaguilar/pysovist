@@ -8,6 +8,8 @@ from hypothesis import strategies as st
 from pysovist.directions import fibonacci_sphere, random_sphere
 from pysovist.raycast import build_ball_grid, cast_balls, first_hit_bruteforce
 
+pytest.importorskip("numba")  # the ball and disk ray casters
+
 ATOL = 1e-12
 
 

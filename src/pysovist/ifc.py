@@ -48,10 +48,27 @@ def read_ifc(path, *, classes="walls", storey=None) -> tuple[np.ndarray, np.ndar
     elevation : float
         Height of the storey in metres: the z of its placement in world
         coordinates, or its Elevation attribute when it has no placement.
-        0 without a storey.
+        0 without a storey, and 0 for a storey with neither.
+
+    Raises
+    ------
+    FileNotFoundError
+        When ``path`` does not exist.
+    ValueError
+        When the file is not an IFC file, a class is neither a preset nor a
+        class of the file's schema, no storey or more than one has the name
+        ``storey``, or no element of the chosen classes has a body.
+    ImportError
+        Without ifcopenshell.
     """
     ifcopenshell = _import()
-    f = ifcopenshell.open(str(Path(path)))
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(f"no IFC file at {path}")
+    try:
+        f = ifcopenshell.open(str(path))
+    except (OSError, ifcopenshell.Error) as e:
+        raise ValueError(f"{path} is not an IFC file that IfcOpenShell reads: {e}") from e
     elements = {}
     for name in _class_names(f, classes):
         elements.update((e.id(), e) for e in f.by_type(name))

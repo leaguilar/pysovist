@@ -559,3 +559,17 @@ def test_volume_command_refuses_an_eye_outside_the_model_in_height(two_storeys, 
     assert "rows 1, 2, 3" in msg and "z = 3 to 6 m" in msg, msg
     assert "the storey 'Level 1' stands at z = 3 m: an eye 1.6 m above it has z = 4.6" in msg
     assert not out.exists()
+
+
+@pytest.mark.parametrize("content", ["", "x,y\n1,2\n"])
+def test_a_file_that_is_not_ifc_is_an_error_that_names_it(tmp_path, content):
+    # An empty file gave "Unable to open file for reading", and another format an
+    # ifcopenshell error that named no file.
+    from pysovist.ifc import read_ifc
+
+    path = tmp_path / "model.ifc"
+    path.write_text(content)
+    with pytest.raises(ValueError, match=r"model\.ifc is not an IFC file"):
+        read_ifc(path)
+    with pytest.raises(FileNotFoundError):
+        read_ifc(tmp_path / "missing.ifc")

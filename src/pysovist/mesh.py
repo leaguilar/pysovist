@@ -38,6 +38,10 @@ class Mesh:
     triangles : array_like of shape (m, 3)
         Integer vertex indices of each triangle. Orientation does not matter
         for ray casting.
+    object_ids : array_like of shape (m,), optional
+        Index of the object each triangle belongs to, a non-negative integer.
+        Default: 0 for every triangle, one object. ``Mesh.combine`` sets them
+        for a scene made of several meshes.
 
     Attributes
     ----------
@@ -45,13 +49,15 @@ class Mesh:
         Vertex coordinates, read-only.
     triangles : ndarray of shape (m, 3)
         Vertex indices of each triangle, read-only.
+    object_ids : ndarray of shape (m,)
+        Object index of each triangle, read-only.
     block_flag : str
         The flag set for an eye closer than ``eps`` to a surface, ``"on_wall"``.
     """
 
     block_flag = "on_wall"
 
-    def __init__(self, vertices, triangles):
+    def __init__(self, vertices, triangles, object_ids=None):
         v = np.array(vertices, dtype=float, copy=True)
         t = np.array(triangles, dtype=np.int64, copy=True).reshape(-1, 3)
         if v.ndim != 2 or v.shape[1] != 3:
@@ -62,13 +68,49 @@ class Mesh:
         t.setflags(write=False)
         self.vertices: np.ndarray = v
         self.triangles: np.ndarray = t
+        self.object_ids: np.ndarray = _object_ids(object_ids, len(t))
         self._shift = (v.min(axis=0) + v.max(axis=0)) / 2 if len(v) else np.zeros(3)
         self._scene = None
 
     def __repr__(self) -> str:
         return f"Mesh({len(self.vertices)} vertices, {len(self.triangles)} triangles)"
 
+    @property
+    def n_objects(self) -> int:
+        """Number of objects: one more than the largest object id, 0 for no triangles."""
+        return int(self.object_ids.max()) + 1 if len(self.object_ids) else 0
+
     # --- construction -----------------------------------------------------------------------
+
+    @classmethod
+    def combine(cls, meshes) -> Mesh:
+        """One scene from several meshes, remembering which mesh each triangle came from.
+
+        The vertices and triangles are concatenated in order, and every
+        triangle of ``meshes[k]`` gets the object id ``k``. A ray cast with
+        [`cast_hits`][pysovist.Mesh.cast_hits] then tells which object it hit,
+        and [`view_volume`][pysovist.view_volume] with ``object_ids=True``
+        reports it for every ray.
+
+        Parameters
+        ----------
+        meshes : sequence of Mesh
+            The objects of the scene. Their own object ids are replaced by
+            their position in the sequence.
+
+        Returns
+        -------
+        Mesh
+            The combined scene, with ``object_ids`` set.
+        """
+        meshes = list(meshes)
+        if not meshes:
+            raise ValueError("combine needs at least one mesh")
+        offsets = np.cumsum([0] + [len(m.vertices) for m in meshes[:-1]])
+        vertices = np.concatenate([m.vertices for m in meshes])
+        triangles = np.concatenate([m.triangles + k for m, k in zip(meshes, offsets, strict=True)])
+        ids = np.repeat(np.arange(len(meshes)), [len(m.triangles) for m in meshes])
+        return cls(vertices, triangles, object_ids=ids)
 
     @classmethod
     def from_file(cls, path) -> Mesh:
@@ -267,6 +309,47 @@ class Mesh:
         out[out > max_distance] = np.inf
         return out
 
+    def cast_hits(self, origins, directions, *, max_distance: float = np.inf,
+                  near_clip: float = 0.0,
+                  n_threads: int | None = None) -> tuple[np.ndarray, np.ndarray]:
+        """First-hit distance and the triangle hit, for rays as in [`cast`][pysovist.Mesh.cast].
+
+        The distances are those of ``cast``, to the last bit.
+
+        Returns
+        -------
+        distances : ndarray of shape (m, n)
+            ``inf`` when nothing is hit within ``max_distance``.
+        triangles : ndarray of shape (m, n)
+            Index of the triangle hit, ``-1`` when nothing is hit.
+            ``object_ids[triangles]`` gives the object hit.
+        """
+        import open3d as o3d
+
+        o = np.asarray(origins, dtype=float).reshape(-1, 3) - self._shift
+        d = np.asarray(directions, dtype=float).reshape(-1, 3)
+        d = d / np.linalg.norm(d, axis=1)[:, None]
+        out = np.full((len(o), len(d)), np.inf)
+        tri = np.full((len(o), len(d)), -1, dtype=np.int64)
+        if len(self.triangles) == 0 or out.size == 0:
+            return out, tri
+        scene = self._raycasting_scene()
+        nthreads = 0 if n_threads is None else int(n_threads)
+        step = max(1, _CHUNK_RAYS // len(d))
+        dirs32 = np.broadcast_to(d.astype(np.float32), (step, len(d), 3))
+        for i0 in range(0, len(o), step):
+            oc = o[i0:i0 + step]
+            starts = oc[:, None, :] + near_clip * d[None, :, :]
+            rays = np.concatenate([starts.astype(np.float32), dirs32[:len(oc)]], axis=2)
+            res = scene.cast_rays(o3d.core.Tensor(rays.reshape(-1, 6)), nthreads=nthreads)
+            out[i0:i0 + step] = res["t_hit"].numpy().astype(float).reshape(len(oc), len(d))
+            prim = res["primitive_ids"].numpy().astype(np.int64).reshape(len(oc), len(d))
+            tri[i0:i0 + step] = np.where(prim < len(self.triangles), prim, -1)
+        out += near_clip
+        out[out > max_distance] = np.inf
+        tri[~np.isfinite(out)] = -1
+        return out, tri
+
     def clearance(self, origins) -> np.ndarray:
         """Distance from each origin (m, 3) to the nearest triangle."""
         import open3d as o3d
@@ -284,6 +367,18 @@ class Mesh:
         """True where an origin is closer than ``eps`` to a surface that ``near_clip`` keeps."""
         cl = self.clearance(origins)
         return (cl < eps) & (cl >= near_clip)
+
+
+def _object_ids(ids, n: int) -> np.ndarray:
+    """Read-only int64 object ids for ``n`` triangles (zeros by default)."""
+    out = np.zeros(n, dtype=np.int64) if ids is None else np.array(ids, dtype=np.int64, copy=True)
+    out = out.reshape(-1)
+    if len(out) != n:
+        raise ValueError("object_ids needs one entry per triangle")
+    if n and out.min() < 0:
+        raise ValueError("object ids must be non-negative")
+    out.setflags(write=False)
+    return out
 
 
 def _crossing(v, a, b, above, z):

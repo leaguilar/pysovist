@@ -23,8 +23,9 @@ class Plan:
         room, are accepted as well: every array whose last two axes have
         shape (2, 2) or (2, 3).
     eps : float
-        Length below which a segment counts as zero-length. It is also the
-        tolerance of the search for crossing points.
+        Length in metres, finite and not negative, below which a segment
+        counts as zero-length. It is also the tolerance of the search for
+        crossing points.
 
     Attributes
     ----------
@@ -37,8 +38,8 @@ class Plan:
     ------
     ValueError
         When ``segments`` is not an array of that shape, such as rows of
-        ``x0, y0, x1, y1`` or a list of points, or holds a coordinate that is
-        not finite.
+        ``x0, y0, x1, y1`` or a list of points, when it holds a coordinate
+        that is not finite, or when ``eps`` is negative or not finite.
 
     Notes
     -----
@@ -48,6 +49,9 @@ class Plan:
     """
 
     def __init__(self, segments, *, eps: float = 1e-12):
+        eps = float(eps)
+        if not 0 <= eps < np.inf:
+            raise ValueError(f"eps must be a finite non-negative length, got {eps}")
         s = _as_segments(segments)
         length = np.linalg.norm(s[:, 1] - s[:, 0], axis=1)
         self.segments: np.ndarray = np.ascontiguousarray(s[length > eps])

@@ -476,3 +476,20 @@ def test_infinite_range_in_a_partial_view_that_meets_lines_only():
                    view_range=np.inf).properties
     b = ds_isovist(walls, (2.0, 3.0), view_angle_deg=90.0, view_direction=(1, 0)).properties
     assert a == b
+
+
+def test_defaults_are_the_component_defaults():
+    """The component's input defaults, as its own parameter list records them in Rhino:
+    Viewing Direction {0,1,0}, Viewing Range 1000, Viewing Angle 360, Precision 360."""
+    import inspect
+
+    from pysovist.compat.decodingspaces import DS_DEFAULTS
+    measured = {"view_direction": (0.0, 1.0, 0.0), "view_range": 1000.0,
+                "view_angle_deg": 360.0, "precision": 360}
+    assert DS_DEFAULTS == measured
+    for f in (ds_isovist, ds_isovist_properties):
+        sig = inspect.signature(f).parameters
+        assert {k: sig[k].default for k in measured} == measured
+    sig = inspect.signature(ds_ray_angles).parameters
+    assert sig["precision"].default == 360 and sig["view_angle_deg"].default == 360.0
+    assert sig["view_direction"].default == (0.0, 1.0, 0.0)

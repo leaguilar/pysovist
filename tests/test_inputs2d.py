@@ -254,3 +254,10 @@ def test_sample_path_refuses_vertices_that_are_not_finite():
         sample_path([(0, 0), (NAN, 0), (2, 0)], 0.5)
     with pytest.raises(ValueError, match="finite"):
         path_isovists(SQUARE, [(1, 1), (2, INF)], 0.5)
+
+
+@pytest.mark.parametrize("eps", [NAN, -1.0, INF])
+def test_plan_needs_a_finite_non_negative_eps(eps):
+    """A NaN eps used to drop every segment, so the room came back unbounded."""
+    with pytest.raises(ValueError, match="eps"):
+        Plan(SQUARE, eps=eps)

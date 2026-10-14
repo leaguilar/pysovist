@@ -571,8 +571,8 @@ def _odtp_argv(env) -> list[str]:
     if task in ("isovist", "volume"):
         opt("--plan", "PLAN_FILE", path=True)
         opt("--n-jobs", "N_JOBS")
-    if env.get("PLAN_FILE"):
-        opt("--close", "CLOSE_FILE", path=True)
+        if env.get("PLAN_FILE"):
+            opt("--close", "CLOSE_FILE", path=True)
     if task == "volume":
         opt("--cloud", "POINTCLOUD_FILE", path=True)
         opt("--mesh", "MESH_FILE", path=True)
@@ -584,14 +584,15 @@ def _odtp_argv(env) -> list[str]:
         if env.get("PLAN_FILE"):
             opt("--floor", "FLOOR")
             opt("--ceiling", "CEILING")
+        if env.get("POINTCLOUD_FILE"):
+            opt("--radius", "SPLAT_RADIUS")
     if task == "section":
         opt("--cloud", "POINTCLOUD_FILE", path=True)
         opt("--eye-height", "EYE_HEIGHT")
         opt("--n-rays", "SECTION_RAYS")
+        opt("--radius", "SPLAT_RADIUS")
         opt("--escape", "ESCAPE")
         opt("--inside", "INSIDE")
-    if env.get("POINTCLOUD_FILE"):
-        opt("--radius", "SPLAT_RADIUS")
     return argv
 
 

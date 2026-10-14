@@ -13,7 +13,7 @@ import pytest
 
 import pysovist
 from pysovist import Plan, PointCloud, isovist_field, section_isovist_area
-from pysovist.cli import _odtp_argv, main
+from pysovist.cli import _odtp_argv, _parser, main
 
 from .geometry import polygon_walls, rect, room_walls, square_rule
 
@@ -825,3 +825,17 @@ def test_odtp_mode_names_the_variables_it_needs(tmp_path, monkeypatch, capsys):
         for k, v in {**base, **env}.items():
             monkeypatch.setenv(k, v)
         refused(["odtp"], match, capsys)
+
+
+@pytest.mark.parametrize("task, scene, foreign, own", [
+    ("isovist", {"PLAN_FILE": "w.json"}, {"POINTCLOUD_FILE": "c.ply", "SPLAT_RADIUS": "0.03"},
+     "--plan"),
+    ("section", {"POINTCLOUD_FILE": "c.ply"}, {"PLAN_FILE": "w.json", "CLOSE_FILE": "r.json",
+                                               "FLOOR": "0.1", "CEILING": "2.7"}, "--cloud"),
+])
+def test_odtp_ignores_the_files_of_other_tasks(task, scene, foreign, own):
+    # A component passes every variable: the files of another task add no option.
+    argv = _odtp_argv({"TASK": task, "QUERY_FILE": "q.csv", **scene, **foreign})
+    assert set(argv[5::2]) == {own}
+    parsed = _parser().parse_args(argv)  # the command accepts its options
+    assert parsed.command == task

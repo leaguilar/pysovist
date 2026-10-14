@@ -502,3 +502,11 @@ def test_binned_candidate_search_gives_the_same_visibility(monkeypatch):
     binned = [segment_visibility(walls, p, max_distance=12) for p in pts]
     for a, b in zip(direct, binned, strict=True):
         np.testing.assert_array_equal(a.visible_length, b.visible_length)
+
+
+def test_ray_hits_from_an_observer_on_a_wall_never_count_that_wall():
+    """From (0, 5) on the west wall (wall 3) of a 10 m square, 36 rays: the half turn that
+    faces the room hits the other walls, the other half leaves, and wall 3 gets none."""
+    hits = segment_ray_hits(rect(0, 0, 10, 10), (0.0, 5.0), 36, direction=0.005)
+    assert hits[3] == 0
+    assert hits.sum() == 18

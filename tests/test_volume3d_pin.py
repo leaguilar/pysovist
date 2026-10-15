@@ -1,9 +1,9 @@
 """Pins of the 0.1.2 view volumes, so that later additions cannot move them.
 
 The values were written by pysovist 0.1.2 before any 3D addition. The last
-bit of a metric can depend on the processor's instruction set: meshes are
+bits of a metric can depend on the processor's instruction set: meshes are
 cast by Embree in single precision, and the double-precision metrics of
-point clouds differ by one unit in the last place between processors.
+point clouds differ by a few units in the last place between processors.
 Both scenes are therefore pinned twice: to the bit against the 0.1.2
 arithmetic applied to ``cast`` on the same machine, and against the stored
 values, to 1e-6 for meshes and to 1e-12 for point clouds.

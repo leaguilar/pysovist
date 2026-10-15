@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.2 (unreleased)
+
+Angles given in degrees by mistake now stop with a message, and plan files may list segments. A field of view above
+2 pi, such as `fov=120` meant as degrees, raises a `ValueError` that suggests `math.radians`, where 0.2.1 returned the
+full turn. 2 pi, up to a rounding of 1e-12, stays the full turn. The 3D fields of view keep their ranges, and a value
+above them gets the same advice. A direction beyond 2 pi in size raises in the same way, and so does the elevation of
+`vertical_isovist`. Every `direction` in radians also takes a vector `(dx, dy)`, which gives the result of the angle
+`atan2(dy, dx)` to the last bit, so a caller who knows a target point needs no angle convention. `isovist_field`,
+`segment_visibility_field` and `view_volume_field` given one direction per observer raise a `ValueError` that names the
+loop to write, where 0.2.1 ended with a `TypeError`. `Plan.from_json` and the command line read a list of segments
+`[[x0, y0], [x1, y1]]` as well as records, and any other content raises a `ValueError` that names both formats, where
+0.2.1 raised a `TypeError` or a `KeyError`. Every other result is that of 0.2.1.
+
 ## 0.2.1
 
 Text files are read and written as UTF-8 on every platform: wall plans and closing polygons in JSON, point clouds in

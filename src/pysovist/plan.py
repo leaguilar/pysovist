@@ -8,6 +8,8 @@ from pathlib import Path
 
 import numpy as np
 
+from ._angles import field_of_view
+
 _CHUNK = 512  # rows per block in the pairwise intersection search
 
 
@@ -386,19 +388,18 @@ def _view_settings(max_distance, fov, direction, eps=1.0) -> tuple[float, float,
     """Range, field of view, direction and eps of a 2D view, checked.
 
     The range is positive (``inf`` for none), the field of view positive and at most a full
-    turn (larger values mean the full turn), the direction finite and eps positive.
+    turn (up to a rounding tolerance, which counts as the full turn), the direction finite and
+    eps positive.
     """
-    R, f, d, e = float(max_distance), float(fov), float(direction), float(eps)
+    R, d, e = float(max_distance), float(direction), float(eps)
     if not R > 0:
         raise ValueError(f"max_distance must be positive (inf for no limit), got {R}")
-    if not f > 0:
-        raise ValueError(f"fov must be a positive angle in radians (2 pi for the full turn), "
-                         f"got {f}")
+    f = field_of_view(fov)
     if not np.isfinite(d):
         raise ValueError(f"direction must be a finite angle in radians, got {d}")
     if not e > 0:
         raise ValueError(f"eps must be a positive distance, got {e}")
-    return R, min(f, 2 * np.pi), d, e
+    return R, f, d, e
 
 
 def _workers(n_jobs, chunk) -> tuple[int, int]:

@@ -111,8 +111,9 @@ def path_isovists(
     spacing : float
         Arc length between two observers, in metres.
     fov : float
-        Field of view in radians, centred on the direction of the path.
-        Default: the full turn, for which the direction plays no role.
+        Field of view in radians, in (0, 2 pi], centred on the direction of
+        the path, as in [`isovist`][pysovist.isovist]. Default: the full
+        turn, for which the direction plays no role.
     max_distance : float
         Range limit in metres, as in [`isovist`][pysovist.isovist].
     endpoint : bool

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from ._angles import field_of_view
 from .isovist2d import TWO_PI, isovist
 from .plan import Plan
 from .results import Isovist
@@ -108,8 +109,8 @@ def vertical_isovist(
         forward horizontal, finite. Default 0. Used only when ``fov`` is below
         a full turn.
     fov : float
-        Field of view in the plane, in radians, in (0, 2 pi]. Default: the
-        full turn.
+        Field of view in the plane, in radians, in (0, 2 pi], as in
+        [`isovist`][pysovist.isovist]. Default: the full turn.
     max_distance : float
         Range limit in metres, positive. Default: none. A section that is
         open, for example with no ceiling, needs it for finite metrics.
@@ -135,8 +136,7 @@ def vertical_isovist(
         a surface.
     """
     e = _eye(eye)
-    if not 0 < fov <= TWO_PI:
-        raise ValueError("fov must lie in (0, 2 pi] radians")
+    fov = field_of_view(fov)
     if not np.isfinite(elevation):
         raise ValueError("elevation must be a finite angle in radians")
     if not max_distance > 0:

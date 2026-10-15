@@ -154,8 +154,10 @@ def segment_visibility(
         counts only inside it. With the default ``inf`` the range is
         unlimited, and rays that meet no wall add nothing.
     fov : float
-        Field of view in radians, positive, centred on ``direction``. Values
-        of 2 pi and above mean the full turn. Default: full turn.
+        Field of view in radians, in (0, 2 pi], centred on ``direction``.
+        2 pi is the full turn, and so is a value less than 1e-12 above it.
+        A larger value raises a ``ValueError``: an angle in degrees
+        converts with ``math.radians``. Default: full turn.
     direction : float
         Viewing direction in radians, counter-clockwise from +x. Used only when
         ``fov`` is below a full turn.
@@ -178,7 +180,8 @@ def segment_visibility(
         When ``on_wall="raise"`` and the observer stands on a wall, or for an
         argument that [`isovist`][pysovist.isovist] refuses: an origin that
         is not one finite point, a ``max_distance``, ``fov`` or ``eps`` that
-        is not positive, a direction that is not finite.
+        is not positive, a ``fov`` above 2 pi, a direction that is not
+        finite.
 
     Notes
     -----
@@ -371,8 +374,10 @@ def segment_ray_hits(
         Range limit in metres, positive. A ray counts only when its first hit
         is closer.
     fov : float
-        Field of view in radians, positive, centred on ``direction``. Values
-        of 2 pi and above mean the full turn. Default: full turn.
+        Field of view in radians, in (0, 2 pi], centred on ``direction``.
+        2 pi is the full turn, and so is a value less than 1e-12 above it.
+        A larger value raises a ``ValueError``: an angle in degrees
+        converts with ``math.radians``. Default: full turn.
     direction : float or (x, y)
         Viewing direction in radians, counter-clockwise from +x, or as a
         vector like the component's Viewing Direction. The vector gives the
@@ -406,7 +411,8 @@ def segment_ray_hits(
     ValueError
         When the origin is not one finite point, ``n_rays`` is not a whole
         number of at least 1 (``"even"``) or is NaN (``"decodingspaces"``),
-        ``max_distance`` or ``fov`` is not positive, ``direction`` is not
+        ``max_distance`` or ``fov`` is not positive, ``fov`` exceeds 2 pi,
+        ``direction`` is not
         finite or is a vector without an x or y component, or ``layout`` is
         unknown.
 

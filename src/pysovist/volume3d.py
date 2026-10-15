@@ -322,11 +322,12 @@ def view_volume(
         Ball radius in metres for a point cloud, positive and finite,
         overriding the cloud's own radius.
     hfov : float
-        Horizontal field of view in radians, centred on ``direction``.
-        Default: full turn.
+        Horizontal field of view in radians, in (0, 2 pi], centred on
+        ``direction``. Default: full turn. A larger value raises a
+        ``ValueError``: an angle in degrees converts with ``math.radians``.
     vfov : float
-        Vertical field of view in radians, centred on ``elevation``. Default:
-        pole to pole.
+        Vertical field of view in radians, in (0, pi], centred on
+        ``elevation``. Default: pole to pole.
     direction : float
         Azimuth of the centre of the view, in radians counter-clockwise from
         +x, finite. Default 0. Used only when ``hfov`` is below a full turn.

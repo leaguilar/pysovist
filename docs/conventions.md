@@ -16,7 +16,7 @@ A wall is a two-sided segment with no thickness and no inside. An observer insid
 
 `max_distance` is the range limit R, in metres. The default is no limit. In 2D, a ray that meets no wall within R ends on the circle of radius R. In 3D, the `escape` policy decides what such a ray counts.
 
-`fov` is the 2D field of view in radians, centred on `direction`. The default is the full turn. With a partial field of view, the perimeter includes the two radial edges that bound it.
+`fov` is the 2D field of view in radians, centred on `direction`. The default is the full turn. With a partial field of view, the perimeter includes the two radial edges that bound it. A field of view lies in \((0, 2\pi]\), and \(2\pi\) counts as the full turn up to a rounding of 1e-12. A larger value, such as `fov=120` meant as degrees, raises a `ValueError` that suggests `math.radians`. The 3D fields of view `hfov` and `vfov` lie in \((0, 2\pi]\) and \((0, \pi]\) exactly, and a value above its range gets the same advice.
 
 ## Eye heights
 

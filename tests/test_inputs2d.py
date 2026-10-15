@@ -8,9 +8,11 @@ names the argument and says what to pass, or returns a documented result.
 import math
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from pysovist import (
+    Mesh,
     Plan,
     cast_rays,
     isovist,
@@ -21,6 +23,7 @@ from pysovist import (
     segment_ray_hits,
     segment_visibility,
     segment_visibility_field,
+    vertical_isovist,
 )
 
 from .geometry import rect
@@ -114,10 +117,60 @@ def test_isovist_needs_a_positive_field_of_view(fov):
         isovist(SQUARE, (5.0, 5.0), fov=fov)
 
 
-def test_isovist_field_of_view_above_a_full_turn_is_a_full_turn():
-    """Closed form: the 10 m square from its centre has area 100 and perimeter 40."""
-    iso = isovist(SQUARE, (5.0, 5.0), fov=7.0)
-    assert iso.fov == 2 * math.pi == isovist(SQUARE, (5.0, 5.0), fov=INF).fov
+BOX = Mesh.from_plan(SQUARE, floor=0.0, ceiling=2.7, close=None)
+
+
+def _wedges(iso):
+    return iso.fov, iso.metrics, iso.theta0, iso.theta1, iso.kind, iso.p, iso.phi
+
+
+def _visibility(v):
+    return v.fov, v.visible_length, v.visible_angle, v.intervals
+
+
+# Every public 2D function that takes a field of view in radians, called from inside the
+# square, with a summary of its result that two calls can be compared on.
+FOV_CALLS = {
+    "isovist": lambda **kw: _wedges(isovist(SQUARE, (4.0, 3.0), **kw)),
+    "isovist_field": lambda **kw: isovist_field(SQUARE, [(4.0, 3.0), (7.0, 8.0)], **kw),
+    "path_isovists": lambda **kw: path_isovists(SQUARE, [(2, 5), (8, 6)], 1.5, **kw),
+    "segment_visibility": lambda **kw: _visibility(segment_visibility(SQUARE, (4.0, 3.0), **kw)),
+    "segment_visibility_field": lambda **kw: segment_visibility_field(
+        SQUARE, [(4.0, 3.0), (7.0, 8.0)], per_viewpoint=True, chunk=1, **kw),
+    "segment_ray_hits": lambda **kw: segment_ray_hits(SQUARE, (4.0, 3.0), 36, **kw),
+    "segment_ray_hits_ds": lambda **kw: segment_ray_hits(SQUARE, (4.0, 3.0), 36,
+                                                         layout="decodingspaces", **kw),
+    "vertical_isovist": lambda **kw: _wedges(vertical_isovist(BOX, (4.0, 3.0, 1.6), 0.3, **kw)),
+}
+
+
+def assert_same(a, b):
+    """Equal to the last bit, tables, arrays and NaN included."""
+    if isinstance(a, tuple) and a and isinstance(a[0], pd.DataFrame):
+        for x, y in zip(a, b, strict=True):
+            assert_same(x, y)
+    elif isinstance(a, pd.DataFrame):
+        pd.testing.assert_frame_equal(a, b, check_exact=True)
+    else:
+        np.testing.assert_equal(a, b)
+
+
+@pytest.mark.parametrize("name", FOV_CALLS)
+@pytest.mark.parametrize("fov", [120.0, 360.0, 2 * math.pi + 1e-9, INF])
+def test_a_field_of_view_above_a_full_turn_is_refused_as_degrees(name, fov):
+    """fov=120, meant as degrees, used to return the full turn without a message."""
+    with pytest.raises(ValueError, match=r"fov must be an angle in radians.*math\.radians"):
+        FOV_CALLS[name](fov=fov)
+
+
+@pytest.mark.parametrize("name", FOV_CALLS)
+@pytest.mark.parametrize("fov", [2 * math.pi, math.radians(360), math.tau, 2 * math.pi + 1e-13])
+def test_a_full_turn_up_to_rounding_is_the_full_turn(name, fov):
+    """Reference: the call with the default field of view, the full turn, to the last bit.
+    Closed form for the isovist: the 10 m square has area 100 and perimeter 40."""
+    assert_same(FOV_CALLS[name](fov=fov), FOV_CALLS[name]())
+    iso = isovist(SQUARE, (4.0, 3.0), fov=fov)
+    assert iso.fov == 2 * math.pi
     assert iso.metrics["area"] == pytest.approx(100.0, rel=1e-12)
     assert iso.metrics["perimeter"] == pytest.approx(40.0, rel=1e-12)
 

@@ -350,6 +350,30 @@ def test_field_of_view_angles_must_be_finite(kw):
             check_field_of_view(1.0, 1.0, kw["elevation"])
 
 
+FIELD_CALLS = {
+    "view_volume": lambda **kw: view_volume(BOX, (0, 0, 0), n_rays=256, **kw),
+    "view_volume_field": lambda **kw: view_volume_field(BOX, [(0, 0, 0)], n_rays=256, **kw),
+    "in_field_of_view": lambda **kw: in_field_of_view(fibonacci_sphere(256), **kw),
+    "angle_grid": lambda **kw: angle_grid(8, 4, **kw),
+}
+
+
+@pytest.mark.parametrize("name", FIELD_CALLS)
+@pytest.mark.parametrize("kw, match", [
+    ({"hfov": 120.0}, r"hfov must be an angle in radians in \(0, 2 pi\].*math\.radians\(120\.0\)"),
+    ({"hfov": 360.0}, r"hfov must be an angle in radians in \(0, 2 pi\].*math\.radians\(360\.0\)"),
+    ({"hfov": 2 * math.pi + 1e-9}, r"hfov must be an angle in radians in \(0, 2 pi\]"),
+    ({"hfov": np.inf}, r"hfov must be an angle in radians in \(0, 2 pi\].*math\.radians"),
+    ({"vfov": 60.0}, r"vfov must be an angle in radians in \(0, pi\].*math\.radians\(60\.0\)"),
+])
+def test_a_field_of_view_in_degrees_is_refused_with_the_conversion(name, kw, match):
+    """These were refused before, with a message that named neither radians nor the cure."""
+    with pytest.raises(ValueError, match=match):
+        FIELD_CALLS[name](**kw)
+    with pytest.raises(ValueError, match=match):
+        check_field_of_view(kw.get("hfov", 1.0), kw.get("vfov", 1.0), 0.0)
+
+
 @pytest.mark.parametrize("d", [[(1.0, 0, 0.5)], [(0.0, 0, 0)], [(np.nan, 0, 0)]])
 def test_field_of_view_needs_unit_vectors(d):
     # (1, 0, 0.5) lies 26.6 degrees up, inside a field 60 degrees tall, but arcsin(0.5) put it

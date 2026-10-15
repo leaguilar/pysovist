@@ -12,12 +12,12 @@ from __future__ import annotations
 
 import numpy as np
 
+from ._angles import ANGLE_TOL as _ANGLE_TOL  # narrower wedges merge into their neighbours
 from .metrics2d import nan_metrics, wedge_metrics
 from .plan import Plan, _point2d, _view_settings
 from .results import ARC, SEGMENT, Flags, Isovist
 
 TWO_PI = 2 * np.pi
-_ANGLE_TOL = 1e-12  # wedges narrower than this are merged into their neighbours
 _ON_WALL_POLICIES = ("nan", "raise")
 
 
@@ -45,8 +45,10 @@ def isovist(
         escaping ray makes the isovist unbounded (area ``inf``,
         ``flags.unbounded``).
     fov : float
-        Field of view in radians, positive, centred on ``direction``. Values
-        of 2 pi and above mean the full turn. Default: full turn.
+        Field of view in radians, in (0, 2 pi], centred on ``direction``.
+        2 pi is the full turn, and so is a value less than 1e-12 above it.
+        A larger value raises a ``ValueError``: an angle in degrees
+        converts with ``math.radians``. Default: full turn.
     direction : float
         Viewing direction in radians, counter-clockwise from +x. Used only when
         ``fov`` is below a full turn.
@@ -68,8 +70,9 @@ def isovist(
     ValueError
         When ``on_wall="raise"`` and the observer stands on a wall, when the
         origin is not one finite point, when ``max_distance``, ``fov`` or
-        ``eps`` is not positive (NaN included), when ``direction`` is not
-        finite, or when ``on_wall`` is not one of its two values.
+        ``eps`` is not positive (NaN included), when ``fov`` exceeds 2 pi,
+        when ``direction`` is not finite, or when ``on_wall`` is not one of
+        its two values.
     """
     if on_wall not in _ON_WALL_POLICIES:
         raise ValueError(f"on_wall must be one of {_ON_WALL_POLICIES}")

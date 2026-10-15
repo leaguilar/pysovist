@@ -28,6 +28,8 @@ import math
 
 import numpy as np
 
+from ._angles import degrees_hint
+
 GOLDEN_ANGLE = np.pi * (3.0 - np.sqrt(5.0))
 
 
@@ -118,9 +120,9 @@ def check_field_of_view(hfov: float, vfov: float, elevation: float) -> tuple[flo
     Parameters
     ----------
     hfov : float
-        Horizontal field of view in radians.
+        Horizontal field of view in radians, in (0, 2 pi].
     vfov : float
-        Vertical field of view in radians.
+        Vertical field of view in radians, in (0, pi].
     elevation : float
         Elevation of the centre of the field, in radians.
 
@@ -134,15 +136,18 @@ def check_field_of_view(hfov: float, vfov: float, elevation: float) -> tuple[flo
     ValueError
         When ``hfov`` is not in (0, 2 pi], ``vfov`` is not in (0, pi],
         ``elevation`` is not finite, or the vertical field reaches beyond a
-        pole.
+        pole. A field of view above its range, such as an angle in degrees,
+        gets a message that suggests ``math.radians``.
     """
     hfov, vfov, elevation = float(hfov), float(vfov), float(elevation)
     if not math.isfinite(elevation):
         raise ValueError("elevation must be a finite angle in radians")
     if not 0 < hfov <= 2 * np.pi:
-        raise ValueError("hfov must lie in (0, 2 pi]")
+        hint = f" {degrees_hint(hfov)}" if hfov > 2 * np.pi else ""
+        raise ValueError(f"hfov must be an angle in radians in (0, 2 pi], got {hfov}.{hint}")
     if not 0 < vfov <= np.pi:
-        raise ValueError("vfov must lie in (0, pi]")
+        hint = f" {degrees_hint(vfov)}" if vfov > np.pi else ""
+        raise ValueError(f"vfov must be an angle in radians in (0, pi], got {vfov}.{hint}")
     lo, hi = elevation - vfov / 2, elevation + vfov / 2
     if lo < -np.pi / 2 - 1e-12 or hi > np.pi / 2 + 1e-12:
         raise ValueError("the vertical field of view must lie between the poles: "
@@ -166,11 +171,12 @@ def in_field_of_view(directions, *, hfov: float = 2 * np.pi, vfov: float = np.pi
     directions : array_like of shape (n, 3)
         Unit vectors, to 1e-9.
     hfov : float
-        Horizontal field of view in radians, centred on ``direction``. Default:
-        full turn.
+        Horizontal field of view in radians, in (0, 2 pi], centred on
+        ``direction``. Default: full turn. A larger value raises a
+        ``ValueError``: an angle in degrees converts with ``math.radians``.
     vfov : float
-        Vertical field of view in radians, centred on ``elevation``. Default:
-        pole to pole.
+        Vertical field of view in radians, in (0, pi], centred on
+        ``elevation``. Default: pole to pole.
     direction : float
         Azimuth of the centre of the field, in radians counter-clockwise from
         +x, finite. Default 0.

@@ -33,6 +33,7 @@ import json
 import math
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tokenize
@@ -72,7 +73,7 @@ class Block:
 
 
 def page_blocks(page: str) -> list[Block]:
-    lines = (ROOT / page).read_text().splitlines()
+    lines = (ROOT / page).read_text(encoding="utf-8").splitlines()
     out, i, n = [], 0, 0
     while i < len(lines):
         m = re.match(r"^```(\w*)\s*$", lines[i])
@@ -256,7 +257,7 @@ def comment_claims(block: Block) -> list[Claim]:
 
 def markdown_table(page: str, after_line: int) -> tuple[list[str], list[list[str]]] | None:
     """Header and rows of a table that starts within two lines after ``after_line``."""
-    lines = (ROOT / page).read_text().splitlines()
+    lines = (ROOT / page).read_text(encoding="utf-8").splitlines()
     for i in range(after_line, min(after_line + 2, len(lines))):
         if lines[i].startswith("|"):
             rows = []
@@ -396,26 +397,43 @@ def printed_tables(block: Block, value) -> list[str]:
 
 # --- running a page -------------------------------------------------------------------------------
 
+SYSTEM_ENV = ("PATH", "HOME", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "TEMP", "TMP", "USERPROFILE",
+              "APPDATA", "LOCALAPPDATA")
+
+
 def run_shell(block: Block, cwd: Path) -> list[str]:
-    """Run the pysovist commands of a shell block, without those that read a reader's file."""
+    """Run the pysovist commands of a shell block, without those that read a reader's file.
+
+    The lines run from Python, so no POSIX shell is needed: ``export`` sets variables, with
+    ``$PWD`` the working folder, and ``pysovist`` runs the command line of this checkout. They
+    stop at the first command that fails, as under ``set -e``.
+    """
     logical = block.source.replace("\\\n", " ").splitlines()
     keep = [c for c in logical if re.match(r"\s*(pysovist|export)\b", c)
             and not any(f in c for f in OWN_FILES)]
     if not any(c.lstrip().startswith("pysovist") for c in keep):
         return []
-    script = "\n".join(["set -e", 'pysovist() { "$PYTHON" -m pysovist.cli "$@"; }', *keep])
-    env = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", str(cwd)),
-           "PYTHON": sys.executable, "PYTHONPATH": str(ROOT / "src")}
-    r = subprocess.run(["bash", "-c", script], cwd=cwd, env=env, capture_output=True, text=True,
-                       timeout=600)
-    if r.returncode:
-        return [f"{block.page}: the shell block at line {block.line} failed:\n{r.stderr[-2000:]}"]
+    env = {k: os.environ[k] for k in SYSTEM_ENV if k in os.environ}
+    env["PYTHONPATH"] = str(ROOT / "src")
+    for line in keep:
+        words = [w.replace("$PWD", str(cwd)) for w in shlex.split(line, comments=True)]
+        if any("$" in w for w in words):
+            return [f"{block.page}: the shell block at line {block.line} uses a variable other "
+                    f"than $PWD: {line.strip()}"]
+        if words[0] == "export":
+            env.update(w.split("=", 1) for w in words[1:])
+            continue
+        r = subprocess.run([sys.executable, "-m", "pysovist.cli", *words[1:]], cwd=cwd, env=env,
+                           capture_output=True, text=True, timeout=600)
+        if r.returncode:
+            return [f"{block.page}: the shell block at line {block.line} failed:\n"
+                    f"{r.stderr[-2000:]}"]
     return []
 
 
 def run_page(page: str, cwd: Path) -> tuple[list[str], list[str]]:
     """Run a page as one script. Returns its problems and the names of the blocks it skipped."""
-    text = (ROOT / page).read_text()
+    text = (ROOT / page).read_text(encoding="utf-8")
     ns = {"__name__": "__main__"}
     found, skipped = [], []
     for block in page_blocks(page):
@@ -462,13 +480,14 @@ def run_page_as_a_script(page: str, cwd: Path) -> list[str]:
     result = cwd / "problems.json"
     code = ("import json, sys; from pathlib import Path; "
             "from tests.test_docs_examples import run_page; "
-            "json.dump(run_page(sys.argv[1], Path.cwd())[0], open(sys.argv[2], 'w'))")
+            "json.dump(run_page(sys.argv[1], Path.cwd())[0], "
+            "open(sys.argv[2], 'w', encoding='utf-8'))")
     env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(ROOT)])}
     r = subprocess.run([sys.executable, "-c", code, page, str(result)], cwd=cwd, env=env,
                        capture_output=True, text=True, timeout=1200)
     if r.returncode or not result.is_file():
         return [f"{page}: the script stopped:\n{r.stderr[-3000:]}"]
-    return json.loads(result.read_text())
+    return json.loads(result.read_text(encoding="utf-8"))
 
 
 @pytest.mark.parametrize("page", PAGES)
@@ -521,7 +540,7 @@ def test_the_quick_start_commands_write_their_tables_and_records(tmp_path):
 
 def source_of(file: str, name: str) -> str:
     """Source of a top-level function, class or assignment of a test file, with decorators."""
-    text = (ROOT / "tests" / file).read_text()
+    text = (ROOT / "tests" / file).read_text(encoding="utf-8")
     lines = text.splitlines()
     for node in ast.parse(text).body:
         if (isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name == name) or (
@@ -787,7 +806,7 @@ VERIFICATION = [
 
 
 def test_the_verification_page_states_what_the_tests_assert():
-    text = (ROOT / "docs" / "verification.md").read_text()
+    text = (ROOT / "docs" / "verification.md").read_text(encoding="utf-8")
     env = {"src": src, "T": T, "source_of": source_of, "re": re,
            "default_rtol_of_frame_comparison": default_rtol_of_frame_comparison}
     found = []
@@ -812,7 +831,7 @@ def test_the_verification_page_states_what_the_tests_assert():
 
 
 def test_the_messages_the_verification_page_quotes_are_those_raised():
-    text = (ROOT / "docs" / "verification.md").read_text()
+    text = (ROOT / "docs" / "verification.md").read_text(encoding="utf-8")
     section = text[text.index("## Checked inputs"):text.index("## Command line and documentation")]
     quoted = re.findall(r'raises "([^"]+)"', section)
     square = [[(0, 0), (10, 0)], [(10, 0), (10, 10)], [(10, 10), (0, 10)], [(0, 10), (0, 0)]]
@@ -827,7 +846,8 @@ def test_the_messages_the_verification_page_quotes_are_those_raised():
 
 
 def test_the_software_reference_cites_the_version_of_the_package():
-    bibtex = re.search(r"@software\{pysovist,.*?\n\}", (ROOT / "README.md").read_text(), re.S)
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    bibtex = re.search(r"@software\{pysovist,.*?\n\}", readme, re.S)
     assert f"version = {{{pysovist.__version__}}}" in re.sub(r" +", " ", bibtex.group(0))
 
 

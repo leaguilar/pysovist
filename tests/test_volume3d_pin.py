@@ -1,12 +1,12 @@
 """Pins of the 0.1.2 view volumes, so that later additions cannot move them.
 
-The values were written by pysovist 0.1.2 before any 3D addition. Point
-clouds are cast in double precision by pysovist's own kernel, so their
-metrics are pinned to the bit. Meshes are cast by Embree in single
-precision, whose last bit can depend on the processor's instruction set.
-Their metrics are therefore pinned twice: to the bit against the 0.1.2
-arithmetic applied to ``Mesh.cast`` on the same machine, and to 1e-6 against
-the stored values.
+The values were written by pysovist 0.1.2 before any 3D addition. The last
+bit of a metric can depend on the processor's instruction set: meshes are
+cast by Embree in single precision, and the double-precision metrics of
+point clouds differ by one unit in the last place between processors.
+Both scenes are therefore pinned twice: to the bit against the 0.1.2
+arithmetic applied to ``cast`` on the same machine, and against the stored
+values, to 1e-6 for meshes and to 1e-12 for point clouds.
 """
 
 import numpy as np
@@ -249,12 +249,26 @@ def test_mesh_view_volume_matches_the_stored_values(case, closed, gap):
 
 
 @pytest.mark.parametrize("case", sorted(CLOUD_CASES))
-def test_cloud_view_volume_is_pinned_to_the_bit(case, cloud):
+def test_cloud_view_volume_keeps_the_0_1_2_arithmetic(case, cloud):
+    origin, kw = CLOUD_CASES[case]
+    vv = view_volume(cloud, origin, **kw)
+    n = kw["n_rays"]
+    d = random_sphere(n, kw["seed"]) if kw.get("directions") == "random" else fibonacci_sphere(n)
+    R = kw.get("max_distance", np.inf)
+    occ = cloud.with_radius(kw["radius"]) if "radius" in kw else cloud
+    t = occ.cast(np.array([origin], dtype=float), d, max_distance=R)
+    ref = metrics_0_1_2(t, d[:, 2], R, kw.get("escape", "clip"))
+    for name in VOLUME_METRIC_NAMES:
+        assert same_bits(vv.metrics[name], ref[name][0]), name
+
+
+@pytest.mark.parametrize("case", sorted(CLOUD_CASES))
+def test_cloud_view_volume_matches_the_stored_values(case, cloud):
     origin, kw = CLOUD_CASES[case]
     vv = view_volume(cloud, origin, **kw)
     expected = unhex(CLOUD_PINS[case])
     for name in VOLUME_METRIC_NAMES:
-        assert same_bits(vv.metrics[name], expected[name]), name
+        np.testing.assert_allclose(vv.metrics[name], expected[name], rtol=1e-12, err_msg=name)
 
 
 def test_mesh_field_is_pinned(closed):
@@ -271,9 +285,15 @@ def test_mesh_field_is_pinned(closed):
         assert same_bits(df[name].to_numpy()[:2], ref[name]), name
 
 
-def test_cloud_field_is_pinned_to_the_bit(cloud):
+def test_cloud_field_is_pinned(cloud):
     df = view_volume_field(cloud, np.array(CLOUD_FIELD_ORIGINS), n_rays=1024, max_distance=20.0)
     for name, values in CLOUD_FIELD_PINS.items():
-        assert same_bits(df[name], [float.fromhex(v) for v in values]), name
+        expected = [float.fromhex(v) for v in values]
+        np.testing.assert_allclose(df[name], expected, rtol=1e-12, err_msg=name)
     for name, values in CLOUD_FIELD_FLAGS.items():
         assert df[name].tolist() == values, name
+    d = fibonacci_sphere(1024)
+    t = cloud.cast(np.array(CLOUD_FIELD_ORIGINS[:2]), d, max_distance=20.0)
+    ref = metrics_0_1_2(t, d[:, 2], 20.0, "clip")
+    for name in VOLUME_METRIC_NAMES:
+        assert same_bits(df[name].to_numpy()[:2], ref[name]), name

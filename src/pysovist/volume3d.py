@@ -89,6 +89,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from ._angles import direction_angle
 from .directions import (
     check_field_of_view,
     fibonacci_sphere,
@@ -328,9 +329,13 @@ def view_volume(
     vfov : float
         Vertical field of view in radians, in (0, pi], centred on
         ``elevation``. Default: pole to pole.
-    direction : float
-        Azimuth of the centre of the view, in radians counter-clockwise from
-        +x, finite. Default 0. Used only when ``hfov`` is below a full turn.
+    direction : float or (dx, dy)
+        Azimuth of the centre of the view: an angle in radians,
+        counter-clockwise from +x, between -2 pi and 2 pi, or a horizontal
+        vector ``(dx, dy)`` that points along it, which gives the same result
+        as the angle ``atan2(dy, dx)``. Default 0. Used only when ``hfov`` is
+        below a full turn. A larger angle raises a ``ValueError``: an angle in
+        degrees converts with ``math.radians``.
     elevation : float
         Elevation of the centre of the view, in radians above the eye's
         horizontal plane (the vertical offset of the view). Default 0. The
@@ -405,7 +410,10 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
     **kw
         Keyword arguments of [`view_volume`][pysovist.view_volume], including
         a field of view and ``weights``, except ``object_ids``. Every origin
-        uses the same directions. ``ground`` (the object ids that count as
+        uses the same directions and the same ``direction``: one angle or one
+        vector, where a sequence of two numbers is always a vector
+        ``(dx, dy)``. For a direction per eye, call ``view_volume`` for each
+        eye in a loop. ``ground`` (the object ids that count as
         ground, as in [`ViewVolume.factors`][pysovist.ViewVolume.factors])
         adds the view factors.
 
@@ -422,9 +430,10 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
     Raises
     ------
     ValueError
-        For the inputs that ``view_volume`` refuses, an origin that is not
-        finite, ``n_jobs`` that is neither -1 nor positive, and a ``ground``
-        that names an object the scene does not have.
+        For the inputs that ``view_volume`` refuses, a ``direction`` with one
+        angle per eye, an origin that is not finite, ``n_jobs`` that is
+        neither -1 nor positive, and a ``ground`` that names an object the
+        scene does not have.
     TypeError
         For a keyword argument that ``view_volume_field`` does not take.
     """
@@ -439,7 +448,7 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
     near_clip, eps = kw.get("near_clip", 0.0), kw.get("eps", 1e-9)
     R = _check(escape, inside, kw.get("max_distance", np.inf), near_clip, eps)
     d, w = _field(d, kw.get("weights"), kw.get("hfov", 2 * np.pi), kw.get("vfov", np.pi),
-                  kw.get("direction", 0.0), kw.get("elevation", 0.0))
+                  kw.get("direction", 0.0), kw.get("elevation", 0.0), loop="view_volume")
     ground = kw.get("ground")
     ground_ids = None if ground is None else _ground_ids(ground, _n_objects(occ))
     o = _origins(origins)
@@ -587,15 +596,15 @@ def _origins(origins) -> np.ndarray:
 
 # --- directed views, object ids and view factors -----------------------------------------------
 
-def _field(d, weights, hfov, vfov, direction, elevation):
+def _field(d, weights, hfov, vfov, direction, elevation, loop=None):
     """Directions inside the field of view and their solid angles.
 
     The weights are None for the full field without given weights, the case
-    whose arithmetic stays that of 0.1.2.
+    whose arithmetic stays that of 0.1.2. ``loop`` names the function of one
+    eye, for the message of a field given one direction per eye.
     """
     check_field_of_view(hfov, vfov, elevation)
-    if not np.isfinite(direction):
-        raise ValueError("direction must be a finite angle in radians")
+    direction = direction_angle(direction, loop=loop)
     full = hfov >= 2 * np.pi and vfov >= np.pi
     if weights is None and full:
         return d, None

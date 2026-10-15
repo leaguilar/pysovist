@@ -49,9 +49,12 @@ def isovist(
         2 pi is the full turn, and so is a value less than 1e-12 above it.
         A larger value raises a ``ValueError``: an angle in degrees
         converts with ``math.radians``. Default: full turn.
-    direction : float
-        Viewing direction in radians, counter-clockwise from +x. Used only when
-        ``fov`` is below a full turn.
+    direction : float or (dx, dy)
+        Viewing direction: an angle in radians, counter-clockwise from +x,
+        between -2 pi and 2 pi, or a vector ``(dx, dy)`` that points along
+        it, which gives the same result as the angle ``atan2(dy, dx)``. Used
+        only when ``fov`` is below a full turn. A larger angle raises a
+        ``ValueError``: an angle in degrees converts with ``math.radians``.
     on_wall : {"nan", "raise"}
         What to do when the observer is closer than ``eps`` to a wall: return
         an isovist with NaN metrics and ``flags.on_wall`` set, or raise a
@@ -71,8 +74,9 @@ def isovist(
         When ``on_wall="raise"`` and the observer stands on a wall, when the
         origin is not one finite point, when ``max_distance``, ``fov`` or
         ``eps`` is not positive (NaN included), when ``fov`` exceeds 2 pi,
-        when ``direction`` is not finite, or when ``on_wall`` is not one of
-        its two values.
+        when ``direction`` is neither a finite angle between -2 pi and 2 pi nor a
+        finite vector with an x or y component, or when ``on_wall`` is not
+        one of its two values.
     """
     if on_wall not in _ON_WALL_POLICIES:
         raise ValueError(f"on_wall must be one of {_ON_WALL_POLICIES}")

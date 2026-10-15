@@ -12,11 +12,13 @@ A `Plan` is an array of wall segments of shape (n, 2, 2): segment `i` runs from 
 
 A wall is a two-sided segment with no thickness and no inside. An observer inside a closed outline, such as a pillar, sees the inside of that outline. Grid points that fall inside solid objects should be removed before an `isovist_field` call.
 
-## Range and field of view
+## Range, field of view and direction
 
 `max_distance` is the range limit R, in metres. The default is no limit. In 2D, a ray that meets no wall within R ends on the circle of radius R. In 3D, the `escape` policy decides what such a ray counts.
 
 `fov` is the 2D field of view in radians, centred on `direction`. The default is the full turn. With a partial field of view, the perimeter includes the two radial edges that bound it. A field of view lies in \((0, 2\pi]\), and \(2\pi\) counts as the full turn up to a rounding of 1e-12. A larger value, such as `fov=120` meant as degrees, raises a `ValueError` that suggests `math.radians`. The 3D fields of view `hfov` and `vfov` lie in \((0, 2\pi]\) and \((0, \pi]\) exactly, and a value above its range gets the same advice.
+
+`direction` is the centre of the field of view, in 2D and as the azimuth in 3D. It is an angle in radians, counter-clockwise from +x, between \(-2\pi\) and \(2\pi\), or a vector `(dx, dy)` that points along it. The vector gives the same result as the angle \(\operatorname{atan2}(dy, dx)\), to the last bit, so a caller who knows a target point needs no angle convention. An angle beyond \(2\pi\) in size, such as `direction=45` meant as degrees, raises a `ValueError` that suggests `math.radians`. A field (`isovist_field`, `segment_visibility_field`, `view_volume_field`) takes one direction for every observer, and a sequence of two numbers is always a vector. For a direction per observer, call `isovist`, `segment_visibility` or `view_volume` for each observer in a loop.
 
 ## Eye heights
 

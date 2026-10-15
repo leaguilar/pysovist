@@ -7,6 +7,7 @@ from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 import pandas as pd
 
+from ._angles import direction_angle
 from .isovist2d import isovist
 from .metrics2d import METRIC_NAMES
 from .plan import Plan, _points2d, _view_settings, _workers
@@ -43,6 +44,9 @@ def isovist_field(occluders, origins, *, n_jobs: int = 1, chunk: int = 256, **kw
         process.
     **kw
         Keyword arguments of [`isovist`][pysovist.isovist], applied to every observer.
+        ``direction`` is one angle or one vector for every observer, and a
+        sequence of two numbers is always a vector ``(dx, dy)``. For a
+        direction per observer, call ``isovist`` for each observer in a loop.
 
     Returns
     -------
@@ -56,7 +60,8 @@ def isovist_field(occluders, origins, *, n_jobs: int = 1, chunk: int = 256, **kw
     ------
     ValueError
         When an origin is not finite, when ``n_jobs`` or ``chunk`` is not a
-        positive integer (``n_jobs`` may be -1), or for any argument that
+        positive integer (``n_jobs`` may be -1), when ``direction`` holds one
+        angle per observer, or for any argument that
         [`isovist`][pysovist.isovist] refuses.
     TypeError
         For a keyword argument that ``isovist`` does not take.
@@ -69,6 +74,8 @@ def isovist_field(occluders, origins, *, n_jobs: int = 1, chunk: int = 256, **kw
         raise TypeError(f"unexpected keyword arguments {sorted(unknown)}")
     if kw.get("on_wall", "nan") not in ("nan", "raise"):
         raise ValueError("on_wall must be one of ('nan', 'raise')")
+    if "direction" in kw:
+        kw = {**kw, "direction": direction_angle(kw["direction"], loop="isovist")}
     _view_settings(kw.get("max_distance", np.inf), kw.get("fov", 2 * np.pi),
                    kw.get("direction", 0.0), kw.get("eps", 1e-9))
     if n_jobs <= 1 or len(origins) <= chunk:

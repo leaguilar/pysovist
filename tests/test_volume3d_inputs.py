@@ -374,6 +374,61 @@ def test_a_field_of_view_in_degrees_is_refused_with_the_conversion(name, kw, mat
         check_field_of_view(kw.get("hfov", 1.0), kw.get("vfov", 1.0), 0.0)
 
 
+def _volume(vv):
+    return vv.directions, vv.weights, vv.distances, vv.metrics
+
+
+# Every public 3D function that takes a viewing direction in radians, with a field of view of
+# one radian, so that the direction matters, seen from inside the cube.
+DIRECTION_CALLS = {
+    "view_volume": lambda d: _volume(view_volume(BOX, (0.2, -0.1, 0.3), n_rays=4096, hfov=1.0,
+                                                 vfov=1.0, direction=d)),
+    "view_volume_field": lambda d: view_volume_field(BOX, [(0.2, -0.1, 0.3), (-0.5, 0.5, 0)],
+                                                     n_rays=4096, hfov=1.0, vfov=1.0,
+                                                     direction=d).to_dict("list"),
+    "in_field_of_view": lambda d: in_field_of_view(fibonacci_sphere(4096), hfov=1.0, vfov=1.0,
+                                                   direction=d),
+    "angle_grid": lambda d: angle_grid(16, 8, hfov=1.0, vfov=1.0, direction=d),
+}
+
+
+@pytest.mark.parametrize("name", DIRECTION_CALLS)
+@pytest.mark.parametrize("vector", [(3.0, 4.0), (-1.0, 0.0), (0.0, -2.0), (-1e-3, -5.0)])
+def test_a_direction_vector_gives_the_view_of_its_azimuth(name, vector):
+    """Reference: the same call with the azimuth atan2(dy, dx), to the last bit."""
+    ref = DIRECTION_CALLS[name](math.atan2(vector[1], vector[0]))
+    for v in (vector, list(vector), np.array(vector)):
+        np.testing.assert_equal(DIRECTION_CALLS[name](v), ref)
+
+
+@pytest.mark.parametrize("name", DIRECTION_CALLS)
+@pytest.mark.parametrize("direction", [45.0, -90.0, 2 * math.pi + 1e-9])
+def test_a_direction_in_degrees_is_refused(name, direction):
+    """direction=45, meant as degrees, used to centre the view on 45 radians."""
+    with pytest.raises(ValueError, match=r"direction must be an angle in radians, "
+                                         r"counter-clockwise from \+x, between -2 pi and 2 pi, "
+                                         r"or a vector \(dx, dy\).*math\.radians"):
+        DIRECTION_CALLS[name](direction)
+
+
+@pytest.mark.parametrize("name", DIRECTION_CALLS)
+@pytest.mark.parametrize("direction", [(0.0, 0.0), (np.nan, 1.0), (1.0, 0.0, 0.0),
+                                       np.zeros((2, 2))])
+def test_a_direction_that_is_no_angle_and_no_vector_is_refused(name, direction):
+    """These used to fail with a TypeError that named no argument."""
+    with pytest.raises(ValueError, match="direction"):
+        DIRECTION_CALLS[name](direction)
+
+
+@pytest.mark.parametrize("direction", [np.array([0.1, 0.2, 0.3]), np.array([0.5])])
+def test_a_direction_per_eye_is_refused_with_the_loop_to_write(direction):
+    with pytest.raises(ValueError, match=r"direction is one angle in radians or one vector "
+                                         r"\(dx, dy\) for every observer.*call view_volume for "
+                                         r"each observer"):
+        view_volume_field(BOX, [(0, 0, 0), (0.2, 0, 0), (0, 0.2, 0)], hfov=1.0,
+                          direction=direction)
+
+
 @pytest.mark.parametrize("d", [[(1.0, 0, 0.5)], [(0.0, 0, 0)], [(np.nan, 0, 0)]])
 def test_field_of_view_needs_unit_vectors(d):
     # (1, 0, 0.5) lies 26.6 degrees up, inside a field 60 degrees tall, but arcsin(0.5) put it

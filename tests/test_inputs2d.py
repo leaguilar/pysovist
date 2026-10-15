@@ -121,11 +121,11 @@ BOX = Mesh.from_plan(SQUARE, floor=0.0, ceiling=2.7, close=None)
 
 
 def _wedges(iso):
-    return iso.fov, iso.metrics, iso.theta0, iso.theta1, iso.kind, iso.p, iso.phi
+    return iso.fov, iso.direction, iso.metrics, iso.theta0, iso.theta1, iso.kind, iso.p, iso.phi
 
 
 def _visibility(v):
-    return v.fov, v.visible_length, v.visible_angle, v.intervals
+    return v.fov, v.direction, v.visible_length, v.visible_angle, v.intervals
 
 
 # Every public 2D function that takes a field of view in radians, called from inside the
@@ -173,6 +173,97 @@ def test_a_full_turn_up_to_rounding_is_the_full_turn(name, fov):
     assert iso.fov == 2 * math.pi
     assert iso.metrics["area"] == pytest.approx(100.0, rel=1e-12)
     assert iso.metrics["perimeter"] == pytest.approx(40.0, rel=1e-12)
+
+
+THREE = [(4.0, 3.0), (7.0, 8.0), (2.0, 2.0)]  # observers inside the square
+
+# Every public 2D function that takes a viewing direction in radians, with a field of view of
+# one radian so that the direction matters.
+DIRECTION_CALLS = {
+    "isovist": lambda d: _wedges(isovist(SQUARE, (4.0, 3.0), fov=1.0, direction=d)),
+    "isovist_field": lambda d: isovist_field(SQUARE, THREE, fov=1.0, direction=d),
+    "segment_visibility": lambda d: _visibility(segment_visibility(SQUARE, (4.0, 3.0), fov=1.0,
+                                                                   direction=d)),
+    "segment_visibility_field": lambda d: segment_visibility_field(
+        SQUARE, THREE, fov=1.0, direction=d, per_viewpoint=True, chunk=1),
+    "segment_ray_hits": lambda d: segment_ray_hits(SQUARE, (4.0, 3.0), 36, fov=1.0, direction=d),
+}
+
+
+@pytest.mark.parametrize("name", DIRECTION_CALLS)
+@pytest.mark.parametrize("vector", [(3.0, 4.0), (-1.0, 0.0), (0.0, -2.0), (-1e-3, -5.0),
+                                    (-7.0, 1e-300)])
+def test_a_direction_vector_gives_the_view_of_its_angle(name, vector):
+    """Reference: the same call with the angle atan2(dy, dx), to the last bit, for a tuple, a
+    list and an array."""
+    ref = DIRECTION_CALLS[name](math.atan2(vector[1], vector[0]))
+    for v in (vector, list(vector), np.array(vector)):
+        assert_same(DIRECTION_CALLS[name](v), ref)
+
+
+@pytest.mark.parametrize("name", [*DIRECTION_CALLS, "segment_ray_hits_ds"])
+@pytest.mark.parametrize("direction", [45.0, -90.0, 360.0, 2 * math.pi + 1e-9,
+                                       -2 * math.pi - 1e-9])
+def test_a_direction_beyond_a_full_turn_is_refused_as_degrees(name, direction):
+    """direction=45, meant as degrees, used to give the view along 45 radians."""
+    call = DIRECTION_CALLS.get(name) or (lambda d: segment_ray_hits(
+        SQUARE, (4.0, 3.0), 36, fov=1.0, direction=d, layout="decodingspaces"))
+    with pytest.raises(ValueError, match=r"direction must be an angle in radians, "
+                                         r"counter-clockwise from \+x, between -2 pi and 2 pi, "
+                                         r"or a vector \(dx, dy\).*math\.radians"):
+        call(direction)
+
+
+@pytest.mark.parametrize("name", DIRECTION_CALLS)
+@pytest.mark.parametrize("turns", [1, -1])
+def test_a_direction_of_a_full_turn_is_taken(name, turns):
+    """Closed form: a direction one full turn away looks the same way, so the visible areas,
+    lengths and hits agree with those of direction 0 (to rounding, as the angles differ)."""
+    for d in (turns * 2 * math.pi, turns * (2 * math.pi + 1e-13)):
+        DIRECTION_CALLS[name](d)
+    iso = isovist(SQUARE, (4.0, 3.0), fov=1.0, direction=turns * 2 * math.pi)
+    ref = isovist(SQUARE, (4.0, 3.0), fov=1.0, direction=0.0)
+    assert iso.area == pytest.approx(ref.area, rel=1e-12)
+
+
+@pytest.mark.parametrize("name", [*DIRECTION_CALLS, "segment_ray_hits_ds"])
+@pytest.mark.parametrize("vector", [(0.0, 0.0), (NAN, 1.0), (1.0, INF)])
+def test_a_direction_vector_without_a_direction_is_refused(name, vector):
+    """atan2(0, 0) is 0, so the zero vector used to look along +x in the even layout."""
+    call = DIRECTION_CALLS.get(name) or (lambda d: segment_ray_hits(
+        SQUARE, (4.0, 3.0), 36, fov=1.0, direction=d, layout="decodingspaces"))
+    with pytest.raises(ValueError, match=r"direction"):
+        call(vector)
+
+
+@pytest.mark.parametrize("name", ["isovist", "segment_visibility", "segment_ray_hits"])
+@pytest.mark.parametrize("direction", [np.array([0.1, 0.2, 0.3]).reshape(3, 1), np.zeros((2, 2)),
+                                       np.array([0.5]), [[1.0, 0.0]]])
+def test_a_direction_of_another_shape_is_refused(name, direction):
+    """These used to fail with a TypeError that named no argument."""
+    with pytest.raises(ValueError, match=r"direction must be one angle in radians or one vector "
+                                         r"\(dx, dy\), got an array of shape"):
+        DIRECTION_CALLS[name](direction)
+
+
+@pytest.mark.parametrize("field, single", [(isovist_field, "isovist"),
+                                           (segment_visibility_field, "segment_visibility")])
+@pytest.mark.parametrize("direction", [np.array([0.1, 0.2, 0.3]), [0.1, 0.2, 0.3],
+                                       np.array([0.5]), np.zeros((3, 2))])
+def test_a_direction_per_observer_is_refused_with_the_loop_to_write(field, single, direction):
+    """isovist_field with one angle per observer used to fail with "TypeError: only
+    0-dimensional arrays can be converted to Python scalars"."""
+    with pytest.raises(ValueError, match=r"direction is one angle in radians or one vector "
+                                         r"\(dx, dy\) for every observer, got an array of "
+                                         rf"shape .*call {single} for each observer"):
+        field(SQUARE, THREE, fov=1.0, direction=direction)
+
+
+def test_vertical_isovist_refuses_an_elevation_in_degrees():
+    """elevation=30, meant as degrees, used to centre the view on 30 radians."""
+    with pytest.raises(ValueError, match=r"elevation must be an angle in radians.*"
+                                         r"math\.radians\(30\.0\)"):
+        vertical_isovist(BOX, (4.0, 3.0, 1.6), 0.3, elevation=30.0, fov=1.0)
 
 
 @pytest.mark.parametrize("direction", [NAN, INF])

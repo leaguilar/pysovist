@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ._angles import field_of_view
+from ._angles import direction_angle, field_of_view
 
 _CHUNK = 512  # rows per block in the pairwise intersection search
 
@@ -388,15 +388,14 @@ def _view_settings(max_distance, fov, direction, eps=1.0) -> tuple[float, float,
     """Range, field of view, direction and eps of a 2D view, checked.
 
     The range is positive (``inf`` for none), the field of view positive and at most a full
-    turn (up to a rounding tolerance, which counts as the full turn), the direction finite and
-    eps positive.
+    turn (up to a rounding tolerance, which counts as the full turn), the direction an angle
+    between -2 pi and 2 pi or a vector (dx, dy), returned as an angle, and eps positive.
     """
-    R, d, e = float(max_distance), float(direction), float(eps)
+    R, e = float(max_distance), float(eps)
     if not R > 0:
         raise ValueError(f"max_distance must be positive (inf for no limit), got {R}")
     f = field_of_view(fov)
-    if not np.isfinite(d):
-        raise ValueError(f"direction must be a finite angle in radians, got {d}")
+    d = direction_angle(direction)
     if not e > 0:
         raise ValueError(f"eps must be a positive distance, got {e}")
     return R, f, d, e

@@ -59,8 +59,9 @@ class Isovist:
     fov : float
         Field of view in radians, at most 2 pi.
     direction : float
-        Centre of the field of view, in radians counter-clockwise from +x.
-        Unused for a full turn.
+        Centre of the field of view, in radians counter-clockwise from +x,
+        ``atan2(dy, dx)`` for a direction given as a vector. Unused for a
+        full turn.
     theta0 : ndarray of shape (k,)
         Start angle of each wedge, in absolute radians, increasing.
     theta1 : ndarray of shape (k,)

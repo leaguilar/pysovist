@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from ._angles import direction_angle
 from .isovist2d import (
     _ANGLE_TOL,
     TWO_PI,
@@ -91,7 +92,8 @@ class SegmentVisibility:
         disjoint, with ``s`` running from 0 at the first endpoint to 1 at the
         second.
     max_distance, fov, direction : float
-        The arguments of the call.
+        The arguments of the call, with the field of view at most 2 pi and a
+        direction vector given as its angle ``atan2(dy, dx)``.
     clearance : float
         Distance from the observer to the nearest segment, ``inf`` with none.
     flags : Flags
@@ -158,9 +160,12 @@ def segment_visibility(
         2 pi is the full turn, and so is a value less than 1e-12 above it.
         A larger value raises a ``ValueError``: an angle in degrees
         converts with ``math.radians``. Default: full turn.
-    direction : float
-        Viewing direction in radians, counter-clockwise from +x. Used only when
-        ``fov`` is below a full turn.
+    direction : float or (dx, dy)
+        Viewing direction: an angle in radians, counter-clockwise from +x,
+        between -2 pi and 2 pi, or a vector ``(dx, dy)`` that points along
+        it, which gives the same result as the angle ``atan2(dy, dx)``. Used
+        only when ``fov`` is below a full turn. A larger angle raises a
+        ``ValueError``: an angle in degrees converts with ``math.radians``.
     on_wall : {"nan", "raise"}
         What to do when the observer is closer than ``eps`` to a segment:
         return NaN lengths with ``flags.on_wall`` set, or raise a
@@ -180,8 +185,9 @@ def segment_visibility(
         When ``on_wall="raise"`` and the observer stands on a wall, or for an
         argument that [`isovist`][pysovist.isovist] refuses: an origin that
         is not one finite point, a ``max_distance``, ``fov`` or ``eps`` that
-        is not positive, a ``fov`` above 2 pi, a direction that is not
-        finite.
+        is not positive, a ``fov`` above 2 pi, a direction that is neither
+        a finite angle between -2 pi and 2 pi nor a finite vector with an x
+        or y component.
 
     Notes
     -----
@@ -248,7 +254,10 @@ def segment_visibility_field(
     **kw
         Keyword arguments of
         [`segment_visibility`][pysovist.visibility2d.segment_visibility],
-        applied to every viewpoint.
+        applied to every viewpoint. ``direction`` is one angle or one vector
+        for every viewpoint, and a sequence of two numbers is always a
+        vector ``(dx, dy)``. For a direction per viewpoint, call
+        ``segment_visibility`` for each viewpoint in a loop.
 
     Returns
     -------
@@ -274,8 +283,9 @@ def segment_visibility_field(
     ------
     ValueError
         When a viewpoint is not finite, when ``n_jobs`` or ``chunk`` is not a
-        positive integer (``n_jobs`` may be -1), or for a keyword argument
-        that ``segment_visibility`` refuses.
+        positive integer (``n_jobs`` may be -1), when ``direction`` holds one
+        angle per viewpoint, or for a keyword argument that
+        ``segment_visibility`` refuses.
     TypeError
         For a keyword argument that ``segment_visibility`` does not take.
     """
@@ -287,6 +297,8 @@ def segment_visibility_field(
     unknown = set(kw) - {"max_distance", "fov", "direction", "eps", "on_wall"}
     if unknown:
         raise TypeError(f"unexpected keyword arguments {sorted(unknown)}")
+    if "direction" in kw:
+        kw = {**kw, "direction": direction_angle(kw["direction"], loop="segment_visibility")}
     _view_settings(kw.get("max_distance", np.inf), kw.get("fov", TWO_PI),
                    kw.get("direction", 0.0), kw.get("eps", 1e-9))
     n_jobs, chunk = _workers(n_jobs, chunk)
@@ -379,11 +391,12 @@ def segment_ray_hits(
         A larger value raises a ``ValueError``: an angle in degrees
         converts with ``math.radians``. Default: full turn.
     direction : float or (x, y)
-        Viewing direction in radians, counter-clockwise from +x, or as a
-        vector like the component's Viewing Direction. The vector gives the
-        component's rays bit for bit. An angle in radians gives the same rays
-        unless the rounding of its conversion moves the last ray across the
-        far edge of the view.
+        Viewing direction in radians, counter-clockwise from +x, between
+        -2 pi and 2 pi, or as a vector like the component's Viewing
+        Direction, ``(x, y)`` or ``(x, y, z)`` with the third component
+        ignored. The vector gives the component's rays bit for bit. An angle
+        in radians gives the same rays unless the rounding of its conversion
+        moves the last ray across the far edge of the view.
     layout : {"even", "decodingspaces"}
         ``"even"``: ``n_rays`` equally spaced rays, from ``direction`` around
         the full turn, or from one edge of the field of view to the other, as
@@ -412,7 +425,7 @@ def segment_ray_hits(
         When the origin is not one finite point, ``n_rays`` is not a whole
         number of at least 1 (``"even"``) or is NaN (``"decodingspaces"``),
         ``max_distance`` or ``fov`` is not positive, ``fov`` exceeds 2 pi,
-        ``direction`` is not
+        ``direction`` is an angle beyond 2 pi in size, is not
         finite or is a vector without an x or y component, or ``layout`` is
         unknown.
 
@@ -429,9 +442,9 @@ def segment_ray_hits(
     segs, plan, keep = _segments(occluders)
     o = _point2d(origin, "origin")
     bearing = None
-    if np.ndim(direction) == 1:
+    if np.ndim(direction) == 1 and np.size(direction) >= 2:
         v = np.asarray(direction, dtype=float)[:2]
-        if len(v) < 2 or not np.isfinite(v).all() or not v.any():
+        if not np.isfinite(v).all() or not v.any():
             raise ValueError(f"direction must be an angle or a finite vector with an x or y "
                              f"component, got {direction!r}")
         bearing = np.arctan2(v[0], v[1]) % TWO_PI  # clockwise from +y, as the component

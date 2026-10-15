@@ -28,7 +28,7 @@ import math
 
 import numpy as np
 
-from ._angles import degrees_hint
+from ._angles import degrees_hint, direction_angle
 
 GOLDEN_ANGLE = np.pi * (3.0 - np.sqrt(5.0))
 
@@ -177,9 +177,12 @@ def in_field_of_view(directions, *, hfov: float = 2 * np.pi, vfov: float = np.pi
     vfov : float
         Vertical field of view in radians, in (0, pi], centred on
         ``elevation``. Default: pole to pole.
-    direction : float
-        Azimuth of the centre of the field, in radians counter-clockwise from
-        +x, finite. Default 0.
+    direction : float or (dx, dy)
+        Azimuth of the centre of the field: an angle in radians,
+        counter-clockwise from +x, between -2 pi and 2 pi, or a horizontal
+        vector ``(dx, dy)`` that points along it, which gives the same result
+        as the angle ``atan2(dy, dx)``. Default 0. A larger angle raises a
+        ``ValueError``: an angle in degrees converts with ``math.radians``.
     elevation : float
         Elevation of the centre of the field, in radians above the horizontal
         plane. Default 0. The vertical field must lie between the poles.
@@ -194,10 +197,11 @@ def in_field_of_view(directions, *, hfov: float = 2 * np.pi, vfov: float = np.pi
     ValueError
         When a direction is not a unit vector, or the field is one that
         [`check_field_of_view`][pysovist.directions.check_field_of_view]
-        refuses or has a direction that is not finite.
+        refuses or has a ``direction`` that is neither a finite angle between
+        -2 pi and 2 pi nor a finite vector with an x or y component.
     """
     lo, hi = check_field_of_view(hfov, vfov, elevation)
-    _check_direction(direction)
+    direction = direction_angle(direction)
     d = np.asarray(directions, dtype=float).reshape(-1, 3)
     norm = np.linalg.norm(d, axis=1)
     if not np.all(np.abs(norm - 1.0) <= 1e-9):
@@ -234,7 +238,7 @@ def angle_grid(n_azimuth: int, n_elevation: int, *, hfov: float = 2 * np.pi,
     n_azimuth, n_elevation : int
         Number of cells along azimuth and along elevation, whole numbers of at
         least 1.
-    hfov, vfov, direction, elevation : float
+    hfov, vfov, direction, elevation : float, and (dx, dy) for direction
         The field of view, as in [`in_field_of_view`][pysovist.directions.in_field_of_view].
         Default: the full sphere.
 
@@ -255,7 +259,7 @@ def angle_grid(n_azimuth: int, n_elevation: int, *, hfov: float = 2 * np.pi,
     """
     na, ne = _count(n_azimuth, "n_azimuth"), _count(n_elevation, "n_elevation")
     lo, hi = check_field_of_view(hfov, vfov, elevation)
-    _check_direction(direction)
+    direction = direction_angle(direction)
     step = hfov / na
     az = direction - hfov / 2 + step * (np.arange(na) + 0.5)
     edges = lo + (hi - lo) * np.arange(ne + 1) / ne
@@ -265,7 +269,3 @@ def angle_grid(n_azimuth: int, n_elevation: int, *, hfov: float = 2 * np.pi,
     d = np.stack([np.cos(e) * np.cos(a), np.cos(e) * np.sin(a), np.sin(e)], axis=-1)
     return d.reshape(-1, 3), np.tile(w, na)
 
-
-def _check_direction(direction) -> None:
-    if not math.isfinite(float(direction)):
-        raise ValueError("direction must be a finite angle in radians")

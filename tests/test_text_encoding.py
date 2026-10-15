@@ -8,6 +8,7 @@ raised from pysovist is an error.
 """
 
 import json
+import os
 import subprocess
 import sys
 import textwrap
@@ -30,9 +31,11 @@ WALLS = [{"start": [0, 0], "end": [10, 0], "name": "Küche"},
 
 def run(code: str, cwd: Path) -> subprocess.CompletedProcess:
     script = PRELUDE + textwrap.dedent(code)
+    # the whole environment, because Python on Windows needs SYSTEMROOT to start
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONUTF8")}
+    env["PYTHONPATH"] = str(SRC)
     return subprocess.run([sys.executable, "-X", "warn_default_encoding", "-c", script], cwd=cwd,
-                          env={"PYTHONPATH": str(SRC), "PATH": ""}, capture_output=True,
-                          text=True, encoding="utf-8", timeout=300)
+                          env=env, capture_output=True, text=True, encoding="utf-8", timeout=300)
 
 
 @pytest.fixture

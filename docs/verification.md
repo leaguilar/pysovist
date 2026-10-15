@@ -137,9 +137,10 @@ The Unity frame transform equals the composition of the Unity loader's axis swap
 
 ## Checked inputs
 
-**An input outside the domain of a function raises a ValueError that names the argument and what to pass.** Three examples, each asserted by a test:
+**An input outside the domain of a function raises a ValueError that names the argument and what to pass.** Four examples, each asserted by a test:
 
 - `isovist(plan, (5, 5), max_distance=-1)` raises "max_distance must be positive (inf for no limit), got -1.0".
+- `isovist(plan, (5, 5), fov=120)`, an angle in degrees, raises "fov must be an angle in radians of at most 2 pi, the full turn, got 120.0. An angle in degrees converts with math.radians, such as math.radians(120.0)."
 - `PointCloud(points, radius=float("nan"))` raises "radius must be a positive, finite distance in metres, not nan".
 - `Mesh(vertices, quads)` with four indices per face raises "triangles must have shape (m, 3), not (1, 4): split each quad (a, b, c, d) into (a, b, c) and (a, c, d)".
 

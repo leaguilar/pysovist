@@ -836,6 +836,7 @@ def test_the_messages_the_verification_page_quotes_are_those_raised():
     quoted = re.findall(r'raises "([^"]+)"', section)
     square = [[(0, 0), (10, 0)], [(10, 0), (10, 10)], [(10, 10), (0, 10)], [(0, 10), (0, 0)]]
     calls = [lambda: pysovist.isovist(square, (5, 5), max_distance=-1),
+             lambda: pysovist.isovist(square, (5, 5), fov=120),
              lambda: pysovist.PointCloud([(0.0, 0.0, 0.0)], radius=float("nan")),
              lambda: pysovist.Mesh(np.eye(4)[:, :3], [(0, 1, 2, 3)])]
     assert len(quoted) == len(calls)

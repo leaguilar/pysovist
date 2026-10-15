@@ -7,7 +7,7 @@ software. GitHub's "Cite this repository" button gives the same reference from `
 @software{pysovist,
   author  = {Aguilar, Leonel and Tuncay, Bartu},
   title   = {pysovist: exact isovists and view volumes from floor plans, meshes and point clouds},
-  version = {0.2.0},
+  version = {0.2.1},
   year    = {2026},
   url     = {https://github.com/leaguilar/pysovist}
 }

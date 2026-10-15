@@ -330,7 +330,7 @@ class PointCloud:
 def _read_pts(path: Path) -> np.ndarray:
     import pandas as pd
 
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         first = f.readline().split()
     if not first:
         return np.empty((0, 3))

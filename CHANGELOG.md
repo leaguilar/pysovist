@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+Text files are read and written as UTF-8 on every platform: wall plans and closing polygons in JSON, point clouds in
+`.pts` files, and the records of the command line. A plan with a non-ASCII name now reads on Windows, whose default
+encoding is not UTF-8. Every result is that of 0.2.0.
+
 ## 0.2.0
 
 The visibility tools of the DeCodingSpaces toolbox for Grasshopper, in pysovist, and checked inputs everywhere. Every

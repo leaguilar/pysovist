@@ -38,7 +38,7 @@ from .volume3d import (
     view_volume_field,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "FACTOR_NAMES",

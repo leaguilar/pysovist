@@ -221,7 +221,7 @@ def _read_plan(path: Path):
 
 def _check_records(path: Path) -> None:
     try:
-        records = json.loads(path.read_text())
+        records = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         raise SystemExit(f"the plan {path} is not JSON ({e}): it must be {_RECORD}") from None
     if not isinstance(records, list):
@@ -241,7 +241,7 @@ def _read_ring(path: Path | None):
     if path is None:
         return None
     try:
-        ring = np.asarray(json.loads(Path(path).read_text()), dtype=float)
+        ring = np.asarray(json.loads(Path(path).read_text(encoding="utf-8")), dtype=float)
     except (json.JSONDecodeError, TypeError, ValueError):
         raise SystemExit(f"the closing polygon {path} must be {_RING}") from None
     if ring.ndim != 2 or ring.shape[1] < 2:
@@ -364,7 +364,7 @@ def _write(df: pd.DataFrame, out: Path, task: str, params: dict, inputs: dict, t
         "n_points": len(df),
         "seconds": round(time.time() - t0, 3),
     }
-    out.with_suffix(".json").write_text(json.dumps(meta, indent=2))
+    out.with_suffix(".json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
 
 def _isovist(a: argparse.Namespace) -> None:

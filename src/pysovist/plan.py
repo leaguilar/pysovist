@@ -92,7 +92,7 @@ class Plan:
         ValueError
             When a coordinate is not finite.
         """
-        records = json.loads(Path(path).read_text())
+        records = json.loads(Path(path).read_text(encoding="utf-8"))
         return cls([[r[keys[0]][:2], r[keys[1]][:2]] for r in records])
 
     @classmethod

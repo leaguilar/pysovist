@@ -57,8 +57,51 @@ def test_from_json_reads_records_with_any_keys_and_drops_z(tmp_path):
                                 {"a": [4, 0, 0], "b": [4, 3, 0]}]))
     plan = Plan.from_json(path, keys=("a", "b"))
     np.testing.assert_array_equal(plan.segments, [[[0, 0], [4, 0]], [[4, 0], [4, 3]]])
-    with pytest.raises(KeyError):
+    with pytest.raises(ValueError, match=r'record 0 .*"start": \[x, y\], "end": \[x, y\]'):
         Plan.from_json(path)
+
+
+@pytest.mark.parametrize("z", [False, True])
+def test_from_json_reads_a_list_of_segments_as_the_records_of_the_same_walls(tmp_path, z):
+    """Reference: the same walls written as records, the format from_json has always read.
+    The two plans have the same segments and vertices, to the last bit."""
+    walls = np.concatenate([rect(0, 0, 10, 10), [[(2.5, 2.0), (2.5, 3.5)]]]) + 0.1
+    points = [[[*a, 1.5], [*b, 1.5]] if z else [a, b] for a, b in walls.tolist()]
+    records = tmp_path / "records.json"
+    records.write_text(json.dumps([{"start": a, "end": b} for a, b in points]))
+    segments = tmp_path / "segments.json"
+    segments.write_text(json.dumps(points))
+    ref, plan = Plan.from_json(records), Plan.from_json(segments)
+    assert plan.segments.dtype == ref.segments.dtype
+    np.testing.assert_array_equal(plan.segments, ref.segments)
+    np.testing.assert_array_equal(plan.vertices, ref.vertices)
+    np.testing.assert_array_equal(plan.segments, walls)
+
+
+@pytest.mark.parametrize("content", [
+    '{"start": [0, 0], "end": [4, 0]}',  # one record, not a list
+    "[[0, 0], [4, 0], [4, 3]]",  # a polygon: points, not segments
+    "[[0, 0, 4, 0], [4, 0, 4, 3]]",  # rows of x0, y0, x1, y1
+    '[{"start": [0, 0], "end": [4, 0]}, [[4, 0], [4, 3]]]',  # the two formats mixed
+    '[{"start": [0, 0]}]',  # a record without its end
+    '[{"start": [0], "end": [4, 0]}]',  # a record with one coordinate
+    '[{"start": "a", "end": [4, 0]}]',  # a record with a name for a point
+    '[[[0, 0], [4, 0]], [[4, 0, 1], [4, 3]]]',  # points of two and three coordinates
+    '"walls"',
+])
+def test_from_json_refuses_other_content_and_names_both_formats(tmp_path, content):
+    """These used to fail with a KeyError or a TypeError that named no format."""
+    path = tmp_path / "walls.json"
+    path.write_text(content)
+    with pytest.raises(ValueError, match=r'"start": \[x, y\], "end": \[x, y\]\}.* or a list of '
+                                         r"segments \[\[x0, y0\], \[x1, y1\]\]"):
+        Plan.from_json(path)
+
+
+def test_from_json_reads_an_empty_list_as_a_plan_without_walls(tmp_path):
+    path = tmp_path / "walls.json"
+    path.write_text("[]")
+    assert len(Plan.from_json(path)) == 0
 
 
 def test_flood_grid_over_a_domain_inside_one_room():

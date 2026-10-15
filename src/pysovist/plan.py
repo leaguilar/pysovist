@@ -68,32 +68,42 @@ class Plan:
 
     @classmethod
     def from_json(cls, path, keys=("start", "end")) -> Plan:
-        """Read a list of ``{"start": [x, y(, z)], "end": [x, y(, z)]}`` records.
+        """Read wall segments from a JSON file, as records or as a list of segments.
+
+        The file holds one of two formats:
+
+        - a list of records ``{"start": [x, y], "end": [x, y]}``, one per wall,
+        - a list of segments ``[[x0, y0], [x1, y1]]``, one per wall.
+
+        Each point may carry a third coordinate, which is dropped. Both
+        formats give the same plan for the same walls.
 
         Parameters
         ----------
         path : str or os.PathLike
-            JSON file holding a list of records.
+            JSON file in one of the two formats.
         keys : (str, str)
-            Names of the two endpoint fields of a record. A third coordinate
-            is dropped.
+            Names of the two endpoint fields of a record. Unused for a list
+            of segments.
 
         Returns
         -------
         Plan
-            One segment per record, in file order, less zero-length ones.
+            One segment per record or per segment, in file order, less
+            zero-length ones. An empty list gives a plan without segments.
 
         Raises
         ------
         FileNotFoundError
             When ``path`` does not exist.
-        KeyError
-            When a record lacks one of ``keys``.
         ValueError
-            When a coordinate is not finite.
+            When the file holds anything else, such as a record that lacks
+            one of ``keys``, a list of points, rows of ``x0, y0, x1, y1`` or
+            the two formats mixed (the message names both formats), when it
+            is not JSON, or when a coordinate is not finite.
         """
-        records = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls([[r[keys[0]][:2], r[keys[1]][:2]] for r in records])
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        return cls(_json_segments(data, keys, name=f"the plan {path}"))
 
     @classmethod
     def from_ifc(cls, path, height: float, *, classes="walls", storey=None) -> Plan:
@@ -290,6 +300,51 @@ def _as_segments(segments) -> np.ndarray:
     if bad.any():
         k = int(np.flatnonzero(bad)[0])
         raise ValueError(f"segment coordinates must be finite: segment {k} is {s[k].tolist()}")
+    return s
+
+
+def _json_formats(keys=("start", "end")) -> str:
+    """The two formats of a plan file, for messages."""
+    return (f'a list of records {{"{keys[0]}": [x, y], "{keys[1]}": [x, y]}} or a list of '
+            f"segments [[x0, y0], [x1, y1]], with an optional z in each point")
+
+
+def _json_segments(data, keys=("start", "end"), name: str = "a plan file",
+                   first: int = 0) -> np.ndarray:
+    """Segments of shape (n, 2, 2) or (n, 2, 3) from the content of a plan file.
+
+    ``data`` is a list of records with the endpoint fields ``keys`` or a list of segments.
+    Anything else raises a ValueError that names ``name`` and both formats, and counts records
+    from ``first``. Coordinates are not checked for finite values here.
+    """
+    formats = _json_formats(keys)
+    if not isinstance(data, list):
+        kind = {dict: "an object", str: "a string", bool: "a boolean", type(None): "null"}.get(
+            type(data), "a number")
+        raise ValueError(f"{name} must hold {formats}, not {kind}")
+    if not data:
+        return np.empty((0, 2, 2))
+    if all(isinstance(r, dict) for r in data):
+        segments = []
+        for i, r in enumerate(data):
+            try:
+                ends = np.asarray([r[keys[0]][:2], r[keys[1]][:2]], dtype=float)
+            except (KeyError, TypeError, ValueError):
+                ends = None
+            if ends is None or ends.shape != (2, 2):
+                raise ValueError(f"record {i + first} of {name} is not a wall: {r!r}. A plan "
+                                 f"file holds {formats}")
+            segments.append(ends)
+        return np.array(segments)
+    if any(isinstance(r, dict) for r in data):
+        raise ValueError(f"{name} must hold {formats}, not records and segments mixed")
+    try:
+        s = np.asarray(data, dtype=float)
+    except (TypeError, ValueError):
+        s = None
+    if s is None or s.ndim != 3 or s.shape[1] != 2 or s.shape[2] not in (2, 3):
+        shape = "lists of mixed lengths" if s is None else f"an array of shape {s.shape}"
+        raise ValueError(f"{name} must hold {formats}, not {shape}")
     return s
 
 

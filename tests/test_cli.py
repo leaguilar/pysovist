@@ -273,6 +273,8 @@ def assert_same_table(path, ref):
                                   check_dtype=False)
 
 
+BOTH_FORMATS = (r'list of records \{"start": \[x, y\], "end": \[x, y\]\} or a list of segments '
+                r"\[\[x0, y0\], \[x1, y1\]\]")  # the two formats of a plan file
 FOOTPRINT = [(0, 0), (10, 0), (10, 4), (4, 4), (4, 9), (0, 9)]  # an L-shaped building
 INNER = [[(2.5, 2.0), (2.5, 3.5)], [(6.0, 1.0), (7.5, 1.0)]]  # its interior walls
 
@@ -647,9 +649,15 @@ def test_a_non_finite_eye_height_in_the_z_column_is_refused(tmp_path, capsys, cl
     ("walls.csv", "a,b\n0,0\n", r"no column.*'x0'"),
     ("walls.csv", "x0,y0,x1,y1\n0,0,10,0\n10,0,,10\n", r"row 2"),
     ("walls.json", '[{"start": [0, 0], "end": [10, NaN]}]', r"record 1"),
-    ("walls.json", "[[[0, 0], [10, 0]]]", r'"start"'),
+    ("walls.json", "[[[0, 0], [10, 0]], [[10, 0], [10, NaN]]]", r"segment 2"),
+    ("walls.json", "[[0, 0], [10, 0], [10, 10]]", BOTH_FORMATS),
+    ("walls.json", "[[0, 0, 10, 0]]", BOTH_FORMATS),
+    ("walls.json", '{"start": [0, 0], "end": [10, 0]}', BOTH_FORMATS),
+    ("walls.json", '[{"start": [0, 0], "end": [10, 0]}, [[10, 0], [10, 10]]]', BOTH_FORMATS),
+    ("walls.json", '[{"start": [0, 0]}]', r"record 1 .*" + BOTH_FORMATS),
     ("walls.json", "[]", r"no wall"),
     ("walls.json", '[{"start": [1, 1], "end": [1, 1]}]', r"no wall"),
+    ("walls.json", "[[[1, 1], [1, 1]]]", r"no wall"),
 ])
 def test_a_plan_file_without_valid_walls_is_refused(square, tmp_path, capsys, name, content,
                                                     match):
@@ -658,9 +666,25 @@ def test_a_plan_file_without_valid_walls_is_refused(square, tmp_path, capsys, na
     plan.write_text(content)
     out = tmp_path / "out.csv"
     refused(["isovist", "--plan", plan, "--points", pts, "--out", out], match, capsys, out)
-    if not content.startswith("[[["):  # the same plan, extruded
-        pytest.importorskip("open3d")
-        refused(["volume", "--plan", plan, "--points", pts, "--out", out], match, capsys, out)
+    pytest.importorskip("open3d")  # the same plan, extruded
+    refused(["volume", "--plan", plan, "--points", pts, "--out", out], match, capsys, out)
+
+
+def test_a_plan_file_may_list_segments_in_place_of_records(tmp_path):
+    """Reference: the same walls as records, and isovist_field on the walls themselves. The
+    list of segments, with or without z, gives the same table to the last bit."""
+    walls = np.concatenate([rect(0, 0, 10, 10), rect(4, 4, 5, 6)])
+    pts = write_points(tmp_path / "pts.csv", x=[2.0, 7.5, 8.0], y=[3.0, 5.0, 9.5])
+    ref = isovist_field(Plan(walls), pd.read_csv(pts).to_numpy())
+    records = write_plan(tmp_path / "records.json", walls)
+    flat = tmp_path / "segments.json"
+    flat.write_text(json.dumps(walls.tolist()))
+    with_z = tmp_path / "segments_z.json"
+    with_z.write_text(json.dumps([[[*a, 0.0], [*b, 0.0]] for a, b in walls.tolist()]))
+    for plan in (records, flat, with_z):
+        out = tmp_path / f"iso_{plan.stem}.csv"
+        main(["isovist", "--plan", str(plan), "--points", str(pts), "--out", str(out)])
+        assert_same_table(out, ref)
 
 
 @pytest.mark.parametrize("ring, match", [

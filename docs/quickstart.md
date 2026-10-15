@@ -144,7 +144,7 @@ Every run also writes a JSON file next to the CSV (`isovists.json` for `isovists
 
 | Option | Command | Default | Meaning |
 |---|---|---|---|
-| `--plan` | `isovist`, `volume` | | Wall segments: JSON records with `start` and `end`, or a CSV with columns `x0, y0, x1, y1`. For `volume`, the plan is extruded with `Mesh.from_plan`. |
+| `--plan` | `isovist`, `volume` | | Wall segments: JSON records with `start` and `end`, a JSON list of segments `[[x0, y0], [x1, y1]]`, or a CSV with columns `x0, y0, x1, y1`. For `volume`, the plan is extruded with `Mesh.from_plan`. |
 | `--ifc` | `isovist`, `volume` | | IFC model. For `isovist` it is cut at `--height` with `Plan.from_ifc`, and for `volume` it is read with `Mesh.from_ifc`. |
 | `--height` | `isovist` | | Height of the cut through an IFC model in metres, above the storey's elevation or the project origin. |
 | `--ifc-classes` | `isovist`, `volume` | walls | Presets and IFC classes to read with `--ifc`, as in [BIM models](ifc.md#classes). |

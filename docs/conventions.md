@@ -8,7 +8,7 @@ Lengths are in metres. Angles are in radians, measured counter-clockwise from th
 
 A `Plan` is an array of wall segments of shape (n, 2, 2): segment `i` runs from `segments[i, 0] = [x0, y0]` to `segments[i, 1] = [x1, y1]`. A third coordinate, if present, is dropped. Segments shorter than 1e-12 m are removed. Walls may cross each other, and every crossing point becomes a vertex of the plan.
 
-`Plan.from_json` reads a list of records `{"start": [x, y], "end": [x, y]}`, with an optional z in each point. The command line also reads a CSV with columns `x0, y0, x1, y1`. `Plan.from_ifc` cuts a BIM model at a height, and `Mesh.section` cuts any mesh, as described on the [BIM models](ifc.md) page.
+`Plan.from_json` reads a JSON file that holds a list of records `{"start": [x, y], "end": [x, y]}` or a list of segments `[[x0, y0], [x1, y1]]`, with an optional z in each point. Both give the same plan for the same walls. Any other content raises a `ValueError` that names both formats. The command line reads the same two formats and also a CSV with columns `x0, y0, x1, y1`. `Plan.from_ifc` cuts a BIM model at a height, and `Mesh.section` cuts any mesh, as described on the [BIM models](ifc.md) page.
 
 A wall is a two-sided segment with no thickness and no inside. An observer inside a closed outline, such as a pillar, sees the inside of that outline. Grid points that fall inside solid objects should be removed before an `isovist_field` call.
 

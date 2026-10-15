@@ -22,7 +22,8 @@ Platform passes them to a component, and works in ``ODTP_INPUT`` and ``ODTP_OUTP
 (default ``/odtp/odtp-input`` and ``/odtp/odtp-output``):
 
     TASK             isovist | volume | section
-    PLAN_FILE        wall segments (JSON records with start/end, or CSV x0,y0,x1,y1)
+    PLAN_FILE        wall segments (JSON records with start/end, a JSON list of segments
+                     [[x0, y0], [x1, y1]], or CSV x0,y0,x1,y1)
     CLOSE_FILE       optional polygon [[x, y], ...] that closes the domain (JSON)
     POINTCLOUD_FILE  point cloud (.pts, .las, .laz, .e57, .ply, .pcd) for TASK=volume or section
     MESH_FILE        mesh (.ply, .obj, .stl, ...) for TASK=volume
@@ -59,7 +60,6 @@ DEFAULTS = {"isovist": {"ifc_classes": ["walls"]},
 SCENE_OPTIONS = {"isovist": {"height": "ifc", "ifc_classes": "ifc", "ifc_storey": "ifc"},
                  "volume": {"ifc_classes": "ifc", "ifc_storey": "ifc", "close": "plan",
                             "floor": "plan", "ceiling": "plan", "radius": "cloud"}}
-_RECORD = 'a list of records {"start": [x, y], "end": [x, y]}'
 _RING = "a list of vertices [[x, y], ...] in order"
 
 
@@ -220,21 +220,23 @@ def _read_plan(path: Path):
 
 
 def _check_records(path: Path) -> None:
+    """Refuse a JSON plan that holds neither format of ``Plan.from_json``, or a bad coordinate."""
+    from .plan import _json_formats, _json_segments
+
     try:
-        records = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
-        raise SystemExit(f"the plan {path} is not JSON ({e}): it must be {_RECORD}") from None
-    if not isinstance(records, list):
-        raise SystemExit(f"the plan {path} must be {_RECORD}")
-    for i, r in enumerate(records, 1):
-        try:
-            ends = np.asarray([r["start"][:2], r["end"][:2]], dtype=float)
-        except (KeyError, TypeError, ValueError, IndexError):
-            raise SystemExit(f"record {i} of the plan {path} is not a wall: the plan must be "
-                             f"{_RECORD}") from None
-        if ends.shape != (2, 2) or not np.isfinite(ends).all():
-            raise SystemExit(f"record {i} of the plan {path} has a missing or non-finite "
-                             "coordinate")
+        raise SystemExit(f"the plan {path} is not JSON ({e}): it must hold "
+                         f"{_json_formats()}") from None
+    try:
+        segments = _json_segments(data, name=f"the plan {path}", first=1)
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
+    bad = ~np.isfinite(segments[:, :, :2]).all(axis=(1, 2))
+    if bad.any():
+        kind = "record" if isinstance(data[0], dict) else "segment"
+        raise SystemExit(f"{kind} {int(np.flatnonzero(bad)[0]) + 1} of the plan {path} has a "
+                         "missing or non-finite coordinate")
 
 
 def _check_closing(plan, ring, path) -> None:

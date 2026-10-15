@@ -4,7 +4,9 @@
 
 Text files are read and written as UTF-8 on every platform: wall plans and closing polygons in JSON, point clouds in
 `.pts` files, and the records of the command line. A plan with a non-ASCII name now reads on Windows, whose default
-encoding is not UTF-8. Every result is that of 0.2.0.
+encoding is not UTF-8. A closing polygon that cuts the plan now stops the command line with a message that names
+`--close`, as every other inconsistent input does, where 0.2.0 ended with a Python traceback. Every result is that of
+0.2.0.
 
 ## 0.2.0
 

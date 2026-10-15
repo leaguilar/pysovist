@@ -237,6 +237,17 @@ def _check_records(path: Path) -> None:
                              "coordinate")
 
 
+def _check_closing(plan, ring, path) -> None:
+    """Refuse a closing polygon that cuts the plan, with the advice of the command line."""
+    from .mesh import Mesh
+
+    try:
+        Mesh.check_closing(plan, ring)
+    except ValueError as e:
+        msg = str(e).replace("needs no polygon: keep the default close='hull'", "needs no --close")
+        raise SystemExit(f"{msg} (closing polygon {path})") from None
+
+
 def _read_ring(path: Path | None):
     if path is None:
         return None
@@ -388,9 +399,7 @@ def _isovist(a: argparse.Namespace) -> None:
         plan = _read_plan(a.plan)
     ring = _read_ring(a.close)
     if ring is not None:
-        from .mesh import Mesh
-
-        Mesh.check_closing(plan, ring)
+        _check_closing(plan, ring, a.close)
         closing = np.stack([ring, np.roll(ring, -1, axis=0)], axis=1)
         plan = Plan(np.concatenate([plan.segments, closing]))
     pts = _read_points(a.points, None, 2)
@@ -433,6 +442,8 @@ def _volume(a: argparse.Namespace) -> None:
         from .mesh import Mesh
 
         plan, ring = _read_plan(a.plan), _read_ring(a.close)
+        if ring is not None:
+            _check_closing(plan, ring, a.close)
         occ = Mesh.from_plan(plan, floor=a.floor, ceiling=a.ceiling,
                              close=ring if ring is not None else "hull")
     pts = _read_points(a.points, a.eye_height, 3)

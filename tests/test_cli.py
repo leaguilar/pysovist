@@ -243,9 +243,12 @@ def test_a_closing_polygon_that_cuts_the_plan_is_refused(square_plan, points, tm
     ring = tmp_path / "ring.json"
     ring.write_text(json.dumps([[0, 0], [10, 0], [10, 10]]))
     refused = r"walls lie mostly outside the closing polygon"
-    with pytest.raises((SystemExit, ValueError), match=refused):
+    with pytest.raises(SystemExit, match=refused) as stop:
         main([command, "--plan", str(square_plan), "--close", str(ring), "--points", str(points),
               "--out", str(tmp_path / "out.csv")])
+    # the advice names the option of the command line, not the argument of the Python call
+    assert "--close" in str(stop.value) and "close='hull'" not in str(stop.value)
+    assert not (tmp_path / "out.csv").exists()
 
 
 def test_the_outline_of_a_closed_plan_closes_the_isovist_command(square_plan, points, tmp_path):

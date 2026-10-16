@@ -139,7 +139,7 @@ def segment_visibility(
     *,
     max_distance: float = np.inf,
     fov: float = TWO_PI,
-    direction: float = 0.0,
+    direction: float | tuple[float, float] = 0.0,
     on_wall: str = "nan",
     eps: float = 1e-9,
 ) -> SegmentVisibility:
@@ -164,9 +164,11 @@ def segment_visibility(
     direction : float or (dx, dy)
         Viewing direction: an angle in radians, counter-clockwise from +x,
         between -2 pi and 2 pi, or a vector ``(dx, dy)`` that points along
-        it, which gives the same result as the angle ``atan2(dy, dx)``. Used
-        only when ``fov`` is below a full turn. A larger angle raises a
-        ``ValueError``: an angle in degrees converts with ``math.radians``.
+        it, which gives the same result as the angle ``atan2(dy, dx)``. It
+        matters only when ``fov`` is below a full turn, and it is checked in
+        every call. A larger angle raises a ``ValueError``: an angle in
+        degrees converts with ``math.radians``, and an angle in radians of
+        more than a turn wraps with ``math.remainder(a, math.tau)``.
     on_wall : {"nan", "raise"}
         What to do when the observer is closer than ``eps`` to a segment:
         return NaN lengths with ``flags.on_wall`` set, or raise a
@@ -255,9 +257,9 @@ def segment_visibility_field(
     **kw
         Keyword arguments of
         [`segment_visibility`][pysovist.visibility2d.segment_visibility],
-        applied to every viewpoint. ``direction`` is one angle or one vector
-        for every viewpoint, and a sequence of two numbers is always a
-        vector ``(dx, dy)``. For a direction per viewpoint, call
+        applied to every viewpoint. ``direction`` is one angle in radians for
+        every viewpoint. A vector ``(dx, dy)`` converts with
+        ``math.atan2(dy, dx)``. For a direction per viewpoint, call
         ``segment_visibility`` for each viewpoint in a loop.
 
     Returns
@@ -284,8 +286,8 @@ def segment_visibility_field(
     ------
     ValueError
         When a viewpoint is not finite, when ``n_jobs`` or ``chunk`` is not a
-        positive integer (``n_jobs`` may be -1), when ``direction`` holds one
-        angle per viewpoint, or for a keyword argument that
+        positive integer (``n_jobs`` may be -1), when ``direction`` is not one
+        angle, or for a keyword argument that
         ``segment_visibility`` refuses.
     TypeError
         For a keyword argument that ``segment_visibility`` does not take.
@@ -361,7 +363,7 @@ def segment_ray_hits(
     *,
     max_distance: float = np.inf,
     fov: float = TWO_PI,
-    direction=0.0,
+    direction: float | tuple[float, ...] = 0.0,
     layout: str = "even",
 ) -> np.ndarray:
     """Number of sampled rays whose first hit lies on each segment.
@@ -393,13 +395,16 @@ def segment_ray_hits(
         it, such as 2 pi in float32.
         A larger value raises a ``ValueError``: an angle in degrees
         converts with ``math.radians``. Default: full turn.
-    direction : float or (x, y)
+    direction : float, (dx, dy) or (dx, dy, dz)
         Viewing direction in radians, counter-clockwise from +x, between
         -2 pi and 2 pi, or as a vector like the component's Viewing
-        Direction, ``(x, y)`` or ``(x, y, z)`` with the third component
+        Direction, ``(dx, dy)`` or ``(dx, dy, dz)`` with the third component
         ignored. The vector gives the component's rays bit for bit. An angle
         in radians gives the same rays unless the rounding of its conversion
-        moves the last ray across the far edge of the view.
+        moves the last ray across the far edge of the view. It is checked
+        in every call. A larger angle raises a ``ValueError``: an angle in
+        degrees converts with ``math.radians``, and an angle in radians of
+        more than a turn wraps with ``math.remainder(a, math.tau)``.
     layout : {"even", "decodingspaces"}
         ``"even"``: ``n_rays`` equally spaced rays, from ``direction`` around
         the full turn, or from one edge of the field of view to the other, as
@@ -429,8 +434,8 @@ def segment_ray_hits(
         number of at least 1 (``"even"``) or is NaN (``"decodingspaces"``),
         ``max_distance`` or ``fov`` is not positive, ``fov`` exceeds 2 pi,
         ``direction`` is an angle beyond 2 pi in size, is not
-        finite or is a vector without an x or y component, or ``layout`` is
-        unknown.
+        finite, is a vector without an x or y component or has four or more
+        components, or ``layout`` is unknown.
 
     Notes
     -----
@@ -445,11 +450,14 @@ def segment_ray_hits(
     segs, plan, keep = _segments(occluders)
     o = _point2d(origin, "origin")
     bearing = None
+    if np.ndim(direction) == 1 and np.size(direction) > 3:
+        raise ValueError(f"direction must be one angle in radians, one vector (dx, dy) or the "
+                         f"plugin's (dx, dy, dz), got an array of shape {np.shape(direction)}")
     if np.ndim(direction) == 1 and np.size(direction) >= 2:
         v = np.asarray(direction, dtype=float)[:2]
         if not np.isfinite(v).all() or not v.any():
-            raise ValueError(f"direction must be an angle or a finite vector with an x or y "
-                             f"component, got {direction!r}")
+            raise ValueError(f"direction as a vector (dx, dy) must be finite, with an x or y "
+                             f"component, got {tuple(np.asarray(direction, float).tolist())}")
         bearing = np.arctan2(v[0], v[1]) % TWO_PI  # clockwise from +y, as the component
         direction = np.arctan2(v[1], v[0])
     R, fov, direction, _ = _view_settings(max_distance, fov, direction)

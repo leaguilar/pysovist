@@ -170,7 +170,8 @@ def _field_of_view(hfov, vfov, elevation) -> tuple[float, float, float, float]:
 
 
 def in_field_of_view(directions, *, hfov: float = 2 * np.pi, vfov: float = np.pi,
-                     direction: float = 0.0, elevation: float = 0.0) -> np.ndarray:
+                     direction: float | tuple[float, float] = 0.0,
+                     elevation: float = 0.0) -> np.ndarray:
     """Which directions lie inside a field of view, as a boolean array.
 
     A direction lies inside when its azimuth lies in
@@ -196,7 +197,9 @@ def in_field_of_view(directions, *, hfov: float = 2 * np.pi, vfov: float = np.pi
         counter-clockwise from +x, between -2 pi and 2 pi, or a horizontal
         vector ``(dx, dy)`` that points along it, which gives the same result
         as the angle ``atan2(dy, dx)``. Default 0. A larger angle raises a
-        ``ValueError``: an angle in degrees converts with ``math.radians``.
+        ``ValueError``: an angle in degrees converts with ``math.radians``,
+        and an angle in radians of more than a turn wraps with
+        ``math.remainder(a, math.tau)``.
     elevation : float
         Elevation of the centre of the field, in radians above the horizontal
         plane. Default 0. The vertical field must lie between the poles.
@@ -232,7 +235,7 @@ def in_field_of_view(directions, *, hfov: float = 2 * np.pi, vfov: float = np.pi
 
 
 def angle_grid(n_azimuth: int, n_elevation: int, *, hfov: float = 2 * np.pi,
-               vfov: float = np.pi, direction: float = 0.0,
+               vfov: float = np.pi, direction: float | tuple[float, float] = 0.0,
                elevation: float = 0.0) -> tuple[np.ndarray, np.ndarray]:
     """Cell centres of an azimuth-elevation grid over a field of view, with their solid angles.
 

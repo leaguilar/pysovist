@@ -44,9 +44,9 @@ def isovist_field(occluders, origins, *, n_jobs: int = 1, chunk: int = 256, **kw
         process.
     **kw
         Keyword arguments of [`isovist`][pysovist.isovist], applied to every observer.
-        ``direction`` is one angle or one vector for every observer, and a
-        sequence of two numbers is always a vector ``(dx, dy)``. For a
-        direction per observer, call ``isovist`` for each observer in a loop.
+        ``direction`` is one angle in radians for every observer. A vector
+        ``(dx, dy)`` converts with ``math.atan2(dy, dx)``. For a direction
+        per observer, call ``isovist`` for each observer in a loop.
 
     Returns
     -------
@@ -60,8 +60,8 @@ def isovist_field(occluders, origins, *, n_jobs: int = 1, chunk: int = 256, **kw
     ------
     ValueError
         When an origin is not finite, when ``n_jobs`` or ``chunk`` is not a
-        positive integer (``n_jobs`` may be -1), when ``direction`` holds one
-        angle per observer, or for any argument that
+        positive integer (``n_jobs`` may be -1), when ``direction`` is not one
+        angle, or for any argument that
         [`isovist`][pysovist.isovist] refuses.
     TypeError
         For a keyword argument that ``isovist`` does not take.

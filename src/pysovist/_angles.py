@@ -73,9 +73,20 @@ def direction_angle(direction, name: str = "direction", loop: str | None = None)
     An angle must be finite and between -2 pi and 2 pi (up to ``FULL_TURN_TOL``), and comes
     back unchanged. A vector ``(dx, dy)`` must be finite and not zero, and gives
     ``atan2(dy, dx)``. Any other shape raises. A field passes ``loop``, the function that takes
-    one observer, so that the message for one direction per observer names the loop to write.
+    one observer: a field takes one angle for every observer, since with two observers a
+    vector and two angles look alike, and its message names the loop to write.
     """
+    if direction is None:
+        raise ValueError(f"{name} must be an angle in radians, counter-clockwise from +x"
+                         f"{'' if loop else ', or a vector (dx, dy)'}, got None")
     v = np.asarray(direction, dtype=float)
+    if loop is not None:
+        if v.ndim:
+            raise ValueError(f"{name} of a field is one angle in radians for every observer, got "
+                             f"an array of shape {v.shape}. A vector (dx, dy) converts with "
+                             f"math.atan2(dy, dx). For a direction per observer, call {loop} for "
+                             f"each observer in a loop")
+        return angle(v, name, "counter-clockwise from +x")
     if v.ndim == 0:
         return angle(v, name, "counter-clockwise from +x", ", or a vector (dx, dy)")
     if v.shape == (2,):
@@ -83,9 +94,5 @@ def direction_angle(direction, name: str = "direction", loop: str | None = None)
             raise ValueError(f"{name} as a vector (dx, dy) must be finite, with an x or y "
                              f"component, got {tuple(v.tolist())}")
         return float(np.arctan2(v[1], v[0]))
-    if loop is not None:
-        raise ValueError(f"{name} is one angle in radians or one vector (dx, dy) for every "
-                         f"observer, got an array of shape {v.shape}. For a direction per "
-                         f"observer, call {loop} for each observer in a loop")
     raise ValueError(f"{name} must be one angle in radians or one vector (dx, dy), got an array "
                      f"of shape {v.shape}")

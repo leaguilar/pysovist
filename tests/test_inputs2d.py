@@ -6,6 +6,7 @@ names the argument and says what to pass, or returns a documented result.
 """
 
 import math
+import re
 
 import numpy as np
 import pandas as pd
@@ -187,19 +188,56 @@ def test_a_full_turn_up_to_rounding_is_the_full_turn(name, fov):
     assert iso.metrics["perimeter"] == pytest.approx(40.0, rel=1e-12)
 
 
-THREE = [(4.0, 3.0), (7.0, 8.0), (2.0, 2.0)]  # observers inside the square
+TWO = [(4.0, 3.0), (7.0, 8.0)]  # observers inside the square
+THREE = [*TWO, (2.0, 2.0)]
 
-# Every public 2D function that takes a viewing direction in radians, with a field of view of
-# one radian so that the direction matters.
+
+def _ray_hits_ds(d):
+    return segment_ray_hits(SQUARE, (4.0, 3.0), 36, fov=1.0, direction=d, layout="decodingspaces")
+
+
+# Every public 2D function of one observer that takes a viewing direction in radians, with a
+# field of view of one radian so that the direction matters.
 DIRECTION_CALLS = {
     "isovist": lambda d: _wedges(isovist(SQUARE, (4.0, 3.0), fov=1.0, direction=d)),
-    "isovist_field": lambda d: isovist_field(SQUARE, THREE, fov=1.0, direction=d),
     "segment_visibility": lambda d: _visibility(segment_visibility(SQUARE, (4.0, 3.0), fov=1.0,
                                                                    direction=d)),
-    "segment_visibility_field": lambda d: segment_visibility_field(
-        SQUARE, THREE, fov=1.0, direction=d, per_viewpoint=True, chunk=1),
     "segment_ray_hits": lambda d: segment_ray_hits(SQUARE, (4.0, 3.0), 36, fov=1.0, direction=d),
 }
+
+# The fields, which take one angle for every observer.
+FIELD_CALLS = {
+    "isovist_field": lambda d, at=THREE: isovist_field(SQUARE, at, fov=1.0, direction=d),
+    "segment_visibility_field": lambda d, at=THREE: segment_visibility_field(
+        SQUARE, at, fov=1.0, direction=d, per_viewpoint=True, chunk=1),
+}
+LOOPS = {"isovist_field": "isovist", "segment_visibility_field": "segment_visibility"}
+
+# What a direction one full turn away leaves unchanged in each function: the metrics, the
+# visible lengths and angles, and the hits.
+TURN_CALLS = {
+    "isovist": lambda d: isovist(SQUARE, (4.0, 3.0), fov=1.0, direction=d).metrics,
+    "segment_visibility": lambda d: (lambda v: (v.visible_length, v.visible_angle))(
+        segment_visibility(SQUARE, (4.0, 3.0), fov=1.0, direction=d)),
+    "segment_ray_hits": DIRECTION_CALLS["segment_ray_hits"],
+    "segment_ray_hits_ds": _ray_hits_ds,
+    **FIELD_CALLS,
+}
+
+
+def assert_close(a, b):
+    """Equal to a relative 1e-9, tables included, and counts exactly."""
+    if isinstance(a, tuple):
+        for x, y in zip(a, b, strict=True):
+            assert_close(x, y)
+    elif isinstance(a, pd.DataFrame):
+        pd.testing.assert_frame_equal(a, b, check_exact=False, rtol=1e-9, atol=1e-12)
+    elif isinstance(a, dict):
+        assert a == pytest.approx(b, rel=1e-9, abs=1e-12)
+    elif np.issubdtype(np.asarray(a).dtype, np.integer):
+        np.testing.assert_array_equal(a, b)
+    else:
+        np.testing.assert_allclose(a, b, rtol=1e-9, atol=1e-12)
 
 
 @pytest.mark.parametrize("name", DIRECTION_CALLS)
@@ -213,43 +251,59 @@ def test_a_direction_vector_gives_the_view_of_its_angle(name, vector):
         assert_same(DIRECTION_CALLS[name](v), ref)
 
 
+BEYOND = [45.0, -90.0, 360.0, 6.5, 2 * math.pi * (1 + 2e-6), -2 * math.pi - 1e-5]
+
+
+def cures(direction):
+    """The two cures that a direction beyond a full turn is given, as a pattern."""
+    return (rf"math\.radians\({re.escape(repr(direction))}\)\. An angle in radians of more "
+            rf"than a turn wraps with math\.remainder\({re.escape(repr(direction))}, math\.tau\)")
+
+
 @pytest.mark.parametrize("name", [*DIRECTION_CALLS, "segment_ray_hits_ds"])
-@pytest.mark.parametrize("direction", [45.0, -90.0, 360.0, 6.5, 2 * math.pi * (1 + 2e-6),
-                                       -2 * math.pi - 1e-5])
+@pytest.mark.parametrize("direction", BEYOND)
 def test_a_direction_beyond_a_full_turn_is_refused_as_degrees(name, direction):
     """direction=45, meant as degrees, used to give the view along 45 radians. The message
     gives both cures: degrees convert, and radians of more than a turn, as np.unwrap returns
     them, wrap."""
-    call = DIRECTION_CALLS.get(name) or (lambda d: segment_ray_hits(
-        SQUARE, (4.0, 3.0), 36, fov=1.0, direction=d, layout="decodingspaces"))
+    call = DIRECTION_CALLS.get(name, _ray_hits_ds)
     with pytest.raises(ValueError, match=r"direction must be an angle in radians, "
                                          r"counter-clockwise from \+x, between -2 pi and 2 pi, "
-                                         r"or a vector \(dx, dy\).*math\.radians\("
-                                         rf"{direction!r}\).*math\.remainder\({direction!r}, "
-                                         r"math\.tau\)"):
+                                         r"or a vector \(dx, dy\), got .*" + cures(direction)):
         call(direction)
 
 
-@pytest.mark.parametrize("name", DIRECTION_CALLS)
+@pytest.mark.parametrize("name", FIELD_CALLS)
+@pytest.mark.parametrize("direction", BEYOND)
+def test_a_field_direction_beyond_a_full_turn_is_refused_as_degrees(name, direction):
+    """A field takes no vector, so its message offers none."""
+    with pytest.raises(ValueError, match=r"direction must be an angle in radians, "
+                                         r"counter-clockwise from \+x, between -2 pi and 2 pi, "
+                                         r"got .*" + cures(direction)) as e:
+        FIELD_CALLS[name](direction)
+    assert "vector" not in str(e.value)
+
+
+@pytest.mark.parametrize("name", TURN_CALLS)
 @pytest.mark.parametrize("turns", [1, -1])
 def test_a_direction_of_a_full_turn_is_taken(name, turns):
-    """Closed form: a direction one full turn away looks the same way, so the visible areas,
-    lengths and hits agree with those of direction 0 (to rounding, as the angles differ)."""
-    for d in (turns * 2 * math.pi, turns * (2 * math.pi + 1e-13), np.float32(turns * 2 * math.pi)):
-        DIRECTION_CALLS[name](d)
-    iso = isovist(SQUARE, (4.0, 3.0), fov=1.0, direction=turns * 2 * math.pi)
-    ref = isovist(SQUARE, (4.0, 3.0), fov=1.0, direction=0.0)
-    assert iso.area == pytest.approx(ref.area, rel=1e-12)
+    """Closed form: a direction one full turn away looks the same way, so the metrics, visible
+    lengths, visible angles and hits agree with those of the direction a turn back, to a
+    relative 1e-9 as the angles differ by rounding. A float32 2 pi, 1.75e-7 above 2 pi, looks
+    along 1.75e-7."""
+    turn = turns * 2 * math.pi
+    f32 = np.float32(turn)
+    for d, ref in ((turn, 0.0), (turns * (2 * math.pi + 1e-13), 0.0), (f32, float(f32) - turn)):
+        assert_close(TURN_CALLS[name](d), TURN_CALLS[name](ref))
 
 
 @pytest.mark.parametrize("name", [*DIRECTION_CALLS, "segment_ray_hits_ds"])
 @pytest.mark.parametrize("vector", [(0.0, 0.0), (NAN, 1.0), (1.0, INF)])
 def test_a_direction_vector_without_a_direction_is_refused(name, vector):
     """atan2(0, 0) is 0, so the zero vector used to look along +x in the even layout."""
-    call = DIRECTION_CALLS.get(name) or (lambda d: segment_ray_hits(
-        SQUARE, (4.0, 3.0), 36, fov=1.0, direction=d, layout="decodingspaces"))
-    with pytest.raises(ValueError, match=r"direction"):
-        call(vector)
+    with pytest.raises(ValueError, match=r"direction as a vector \(dx, dy\) must be finite, "
+                                         r"with an x or y component"):
+        DIRECTION_CALLS.get(name, _ray_hits_ds)(vector)
 
 
 @pytest.mark.parametrize("name", ["isovist", "segment_visibility", "segment_ray_hits"])
@@ -262,17 +316,34 @@ def test_a_direction_of_another_shape_is_refused(name, direction):
         DIRECTION_CALLS[name](direction)
 
 
-@pytest.mark.parametrize("field, single", [(isovist_field, "isovist"),
-                                           (segment_visibility_field, "segment_visibility")])
-@pytest.mark.parametrize("direction", [np.array([0.1, 0.2, 0.3]), [0.1, 0.2, 0.3],
+@pytest.mark.parametrize("name", FIELD_CALLS)
+@pytest.mark.parametrize("observers", [TWO, THREE])
+@pytest.mark.parametrize("direction", [[0.1, 0.2], (1.0, 0.0), np.array([0.3, 0.4]),
+                                       np.array([0.1, 0.2, 0.3]), [0.1, 0.2, 0.3],
                                        np.array([0.5]), np.zeros((3, 2))])
-def test_a_direction_per_observer_is_refused_with_the_loop_to_write(field, single, direction):
-    """isovist_field with one angle per observer used to fail with "TypeError: only
-    0-dimensional arrays can be converted to Python scalars"."""
-    with pytest.raises(ValueError, match=r"direction is one angle in radians or one vector "
-                                         r"\(dx, dy\) for every observer, got an array of "
-                                         rf"shape .*call {single} for each observer"):
-        field(SQUARE, THREE, fov=1.0, direction=direction)
+def test_a_field_refuses_every_direction_but_one_angle(name, observers, direction):
+    """With two observers, two angles and a vector (dx, dy) look alike: [0, pi / 2] used to
+    give the view along pi / 2 to both. With three, isovist_field used to fail with
+    "TypeError: only 0-dimensional arrays can be converted to Python scalars"."""
+    with pytest.raises(ValueError, match=r"direction of a field is one angle in radians for "
+                                         r"every observer, got an array of shape .*A vector "
+                                         r"\(dx, dy\) converts with math\.atan2\(dy, dx\)\. "
+                                         rf"For a direction per observer, call {LOOPS[name]} "
+                                         r"for each observer in a loop"):
+        FIELD_CALLS[name](direction, observers)
+
+
+@pytest.mark.parametrize("name", FIELD_CALLS)
+def test_a_field_takes_one_angle_as_its_observers_do(name):
+    """Reference: the function of one observer, called for each with the same angle."""
+    single = {"isovist_field": lambda o, d: isovist(SQUARE, o, fov=1.0, direction=d).area,
+              "segment_visibility_field": lambda o, d: segment_visibility(
+                  SQUARE, o, fov=1.0, direction=d).visible_length.sum()}[name]
+    d = math.atan2(2.0, 1.0)
+    out = FIELD_CALLS[name](d, TWO)
+    got = (out["area"].tolist() if name == "isovist_field" else
+           out[1].groupby("viewpoint")["visible_length"].sum().tolist())
+    assert got == [single(o, d) for o in TWO]
 
 
 def test_vertical_isovist_refuses_an_elevation_in_degrees():
@@ -446,10 +517,24 @@ def test_isovist_refuses_an_unknown_on_wall_policy_and_takes_a_large_eps():
     assert isovist(SQUARE, (5.0, 5.0), eps=6.0).flags.on_wall  # the walls are 5 m away
 
 
-@pytest.mark.parametrize("direction", [(0.0, 0.0), (NAN, 1.0), (1.0,)])
+@pytest.mark.parametrize("direction", [(0.0, 0.0), (NAN, 1.0), (1.0,), (0.0, 0.0, 1.0)])
 def test_segment_ray_hits_refuses_a_direction_vector_without_a_direction(direction):
     with pytest.raises(ValueError, match="direction"):
         segment_ray_hits(SQUARE, (5.0, 5.0), 10, direction=direction, layout="decodingspaces")
+
+
+@pytest.mark.parametrize("layout", ["even", "decodingspaces"])
+def test_segment_ray_hits_takes_the_vector_of_the_plugin_and_no_longer_one(layout):
+    """Reference: the component's Viewing Direction (dx, dy, dz) drops dz, as (dx, dy) does.
+    Four components used to pass with the last two dropped."""
+    ref = segment_ray_hits(SQUARE, (4.0, 3.0), 36, fov=1.0, direction=(0.0, 1.0), layout=layout)
+    np.testing.assert_array_equal(segment_ray_hits(SQUARE, (4.0, 3.0), 36, fov=1.0,
+                                                   direction=(0.0, 1.0, 5.0), layout=layout), ref)
+    with pytest.raises(ValueError, match=r"direction must be one angle in radians, one vector "
+                                         r"\(dx, dy\) or the plugin's \(dx, dy, dz\), got an "
+                                         r"array of shape \(4,\)"):
+        segment_ray_hits(SQUARE, (4.0, 3.0), 36, fov=1.0, direction=(0.0, 1.0, 0.0, 9.0),
+                         layout=layout)
 
 
 def test_segment_ray_hits_takes_a_direction_vector_in_the_even_layout():

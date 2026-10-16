@@ -280,7 +280,7 @@ def view_volume(
     radius: float | None = None,
     hfov: float = 2 * np.pi,
     vfov: float = np.pi,
-    direction: float = 0.0,
+    direction: float | tuple[float, float] = 0.0,
     elevation: float = 0.0,
     weights=None,
     object_ids: bool = False,
@@ -342,9 +342,11 @@ def view_volume(
         Azimuth of the centre of the view: an angle in radians,
         counter-clockwise from +x, between -2 pi and 2 pi, or a horizontal
         vector ``(dx, dy)`` that points along it, which gives the same result
-        as the angle ``atan2(dy, dx)``. Default 0. Used only when ``hfov`` is
-        below a full turn. A larger angle raises a ``ValueError``: an angle in
-        degrees converts with ``math.radians``.
+        as the angle ``atan2(dy, dx)``. Default 0. It matters only when
+        ``hfov`` is below a full turn, and it is checked in every call. A
+        larger angle raises a ``ValueError``: an angle in degrees converts
+        with ``math.radians``, and an angle in radians of more than a turn
+        wraps with ``math.remainder(a, math.tau)``.
     elevation : float
         Elevation of the centre of the view, in radians above the eye's
         horizontal plane (the vertical offset of the view). Default 0. The
@@ -447,8 +449,8 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
         Keyword arguments of [`view_volume`][pysovist.view_volume], including
         a field of view, ``weights``, ``shape`` and ``jump_factor``, except
         ``object_ids``. Every origin uses the same directions and the same
-        ``direction``: one angle or one vector, where a sequence of two numbers
-        is always a vector ``(dx, dy)``. For a direction per eye, call
+        ``direction``, one angle in radians. A vector ``(dx, dy)`` converts
+        with ``math.atan2(dy, dx)``. For a direction per eye, call
         ``view_volume`` for each eye in a loop. ``ground`` (the object ids that
         count as ground, as in [`ViewVolume.factors`][pysovist.ViewVolume.factors])
         adds the view factors.
@@ -468,8 +470,8 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
     Raises
     ------
     ValueError
-        For the inputs that ``view_volume`` refuses, a ``direction`` with one
-        angle per eye, an origin that is not finite, ``n_jobs`` that is
+        For the inputs that ``view_volume`` refuses, a ``direction`` that is
+        not one angle, an origin that is not finite, ``n_jobs`` that is
         neither -1 nor positive, and a ``ground`` that names an object the
         scene does not have.
     TypeError

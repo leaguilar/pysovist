@@ -27,7 +27,7 @@ def isovist(
     *,
     max_distance: float = np.inf,
     fov: float = TWO_PI,
-    direction: float = 0.0,
+    direction: float | tuple[float, float] = 0.0,
     on_wall: str = "nan",
     eps: float = 1e-9,
 ) -> Isovist:
@@ -53,9 +53,11 @@ def isovist(
     direction : float or (dx, dy)
         Viewing direction: an angle in radians, counter-clockwise from +x,
         between -2 pi and 2 pi, or a vector ``(dx, dy)`` that points along
-        it, which gives the same result as the angle ``atan2(dy, dx)``. Used
-        only when ``fov`` is below a full turn. A larger angle raises a
-        ``ValueError``: an angle in degrees converts with ``math.radians``.
+        it, which gives the same result as the angle ``atan2(dy, dx)``. It
+        matters only when ``fov`` is below a full turn, and it is checked in
+        every call. A larger angle raises a ``ValueError``: an angle in
+        degrees converts with ``math.radians``, and an angle in radians of
+        more than a turn wraps with ``math.remainder(a, math.tau)``.
     on_wall : {"nan", "raise"}
         What to do when the observer is closer than ``eps`` to a wall: return
         an isovist with NaN metrics and ``flags.on_wall`` set, or raise a

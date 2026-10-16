@@ -311,8 +311,15 @@ SENTENCES = [
     ("docs/conventions.md", 1, r"one between \\\(2\\pi\\\) and (\d+) to pass `math\.tau`",
      ["pysovist._angles.DEGREES_FROM"]),
     # metric definitions
-    ("docs/metrics.md", 1, r"The surface area falls (\d+) % short at 65,536 rays",
+    ("docs/metrics.md", 1, r"The surface area falls ([\d.]+) % short at 65,536 rays",
      ["100 * (1 - m['surface_area'] / (2 * 70 + 3 * (34 + 2 * math.sqrt(45))))"]),
+    ("docs/metrics.md", 1, r"# 40\.39, against 3 m x 2 sqrt\(45\) m = ([\d.]+) m²",
+     ["3 * pysovist.isovist(pysovist.Plan(plan), (3.0, 0.0)).metrics['occlusivity']"]),
+    ("docs/metrics.md", 1, r"against 2 x 70 m² \+ 3 m x ([\d.]+) m = ([\d.]+) m²",
+     ["pysovist.isovist(pysovist.Plan(plan), (3.0, 0.0)).perimeter",
+      "2 * pysovist.isovist(pysovist.Plan(plan), (3.0, 0.0)).area "
+      "+ 3 * pysovist.isovist(pysovist.Plan(plan), (3.0, 0.0)).perimeter",
+      "assert pysovist.isovist(pysovist.Plan(plan), (3.0, 0.0)).area == pytest.approx(70)"]),
     ("docs/metrics.md", 3, r"# 69\.686, against the exact ([\d.]+)", ["iso.area"]),
     ("docs/metrics.md", 3, r"# 47\.233, against the exact ([\d.]+)", ["iso.perimeter"]),
     # obstacle visibility
@@ -606,34 +613,279 @@ REF = "test_volume3d_references.py"
 S3 = "test_volume3d_shape.py"
 NUMBER = r"([\d.e-]+)"
 
+SHAPE_TESTS = {  # the tests of the 3D shape metrics that the pages quote, by a short key
+    "ball": "test_range_ball_seen_from_its_centre",
+    "box": "test_box_seen_from_an_interior_eye",
+    "corridor": "test_a_corridor_has_no_occluding_face",
+    "hall": "test_a_wide_low_hall_has_one_large_elongation",
+    "cube": "test_cube_in_empty_space_with_a_range_limit",
+    "open box": "test_rays_that_escape_with_zero_depth_end_at_the_eye",
+    "step": "test_a_step_between_two_spheres_closes_its_boundary",
+    "thin": "THIN",
+    "pillar": "PILLAR",
+    "prism": "test_prism_room_against_the_exact_2d_isovist",
+    "shadow": "test_pillar_shadow_faces",
+    "L room": "test_l_room_seen_whole_from_the_square_of_both_arms",
+    "wall": "test_the_occluding_area_does_not_follow_the_distance_to_the_nearest_wall",
+    "settle": "test_occluding_area_settles_within_0_6_percent",
+    "factor": "test_jump_factor_scales_the_bound_a_jump_must_pass",
+    "distant": "test_a_distant_pillar_is_found_as_far_as_its_width_allows",
+    "surface": "test_surface_area_converges_with_the_ray_count",
+    "balls": "test_a_ball_sampled_box_room_lies_between_its_erosions",
+    "sector": "test_directed_view_of_an_empty_scene_is_a_spherical_sector",
+    "sector fields": "SECTOR_FIELDS",
+    "ground": "test_a_ground_plane_below_a_raised_view_is_not_occluding",
+    "holes": "test_far_rays_seen_through_small_holes_keep_their_faces_bounded",
+    "crossed": "test_a_triangle_crossed_by_one_or_three_jumps_between_equal_depths_holds_no_face",
+    "cube statistics": "test_radial_statistics_from_the_centre_of_a_cube",
+    "population": "test_radial_statistics_of_equal_weights_are_the_population_statistics",
+    "sixteen": "test_a_field_of_sixteen_eyes_gives_each_eye_its_single_result_to_the_last_bit",
+}
+
+
+def shape(key: str, pattern: str):
+    """A number read from a test of the 3D shape metrics."""
+    return src(S3, SHAPE_TESTS[key], pattern)
+
+
 VERIFICATION = [
-    # 3D shape metrics
-    (r"gives its 108 m² to ([\d.e-]+) at ([\d,]+) rays",
-     [rf"src('{S3}', 'test_box_seen_from_an_interior_eye', r'approx\(108.0, rel={NUMBER}\)')",
-      rf"src('{S3}', 'test_box_seen_from_an_interior_eye', r'n_rays=(\d+)')"]),
-    (r"the occluding area equals the height times the 2D occlusivity to ([\d.e-]+)\. The surface "
-     r"area equals the floor and the ceiling plus the height times the 2D perimeter to "
+    # 3D shape metrics: shape(key, pattern) reads the test SHAPE_TESTS[key]
+    (r"Rays all clipped at a range of (\d+) m give the ball: a surface of \\\(4\\pi R\^2\\\) and a "
+     r"sphericity of 1, to ([\d.e-]+) at ([\d,]+) rays",
+     [r"shape('ball', r'R = ([\d.]+)')",
+      r"shape('ball', r'R\*\*2, rel=([\d.e-]+)\)')",
+      r"shape('ball', r'n_rays=(\d+)')",
+      r"assert shape('ball', r'sphericity\"\] == pytest.approx\(1.0, abs=([\d.e-]+)\)') == 1e-3"]),
+    (r"gives its 108 m² to ([\d.e-]+) at ([\d,]+) rays, the distance to its centre as the drift to "
+     r"([\d.e-]+), the elongations 6/3 and 6/4 to ([\d.e-]+), and no occluding face",
+     [r"shape('box', r'approx\(108.0, rel=([\d.e-]+)\)')",
+      r"shape('box', r'n_rays=(\d+)')",
+      r"shape('box', r'norm\(c\), rel=([\d.e-]+)\)')",
+      r"shape('box', r'approx\(2.0, rel=([\d.e-]+)\)')"]),
+    (r"A (\d+) m x (\d+) m x (\d+) m corridor gives the elongations (\d+) and 40/3, and a (\d+) m "
+     r"x "
+     r"(\d+) m x (\d+) m hall 20/3 and 1, to ([\d.e-]+)\.",
+     [r"shape('corridor', r'box_room\(([\d.]+),')",
+      r"shape('corridor', r'box_room\([\d.]+, ([\d.]+),')",
+      r"shape('corridor', r'box_room\([\d.]+, [\d.]+, ([\d.]+)\)')",
+      r"shape('corridor', r'approx\((40 / 2), rel')",
+      r"shape('hall', r'box_room\(([\d.]+),')",
+      r"shape('hall', r'box_room\([\d.]+, ([\d.]+),')",
+      r"shape('hall', r'box_room\([\d.]+, [\d.]+, ([\d.]+)\)')",
+      r"shape('corridor', r'40 / 3, rel=([\d.e-]+)\)')",
+      r"assert shape('hall', r'1.0, rel=([\d.e-]+)\)') == 5e-3"]),
+    (r"A cube (\d+) m in front of the eye, in empty space with a range of (\d+) m, casts four "
+     r"planar "
+     r"shadow faces out to the range sphere, .*?, which the occluding area matches to ([\d.e-]+)\.",
+     [r"shape('cube', r'a, d, R = [\d.]+, ([\d.]+),')",
+      r"shape('cube', r'a, d, R = [\d.]+, [\d.]+, ([\d.]+)')",
+      r"shape('cube', r'approx\(occluding, rel=([\d.e-]+)\)')"]),
+    (r"the four triangles from the eye to the rim to ([\d.e-]+)\.",
+     [r"shape('open box', r'approx\(sides, rel=([\d.e-]+)\)')"]),
+    (r"Depths of (\d+) m below the equator and (\d+) m above it give both hemispheres and the "
+     r"annulus between them, which is the occluding face, to ([\d.e-]+) at ([\d,]+) rays",
+     [r"shape('step', r'n, near, far = \d+, ([\d.]+),')",
+      r"shape('step', r'n, near, far = \d+, [\d.]+, ([\d.]+)')",
+      r"shape('step', r'approx\(annulus, rel=([\d.e-]+)\)')",
+      r"shape('step', r'n, near, far = (\d+),')"]),
+    (r"a room with a pillar ([\d.]+) m wide and an L-shaped room, at ([\d,]+) rays, the occluding "
+     r"area equals the height times the 2D occlusivity to ([\d.e-]+)\. The surface area equals the "
+     r"floor and the ceiling plus the height times the 2D perimeter to ([\d.e-]+)\. The horizontal "
+     r"drift and its azimuth equal those of the 2D isovist to ([\d.e-]+), and the convex "
+     r"deficiency "
+     r"equals the 2D one to ([\d.e-]+)\.",
+     [r"2 * shape('thin', r'rect\(-5, -5, 5, 5\), rect\(-([\d.]+),')",
+      r"shape('prism', r'n_rays=(\d+)')",
+      r"shape('prism', r'occlusivity\"\], rel=([\d.e-]+)\)')",
+      r"shape('prism', r'perimeter\"\], rel=([\d.e-]+)\)')",
+      r"shape('prism', r'iso\[\"drift\"\], rel=([\d.e-]+)\)')",
+      r"shape('prism', r'convex_deficiency\"\], abs=([\d.e-]+)\)')",
+      r"assert shape('prism', r'drift_angle\"\]\) < ([\d.e-]+)') == 1e-3"]),
+    (r"built from the plan in the test, agree to ([\d.e-]+) from two eyes\. From the square where "
+     r"its arms overlap, the L-shaped room gives the convex deficiency of its two boxes, 18/82, to "
      r"([\d.e-]+)\.",
-     [f"src('{S3}', 'test_prism_room_against_the_exact_2d_isovist', "
-      rf"r'occlusivity\"\], rel={NUMBER}\)')",
-      f"src('{S3}', 'test_prism_room_against_the_exact_2d_isovist', "
-      rf"r'perimeter\"\], rel={NUMBER}\)')"]),
-    (r"the convex deficiency equals the 2D one to ([\d.e-]+)\.",
-     [f"src('{S3}', 'test_prism_room_against_the_exact_2d_isovist', "
-      rf"r'convex_deficiency\"\], abs={NUMBER}\)')"]),
-    (r"the occluding area of these rooms lies within (\d+) %, ([\d.]+) %, ([\d.]+) % and "
-     r"([\d.]+) % of the exact faces",
-     [f"100 * src('{S3}', 'test_occluding_area_converges_with_the_ray_count', "
-      rf"r'{n}: ([\d.]+)')" for n in (4096, 16384, 65536, 262144)]),
+     [r"shape('shadow', r'approx\(total, rel=([\d.e-]+)\)')",
+      r"shape('L room', r'18 / 82, abs=([\d.e-]+)\)')"]),
+    (r"From eyes (\d+) cm, (\d+) cm, (\d+) cm and (\d+) m from a wall of the room with a pillar, "
+     r"the "
+     r"occluding area lies within ([\d.]+) %, ([\d.]+) % and ([\d.]+) % of the exact faces at "
+     r"([\d,]+), ([\d,]+) and ([\d,]+) rays\.",
+     [r"100 * (5 - shape('wall', r'\[([\d.]+),'))",
+      r"100 * (5 - shape('wall', r'\[[\d.]+, ([\d.]+),'))",
+      r"100 * (5 - shape('wall', r'\[[\d.]+, [\d.]+, ([\d.]+),'))",
+      r"5 - shape('wall', r', ([\d.]+)\]\)')",
+      r"100 * shape('wall', r'16384: ([\d.]+)')",
+      r"100 * shape('wall', r'65536: ([\d.]+)')",
+      r"100 * shape('wall', r'262144: ([\d.]+)')",
+      r"shape('wall', r'\{(\d+): ')",
+      r"shape('wall', r'\{\d+: [\d.]+, (\d+): ')",
+      r"shape('wall', r'\{\d+: [\d.]+, \d+: [\d.]+, (\d+): ')"]),
+    (r"In the three prism rooms it lies within (\d+) %, ([\d.]+) %, ([\d.]+) % and ([\d.]+) % of "
+     r"the "
+     r"exact faces at ([\d,]+), ([\d,]+), ([\d,]+) and ([\d,]+) rays, and at ([\d,]+) rays below "
+     r"them "
+     r"by less than ([\d.]+) %\.",
+     [r"100 * shape('settle', r'4096: ([\d.]+)')",
+      r"100 * shape('settle', r'16384: ([\d.]+)')",
+      r"100 * shape('settle', r'65536: ([\d.]+)')",
+      r"100 * shape('settle', r'262144: ([\d.]+)')",
+      r"shape('settle', r'\{(\d+): ')",
+      r"shape('settle', r'\{\d+: [\d.]+, (\d+): ')",
+      r"shape('settle', r'\{\d+: [\d.]+, \d+: [\d.]+, (\d+): ')",
+      r"shape('settle', r'\{\d+: [\d.]+, \d+: [\d.]+, \d+: [\d.]+, (\d+): ')",
+      r"shape('settle', r'\{\d+: [\d.]+, \d+: [\d.]+, \d+: [\d.]+, (\d+): ')",
+      r"-100 * shape('settle', r'(-[\d.e-]+) < err < 0')"]),
+    (r"an occluding area of exactly 0 at ([\d,]+), ([\d,]+) and ([\d,]+) rays",
+     [r"shape('corridor', r'\[(\d+), \d+, \d+\]')",
+      r"shape('corridor', r'\[\d+, (\d+), \d+\]')",
+      r"shape('corridor', r'\[\d+, \d+, (\d+)\]')"]),
+    (r"With `jump_factor` from ([\d.]+) to (\d+), the corridor stays at 0 and the pillar's faces "
+     r"stay "
+     r"within ([\d.e-]+) at ([\d,]+) rays, and a factor of ([\d,]+) drops them\.",
+     [r"shape('factor', r'for k in \(([\d.]+), [\d.]+, [\d.]+\)')",
+      r"shape('factor', r'for k in \([\d.]+, [\d.]+, ([\d.]+)\)')",
+      r"shape('factor', r'approx\(exact, rel=([\d.e-]+)\), k')",
+      r"shape('factor', r'n_rays=(\d+)')",
+      r"shape('factor', r'jump_factor=(\d+\.\d+)\)')"]),
+    (r"A pillar (\d+) m from the eye, in a hall of (\d+) m x (\d+) m x (\d+) m, spans two ray "
+     r"spacings at ([\d,]+) rays, where its faces are found to (\d+) %, and they are found to "
+     r"([\d.e-]+) at ([\d,]+)\.",
+     [r"shape('distant', r'(\(20, 0, 1.6\))')[0] - 1",
+      r"2 * shape('distant', r'rect\(-(\d+), -\d+, \d+, \d+\)')",
+      r"2 * shape('distant', r'rect\(-\d+, -(\d+), \d+, \d+\)')",
+      r"shape('distant', r'\(20, 0, 1.6\), (\d+)')",
+      r"shape('distant', r'n_rays=(\d+)')",
+      r"100 * shape('distant', r'rel=([\d.]+)\)')",
+      r"shape('distant', r'rel=([\d.e-]+)\)(?![\s\S]*rel=)')",
+      r"shape('distant', r'n_rays=(\d+)(?![\s\S]*n_rays=)')"]),
     (r"with a log-log slope between (-[\d.]+) and (-[\d.]+), and by less than ([\d.]+) % at "
      r"262,144 rays",
-     [rf"src('{S3}', 'test_surface_area_converges_with_the_ray_count', r'(-[\d.]+) < slope')",
-      rf"src('{S3}', 'test_surface_area_converges_with_the_ray_count', r'slope < (-[\d.]+)')",
-      f"100 * src('{S3}', 'test_surface_area_converges_with_the_ray_count', "
-      rf"r'-err\[-1\] < {NUMBER},')"]),
-    (r"an occluding area of exactly 0 at ([\d,]+), ([\d,]+) and ([\d,]+) rays",
-     [rf"src('{S3}', 'test_a_corridor_has_no_occluding_face', r'\[{a}(\d+){b}\]')"
-      for a, b in ((r"", r", \d+, \d+"), (r"\d+, ", r", \d+"), (r"\d+, \d+, ", r""))]),
+     [r"shape('surface', r'(-[\d.]+) < slope')",
+      r"shape('surface', r'slope < (-[\d.]+)')",
+      r"100 * shape('surface', r'-err\[-1\] < ([\d.e-]+),')"]),
+    (r"sampled every (\d+) cm by balls of (\d+) cm, through the ball ray caster, gives a surface "
+     r"between those of the box eroded by the two bounds of the balls, the drift of the box centre "
+     r"to ([\d.e-]+) and elongations between those of the two erosions\. Its grooves give no "
+     r"occluding face at ([\d,]+) rays and less than ([\d.e-]+) of the surface at ([\d,]+)\.",
+     [r"100 * shape('balls', r's, r = ([\d.]+),')",
+      r"100 * shape('balls', r's, r = [\d.]+, ([\d.]+)')",
+      r"shape('balls', r'size / 2 - eye\), rel=([\d.e-]+)\)')",
+      r"shape('balls', r'n_rays=(\d+), shape=True\).metrics\[\"occluding_area\"\] == 0.0')",
+      r"shape('balls', r'< ([\d.e-]+) \* m\[\"surface_area\"\]')",
+      r"shape('balls', r'n_rays=(\d+)')"]),
+    (r"For the part of a ball inside four fields of view, with ([\d,]+) Fibonacci directions and "
+     r"with a grid of (\d+) x (\d+) cells, the volume agrees with its closed form to ([\d.e-]+), "
+     r"the "
+     r"surface with its side faces to ([\d.e-]+) and the centroid to ([\d.e-]+)\.",
+     [r"assert len(T('test_volume3d_shape').SECTOR_FIELDS) == 4",
+      r"shape('sector', r'n_rays=(1 << \d+)')",
+      r"shape('sector', r'angle_grid\((\d+),')",
+      r"shape('sector', r'angle_grid\(\d+, (\d+),')",
+      r"shape('sector', r'approx\(volume, rel=([\d.e-]+)\)')",
+      r"shape('sector', r'approx\(surface, rel=([\d.e-]+)\)')",
+      r"shape('sector', r'norm\(centroid\), rel=([\d.e-]+)\)')"]),
+    (r"Seen from ([\d.]+) m above a ground plane, a view raised (\d+) degrees whose nearest ground "
+     r"lies (\d+) m away has no occluding face\.",
+     [r"shape('ground', r'\(0.0, 0.0, ([\d.]+)\)')",
+      r"shape('ground', r'elevation=math.radians\((\d+)\)')",
+      r"shape('ground', r'distances.min\(\) > ([\d.]+)')"]),
+    (r"Far surfaces seen through (\d+) holes of three rays in a near cap keep their occluding "
+     r"faces "
+     r"below the area that the clamp of their extrapolated depths allows, for (\d+) random "
+     r"scenes\.",
+     [r"shape('holes', r'choice\(inside, (\d+),')",
+      r"shape('holes', r'range\((\d+)\)')"]),
+    (r"adds less than ([\d.e-]+) of the surface as occluding face and leaves the surface that of "
+     r"the "
+     r"triangles to ([\d.e-]+)\.",
+     [r"shape('crossed', r'< ([\d.e-]+) \* plain')",
+      r"shape('crossed', r'approx\(plain, rel=([\d.e-]+)\)')"]),
+    (r"computed with scipy to ([\d.e-]+), for equal-area directions and for an angle grid\. For "
+     r"equal weights they equal the population statistics of numpy and scipy to ([\d.e-]+)\.",
+     [r"shape('cube statistics', r'rel=([\d.e-]+)\)')",
+      r"shape('population', r'bias=True\), rel=([\d.e-]+)\)')"]),
+    (r"equal single `view_volume` calls to the last bit, for (\d+) eyes",
+     [r"shape('sixteen', r'uniform\(1.5, 4.5, (\d+)\)')"]),
+    # the same numbers stated on other pages
+    ("docs/metrics.md",
+     r"the deficiency runs low, by at most ([\d.e-]+) at ([\d,]+) rays in the rooms",
+     [r"shape('prism', r'convex_deficiency\"\], abs=([\d.e-]+)\)')",
+      r"shape('prism', r'n_rays=(\d+)')"]),
+    ("docs/metrics.md",
+     r"A corridor of (\d+) m x (\d+) m x (\d+) m has (\d+) and ([\d.]+), and a hall of (\d+) m x "
+     r"(\d+) m x (\d+) m has ([\d.]+) and (\d)",
+     [r"shape('corridor', r'box_room\(([\d.]+),')",
+      r"shape('corridor', r'box_room\([\d.]+, ([\d.]+),')",
+      r"shape('corridor', r'box_room\([\d.]+, [\d.]+, ([\d.]+)\)')",
+      r"shape('corridor', r'approx\((40 / 2), rel')",
+      r"shape('corridor', r'approx\((40 / 3), rel')",
+      r"shape('hall', r'box_room\(([\d.]+),')",
+      r"shape('hall', r'box_room\([\d.]+, ([\d.]+),')",
+      r"shape('hall', r'box_room\([\d.]+, [\d.]+, ([\d.]+)\)')",
+      r"shape('hall', r'approx\((20 / 3), rel')",
+      r"shape('hall', r'elongation_12\"\] == pytest.approx\(([\d.]+), rel')"]),
+    ("docs/metrics.md",
+     r"A (\d+) m corridor seen from one end therefore has an occluding area of exactly 0, and the "
+     r"distance from the eye to the nearest surface plays no part: in a (\d+) m room with a (\d+) "
+     r"m "
+     r"pillar, an eye (\d+) cm from a wall finds the faces of the pillar as an eye (\d+) m from it "
+     r"does\.",
+     [r"shape('corridor', r'box_room\(([\d.]+),')",
+      r"2 * shape('pillar', r'rect\(-5, -5, (\d+), 5\)')",
+      r"2 * shape('pillar', r'rect\(-1, -1, (\d+), 1\)')",
+      r"100 * (5 - shape('wall', r'\[([\d.]+),'))",
+      r"5 - shape('wall', r', ([\d.]+)\]\)')"]),
+    ("docs/metrics.md",
+     r"the occluding area lies within (\d+) % of the exact faces at ([\d,]+) rays, within "
+     r"([\d.]+) % "
+     r"at ([\d,]+) and within ([\d.]+) % from ([\d,]+) on\. At ([\d,]+) rays it settles below the "
+     r"exact faces, by less than ([\d.]+) %, a floor that more rays do not remove\. The surface "
+     r"area falls short where two surfaces meet at an edge, since the triangles cut the edge, and "
+     r"its error falls as \\\(N\^\{-1/2\}\\\), to less than ([\d.]+) % at 262,144 rays\.",
+     [r"100 * shape('settle', r'4096: ([\d.]+)')",
+      r"shape('settle', r'\{(\d+): ')",
+      r"100 * shape('settle', r'16384: ([\d.]+)')",
+      r"shape('settle', r'\{\d+: [\d.]+, (\d+): ')",
+      r"100 * shape('settle', r'65536: ([\d.]+)')",
+      r"shape('settle', r'\{\d+: [\d.]+, \d+: [\d.]+, (\d+): ')",
+      r"shape('settle', r'\{\d+: [\d.]+, \d+: [\d.]+, \d+: [\d.]+, (\d+): ')",
+      r"-100 * shape('settle', r'(-[\d.e-]+) < err < 0')",
+      r"100 * shape('surface', r'-err\[-1\] < ([\d.e-]+),')"]),
+    ("docs/metrics.md",
+     r"a (\d+) m x (\d+) m x (\d+) m room sampled every (\d+) cm by balls of (\d+) cm has none at "
+     r"([\d,]+) rays and less than ([\d.]+) % of its surface at ([\d,]+)\.",
+     [r"shape('balls', r'size = np.array\(\[([\d.]+),')",
+      r"shape('balls', r'size = np.array\(\[[\d.]+, ([\d.]+),')",
+      r"shape('balls', r'size = np.array\(\[[\d.]+, [\d.]+, ([\d.]+)\]\)')",
+      r"100 * shape('balls', r's, r = ([\d.]+),')",
+      r"100 * shape('balls', r's, r = [\d.]+, ([\d.]+)')",
+      r"shape('balls', r'n_rays=(\d+), shape=True\).metrics\[\"occluding_area\"\] == 0.0')",
+      r"100 * shape('balls', r'< ([\d.e-]+) \* m\[\"surface_area\"\]')",
+      r"shape('balls', r'n_rays=(\d+)')"]),
+    ("docs/directed-volumes.md",
+     r"For the part of a ball inside four fields, among them a wedge (\d+) degrees wide from "
+     r"pole "
+     r"to pole and a full turn (\d+) degrees tall, the surface area with its side faces lies "
+     r"within "
+     r"(\d+) % of the closed form with ([\d,]+) Fibonacci directions and with a grid of (\d+) x "
+     r"(\d+) cells\.",
+     [r"assert len(T('test_volume3d_shape').SECTOR_FIELDS) == 4",
+      r"shape('sector fields', r'\(math.radians\((\d+)\), math.pi')",
+      r"shape('sector fields', r'\(2 \* math.pi, math.radians\((\d+)\)')",
+      r"100 * shape('sector', r'approx\(surface, rel=([\d.e-]+)\)')",
+      r"shape('sector', r'n_rays=(1 << \d+)')",
+      r"shape('sector', r'angle_grid\((\d+),')",
+      r"shape('sector', r'angle_grid\(\d+, (\d+),')"]),
+    ("CHANGELOG.md",
+     r"an eye (\d+) cm\nfrom a wall finds the faces of a pillar as an eye (\d+) m from it does\. "
+     r".*?"
+     r"The\noccluding area comes within ([\d.]+) % of the exact faces from ([\d,]+) rays on and "
+     r"settles less than ([\d.]+) % below them",
+     [r"100 * (5 - shape('wall', r'\[([\d.]+),'))",
+      r"5 - shape('wall', r', ([\d.]+)\]\)')",
+      r"100 * shape('settle', r'65536: ([\d.]+)')",
+      r"shape('settle', r'\{\d+: [\d.]+, \d+: [\d.]+, (\d+): ')",
+      r"-100 * shape('settle', r'(-[\d.e-]+) < err < 0')"]),
     # obstacle visibility
     (r"\*\*The visible part of every wall agrees with closed forms to ([\d.e-]+)\.\*\*",
      [f"src('{V}', 'approx', r'rel={NUMBER}')"]),
@@ -846,12 +1098,17 @@ VERIFICATION = [
 
 
 def test_the_verification_page_states_what_the_tests_assert():
-    text = (ROOT / "docs" / "verification.md").read_text(encoding="utf-8")
-    env = {"src": src, "T": T, "source_of": source_of, "re": re,
+    # An entry of three items names the page it reads, the verification page otherwise.
+    texts = {}
+    env = {"src": src, "T": T, "source_of": source_of, "re": re, "shape": shape,
            "default_rtol_of_frame_comparison": default_rtol_of_frame_comparison}
     found = []
-    for pattern, exprs in VERIFICATION:
-        m = re.search(pattern, text)
+    for entry in VERIFICATION:
+        page, pattern, exprs = entry if len(entry) == 3 else ("docs/verification.md", *entry)
+        if page not in texts:
+            texts[page] = (ROOT / page).read_text(encoding="utf-8")
+        text = texts[page]
+        m = re.search(pattern, text, re.DOTALL)
         if m is None:
             found.append(f"the sentence {pattern!r} is not in the page")
             continue

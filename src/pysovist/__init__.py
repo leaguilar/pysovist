@@ -23,6 +23,7 @@ from .raycast import SectionIsovist, section_isovist_area
 from .rays2d import NO_HIT, RayHits, cast_rays
 from .results import Flags, Isovist
 from .sampling import sampled_metrics
+from .shape3d import SHAPE_METRIC_NAMES
 from .vertical import plane_to_world, vertical_isovist, vertical_section
 from .visibility2d import (
     SegmentVisibility,
@@ -51,6 +52,7 @@ __all__ = [
     "Plan",
     "PointCloud",
     "RayHits",
+    "SHAPE_METRIC_NAMES",
     "SectionIsovist",
     "SegmentVisibility",
     "ViewVolume",

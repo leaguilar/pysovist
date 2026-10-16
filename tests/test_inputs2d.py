@@ -353,6 +353,15 @@ def test_vertical_isovist_refuses_an_elevation_in_degrees():
         vertical_isovist(BOX, (4.0, 3.0, 1.6), 0.3, elevation=30.0, fov=1.0)
 
 
+@pytest.mark.parametrize("name", [*DIRECTION_CALLS, *FIELD_CALLS])
+def test_a_direction_of_none_is_refused_by_name(name):
+    """None used to read as NaN, so the message said "got nan"."""
+    call = DIRECTION_CALLS.get(name) or FIELD_CALLS[name]
+    with pytest.raises(ValueError, match=r"direction must be an angle in radians, "
+                                         r"counter-clockwise from \+x.*, got None"):
+        call(None)
+
+
 @pytest.mark.parametrize("direction", [NAN, INF])
 def test_isovist_needs_a_finite_direction(direction):
     """A NaN direction used to come back flagged unbounded."""

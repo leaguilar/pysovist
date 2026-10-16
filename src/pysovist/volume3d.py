@@ -339,8 +339,8 @@ def view_volume(
         ``math.radians``.
     vfov : float
         Vertical field of view in radians, in (0, pi], centred on
-        ``elevation``. Default: pole to pole, which a value up to a relative
-        1e-6 above pi is too.
+        ``elevation``. Default: pole to pole. A value up to a relative 1e-6
+        above pi is pole to pole too.
     direction : float or (dx, dy)
         Azimuth of the centre of the view: an angle in radians,
         counter-clockwise from +x, between -2 pi and 2 pi, or a horizontal

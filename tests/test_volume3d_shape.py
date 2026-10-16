@@ -20,6 +20,7 @@ from pysovist import (  # noqa: E402
     SHAPE_METRIC_NAMES,
     Mesh,
     Plan,
+    PointCloud,
     angle_grid,
     fibonacci_sphere,
     isovist,
@@ -179,6 +180,42 @@ def test_weighted_r_var_is_the_square_of_the_weighted_r_std():
     vv = view_volume(box_room(6.0, 4.0, 3.0), (1.5, 1.2, 1.1), directions=d, weights=w,
                      shape=True)
     assert vv.metrics["r_var"] == pytest.approx(vv.metrics["r_std"] ** 2, rel=1e-12)
+
+
+def test_a_ball_sampled_box_room_lies_between_its_erosions():
+    # Reference: closed forms of the 6 x 4 x 3 m box, sampled every s = 4 cm by balls of radius
+    # r = 3 cm, through the ball ray caster, which shares no code with the mesh caster. The balls
+    # seal a surface that lies between the box eroded by r and the box eroded by
+    # sqrt(r^2 - s^2 / 2), and both erosions keep the box centre. The surface through the ray
+    # ends falls up to 1 % short, as for a mesh. Once neighbouring rays come closer than the
+    # spacing of the balls, the grooves between them count as occluding faces: none at 16,384
+    # rays, under 2 % of the surface at 65,536.
+    s, r = 0.04, 0.03
+    size = np.array([6.0, 4.0, 3.0])
+    axes = [np.linspace(0, a, int(round(a / s)) + 1) for a in size]
+    faces = []
+    for k in range(3):
+        i, j = [q for q in range(3) if q != k]
+        u, v = (g.ravel() for g in np.meshgrid(axes[i], axes[j], indexing="ij"))
+        for level in (0.0, size[k]):
+            p = np.empty((len(u), 3))
+            p[:, i], p[:, j], p[:, k] = u, v, level
+            faces.append(p)
+    cloud = PointCloud(np.unique(np.concatenate(faces), axis=0), radius=r)
+    eye = np.array([1.5, 1.2, 1.1])
+
+    def eroded(e):
+        a, b, c = size - 2 * e
+        return 2 * (a * b + b * c + c * a), a / c, a / b
+
+    outer, inner = eroded(r), eroded(math.sqrt(r * r - s * s / 2))
+    m = view_volume(cloud, eye, n_rays=65536, shape=True).metrics
+    assert m["drift"] == pytest.approx(np.linalg.norm(size / 2 - eye), rel=1e-3)
+    assert outer[0] * (1 - 1e-2) < m["surface_area"] < inner[0]
+    assert inner[1] * (1 - 1e-3) < m["elongation"] < outer[1] * (1 + 1e-3)
+    assert inner[2] * (1 - 1e-3) < m["elongation_12"] < outer[2] * (1 + 1e-3)
+    assert 0 < m["occluding_area"] < 2e-2 * m["surface_area"]
+    assert view_volume(cloud, eye, n_rays=16384, shape=True).metrics["occluding_area"] == 0.0
 
 
 # --- prism rooms against the exact 2D isovist -------------------------------------------------

@@ -1,9 +1,94 @@
 """Shape metrics of view volumes: the 3D counterparts of the 2D isovist metrics.
 
-A view volume is star-shaped around the eye. In direction ``u_i`` its boundary
-lies at the depth ``r_i``, and ray ``i`` carries the solid angle ``w_i``. The
-metrics below are computed from these three arrays, after the escape policy
-has set the depth of the rays that hit nothing.
+A view volume is star-shaped around the eye. Ray ``i`` leaves the eye in the
+unit direction ``u_i``, carries the solid angle ``w_i`` and ends at the depth
+``r_i``, after the escape policy has set the depth of the rays that hit
+nothing: a clipped ray ends at the range limit. The metrics below are computed
+from these three arrays, so they hold alike for equal-area directions, angle
+grids and fields of view. ``Omega = sum w_i`` is the solid angle of the view,
+``V = 1/3 sum w_i r_i^3`` its volume, and the eye sits at the origin.
+
+Radial statistics, weighted by solid angle like ``r_mean`` and ``r_std``:
+
+- ``r_var``: ``sum w_i (r_i - r_mean)^2 / Omega`` in m2, the square of ``r_std``.
+- ``r_skew``: ``sum w_i (r_i - r_mean)^3 / Omega / r_std^3``, and 0 when
+  ``r_std`` is 0.
+- ``r_mad``: ``sum w_i |r_i - r_mean| / Omega`` in m.
+- ``dispersion``: ``r_std / r_mean``.
+
+Centroid and second moments of the visible volume:
+
+- ``drift``: the distance in m from the eye to the centroid
+  ``c = (1/V) int r^4 / 4 u domega = (1/V) sum w_i r_i^4 u_i / 4``.
+- ``drift_horizontal``: the horizontal length of ``c`` in m.
+  ``drift_vertical``: its height above the eye in m, negative below it.
+- ``drift_azimuth``: the direction of ``c`` in radians counter-clockwise from
+  +x, the counterpart of the 2D ``drift_angle``. ``drift_elevation``: its
+  angle above the eye's horizontal plane in radians.
+- ``elongation``: ``sqrt(l1 / l3)``, and ``elongation_12``: ``sqrt(l1 / l2)``,
+  where ``l1 >= l2 >= l3`` are the principal second moments of the volume about
+  its centroid, the eigenvalues of ``int r^5 / 5 u u^T domega - V c c^T``. A
+  box of sides ``a >= b >= c`` has elongation ``a / c`` and elongation_12
+  ``a / b``: a corridor has both large, a wide low hall a large elongation and
+  an elongation_12 near 1.
+
+The boundary:
+
+- ``surface_area``: the area ``S`` in m2 of the boundary of the view volume,
+  the counterpart of the perimeter. It holds the visible surfaces, the
+  occluding faces and, for a field of view, the side faces from the eye to the
+  edges of the field.
+- ``occluding_area``: the area in m2 of the occluding faces, the counterpart
+  of occlusivity. Where a near object hides a far surface, the boundary runs
+  along the rays that graze the object, from the object to the far surface.
+  Over an occluding contour of angular length element ``ds`` the face has the
+  area ``int (r_far^2 - r_near^2) / 2 ds``.
+- ``sphericity``: ``36 pi V^2 / S^3``, 1 for a ball seen from its centre, the
+  counterpart of compactness. ``jaggedness``: ``S^3 / V^2``, the counterpart
+  of ``P^2 / A``.
+- ``convex_deficiency``: ``max(H - V, 0) / H``, with ``H`` the volume of the
+  convex hull of the eye and the ray ends. The hull of the ray ends lies
+  inside the true hull, so the deficiency runs low, by at most 2e-3 at 65,536
+  rays in the reference rooms, and it is clamped at 0 as in 2D.
+
+The surface through the ray ends. The unit directions are triangulated by
+their convex hull, which is their Delaunay triangulation on the sphere, and
+each triangle is mapped to the triangle through its three ray ends.
+Neighbouring rays ``i`` and ``j`` see a depth jump when
+
+    |1/r_i - 1/r_j| > k |u_i - u_j| / c,
+
+with ``c`` the clearance of the eye (its distance to the nearest occluder) and
+``k`` the ``jump_factor``, 1 by default. On a plane at distance ``p`` from the
+eye, ``1/r = n . u / p`` for the plane's unit normal ``n``, so between two rays
+``1/r`` changes by at most ``|u_i - u_j| / p``. A larger change cannot come from
+one plane at least the clearance away, so no wall, floor or ceiling is taken
+for an occluding face, however grazing the angle at which it is seen. A jump
+from the depth ``r_near`` to ``r_far`` is seen once neighbouring rays are closer
+than ``(1/r_near - 1/r_far) c / k`` apart.
+
+The triangles with a side across a jump form a band along each occluding
+contour. In each, the occluding face is rebuilt from radial segments from the
+near surface to the far surface, in the direction halfway along each side
+across the jump. The depth of each surface there is extrapolated from the ray
+that sees it, by fitting ``1/r = a . u`` to the ray and its neighbours on the
+same surface, which is exact on a plane. The band follows the lattice of the
+rays in steps, so each piece of a face counts with its vector area projected
+onto the mean vector area of the pieces within ``N^(-1/4)`` radians that the
+jump crosses in the same sense, with ``N = 4 pi / mean(w)``. The steps cancel,
+and so do the steps of the side faces of a field of view, which are built
+from the eye to the outermost rays.
+
+Both areas are estimates through sampled ray ends, like a sampled 2D
+perimeter. The surface area falls short where two surfaces meet at an edge,
+and its error falls as ``N^(-1/2)``. The occluding area converges with the ray
+count once the rays resolve the jump. Three prices remain. A plane that passes
+nearer to the eye than the clearance, with its nearest point off the surface
+(a wall end or a door jamb seen almost edge-on), can count as occluding. For a
+field of view the surface ends at the outermost rays, half a ray spacing
+inside the field's edges. For a point cloud, once neighbouring rays come
+closer than the spacing of its balls, the grooves between the balls count as
+occluding faces.
 """
 
 from __future__ import annotations

@@ -53,6 +53,10 @@ Metrics
 - ``volume_up``, ``volume_down``: the parts of V above and below the eye's
   horizontal plane (directions in the plane count half to each).
 
+With ``shape=True`` the shape metrics of ``pysovist.shape3d`` follow: the
+surface and occluding area, sphericity, jaggedness, drift, elongation, convex
+deficiency and the radial statistics weighted by solid angle.
+
 Directed views
 --------------
 A field of view (``hfov``, ``vfov``, ``direction``, ``elevation``, see
@@ -160,7 +164,9 @@ class ViewVolume:
         True when ``near_clip`` is positive and the clearance lies below it.
     metrics : dict
         The metrics, keyed by the names of
-        [`VOLUME_METRIC_NAMES`][pysovist.VOLUME_METRIC_NAMES].
+        [`VOLUME_METRIC_NAMES`][pysovist.VOLUME_METRIC_NAMES], followed with
+        ``shape=True`` by those of
+        [`SHAPE_METRIC_NAMES`][pysovist.SHAPE_METRIC_NAMES].
     object_ids : ndarray of shape (n,) or None
         The object each ray hits within ``max_distance``, -1 for none. Set by
         ``view_volume(..., object_ids=True)``, else None. For a mesh it is the
@@ -347,6 +353,23 @@ def view_volume(
         which [`ViewVolume.factors`][pysovist.ViewVolume.factors] and
         [`ViewVolume.hits_per_object`][pysovist.ViewVolume.hits_per_object] use.
         Default False.
+    shape : bool
+        Also compute the shape metrics: surface and occluding area,
+        sphericity, jaggedness, drift and its direction, elongation, convex
+        deficiency and the weighted radial statistics, keyed by
+        [`SHAPE_METRIC_NAMES`][pysovist.SHAPE_METRIC_NAMES] after the volume
+        metrics. Default False. They follow the escape and inside policies,
+        and a clipped ray ends at the range limit. Directions with weights
+        that cover part of the sphere need the field of view they cover. The
+        [metric definitions](../metrics.md#3d-shape-metrics) page defines
+        them.
+    jump_factor : float
+        Neighbouring rays ``i`` and ``j`` see a depth jump, the edge of an
+        occluding face, when ``|1/r_i - 1/r_j| > jump_factor |u_i - u_j| / c``,
+        with ``u`` their unit directions and ``c`` the clearance. Positive.
+        Default 1, at which no plane at least the clearance away from the eye
+        counts as occluding. A larger value leaves smaller jumps out. Used
+        with ``shape=True``.
 
     Returns
     -------
@@ -359,6 +382,10 @@ def view_volume(
         When the scene is empty (a mesh with no triangles, a point cloud with
         no points), the origin is not one finite point, an option lies outside
         the domain given above, or no direction lies inside the field of view.
+        With ``shape=True``, also when the weights of a full view do not sum
+        to 4 pi (give the field of view they cover), the directions leave a
+        gap wider than 10 ray spacings, or no three neighbouring directions
+        lie inside the field of view.
     TypeError
         When ``radius`` is given for a mesh.
     """
@@ -411,10 +438,11 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
         the observers are batched into one kernel call per chunk.
     **kw
         Keyword arguments of [`view_volume`][pysovist.view_volume], including
-        a field of view and ``weights``, except ``object_ids``. Every origin
-        uses the same directions. ``ground`` (the object ids that count as
-        ground, as in [`ViewVolume.factors`][pysovist.ViewVolume.factors])
-        adds the view factors.
+        a field of view, ``weights``, ``shape`` and ``jump_factor``, except
+        ``object_ids``. Every origin uses the same directions. ``ground`` (the
+        object ids that count as ground, as in
+        [`ViewVolume.factors`][pysovist.ViewVolume.factors]) adds the view
+        factors.
 
     Returns
     -------
@@ -424,7 +452,9 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
         ``clearance`` and the flags ``on_wall``, ``inside_occluder``,
         ``unbounded`` and ``near_clipped``. With ``ground``, the factors
         follow in the order of [`FACTOR_NAMES`][pysovist.volume3d.FACTOR_NAMES],
-        NaN for flagged rows.
+        NaN for flagged rows. With ``shape=True``, the shape metrics come last,
+        in the order of [`SHAPE_METRIC_NAMES`][pysovist.SHAPE_METRIC_NAMES].
+        They cost about 30 ms per eye at 16,384 rays, on one core.
 
     Raises
     ------

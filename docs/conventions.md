@@ -55,6 +55,8 @@ Four parameters decide what a view volume counts.
 
 A scan with openings, such as windows or open doors, needs `max_distance` or `escape="zero"` to give finite volumes. `escape_fraction` reports the share of the full solid angle through which rays escaped.
 
+The [shape metrics](metrics.md#3d-shape-metrics) of `shape=True` follow the same policies. A ray clipped at R ends on the range sphere. With `"zero"` an escaping ray ends at the eye, so the boundary closes through the eye and every opening counts as an occluding face, from the eye to the rim of the opening. With `"nan"` they are NaN as the volume is. With an infinite depth, under `"clip"` without a range limit, `surface_area` is infinite and the other shape metrics NaN. A blocked eye gets NaN or 0, as `inside` says.
+
 ## Ray directions
 
 A view volume is a sum over \(N\) ray directions, each carrying the solid angle \(4\pi/N\).

@@ -301,8 +301,10 @@ SENTENCES = [
     # conventions
     ("docs/conventions.md", 1, r"# True: ([\d.]+) m seals the surfaces", ["cloud.radius"]),
     # metric definitions
-    ("docs/metrics.md", 1, r"# 69\.686, against the exact ([\d.]+)", ["iso.area"]),
-    ("docs/metrics.md", 1, r"# 47\.233, against the exact ([\d.]+)", ["iso.perimeter"]),
+    ("docs/metrics.md", 1, r"The surface area falls (\d+) % short at 65,536 rays",
+     ["100 * (1 - m['surface_area'] / (2 * 70 + 3 * (34 + 2 * math.sqrt(45))))"]),
+    ("docs/metrics.md", 3, r"# 69\.686, against the exact ([\d.]+)", ["iso.area"]),
+    ("docs/metrics.md", 3, r"# 47\.233, against the exact ([\d.]+)", ["iso.perimeter"]),
     # obstacle visibility
     ("docs/obstacle-visibility.md", 1, r"The visible lengths add up to (\d+) m",
      ["vis.visible_length.sum()"]),
@@ -591,9 +593,37 @@ DS = "test_compat_decodingspaces_open.py"
 DR = "test_volume3d_directed.py"
 D3 = "test_compat_decodingspaces3d.py"
 REF = "test_volume3d_references.py"
+S3 = "test_volume3d_shape.py"
 NUMBER = r"([\d.e-]+)"
 
 VERIFICATION = [
+    # 3D shape metrics
+    (r"gives its 108 m² to ([\d.e-]+) at ([\d,]+) rays",
+     [rf"src('{S3}', 'test_box_seen_from_an_interior_eye', r'approx\(108.0, rel={NUMBER}\)')",
+      rf"src('{S3}', 'test_box_seen_from_an_interior_eye', r'n_rays=(\d+)')"]),
+    (r"the occluding area equals the height times the 2D occlusivity to ([\d.e-]+)\. The surface "
+     r"area equals the floor and the ceiling plus the height times the 2D perimeter to "
+     r"([\d.e-]+)\.",
+     [f"src('{S3}', 'test_prism_room_against_the_exact_2d_isovist', "
+      rf"r'occlusivity\"\], rel={NUMBER}\)')",
+      f"src('{S3}', 'test_prism_room_against_the_exact_2d_isovist', "
+      rf"r'perimeter\"\], rel={NUMBER}\)')"]),
+    (r"the convex deficiency equals the 2D one to ([\d.e-]+)\.",
+     [f"src('{S3}', 'test_prism_room_against_the_exact_2d_isovist', "
+      rf"r'convex_deficiency\"\], abs={NUMBER}\)')"]),
+    (r"the occluding area of these rooms lies within (\d+) %, ([\d.]+) %, ([\d.]+) % and "
+     r"([\d.]+) % of the exact faces",
+     [f"100 * src('{S3}', 'test_occluding_area_converges_with_the_ray_count', "
+      rf"r'{n}: ([\d.]+)')" for n in (4096, 16384, 65536, 262144)]),
+    (r"with a log-log slope between (-[\d.]+) and (-[\d.]+), and by less than ([\d.]+) % at "
+     r"262,144 rays",
+     [rf"src('{S3}', 'test_surface_area_converges_with_the_ray_count', r'(-[\d.]+) < slope')",
+      rf"src('{S3}', 'test_surface_area_converges_with_the_ray_count', r'slope < (-[\d.]+)')",
+      f"100 * src('{S3}', 'test_surface_area_converges_with_the_ray_count', "
+      rf"r'-err\[-1\] < {NUMBER},')"]),
+    (r"an occluding area of exactly 0 at ([\d,]+), ([\d,]+) and ([\d,]+) rays",
+     [rf"src('{S3}', 'test_a_corridor_has_no_occluding_face', r'\[{a}(\d+){b}\]')"
+      for a, b in ((r"", r", \d+, \d+"), (r"\d+, ", r", \d+"), (r"\d+, \d+, ", r""))]),
     # obstacle visibility
     (r"\*\*The visible part of every wall agrees with closed forms to ([\d.e-]+)\.\*\*",
      [f"src('{V}', 'approx', r'rel={NUMBER}')"]),

@@ -57,7 +57,7 @@ def test_from_json_reads_records_with_any_keys_and_drops_z(tmp_path):
                                 {"a": [4, 0, 0], "b": [4, 3, 0]}]))
     plan = Plan.from_json(path, keys=("a", "b"))
     np.testing.assert_array_equal(plan.segments, [[[0, 0], [4, 0]], [[4, 0], [4, 3]]])
-    with pytest.raises(ValueError, match=r'record 0 .*"start": \[x, y\], "end": \[x, y\]'):
+    with pytest.raises(ValueError, match=r'record 1 .*"start": \[x, y\], "end": \[x, y\]'):
         Plan.from_json(path)
 
 
@@ -95,6 +95,40 @@ def test_from_json_refuses_other_content_and_names_both_formats(tmp_path, conten
     path.write_text(content)
     with pytest.raises(ValueError, match=r'"start": \[x, y\], "end": \[x, y\]\}.* or a list of '
                                          r"segments \[\[x0, y0\], \[x1, y1\]\]"):
+        Plan.from_json(path)
+
+
+@pytest.mark.parametrize("content, where", [
+    ('[{"start": [0, 0], "end": [4, NaN]}]', "record 1"),
+    ('[{"start": [0, 0], "end": [4, 0]}, {"start": [4, null], "end": [4, 3]}]', "record 2"),
+    ("[[[0, 0], [4, 0]], [[4, 0], [Infinity, 3]]]", "segment 2"),
+])
+def test_from_json_names_the_record_or_segment_with_a_coordinate_that_is_not_finite(
+        tmp_path, content, where):
+    """Records and segments are counted from 1, as the command line counts them. A NaN
+    used to be reported as "segment 0" of the plan, without the file."""
+    path = tmp_path / "walls.json"
+    path.write_text(content)
+    with pytest.raises(ValueError, match=rf"{where} of the plan .*walls\.json has a missing or "
+                                         r"non-finite coordinate: .*Give every point a finite x "
+                                         r"and y"):
+        Plan.from_json(path)
+
+
+def test_from_json_takes_a_z_that_is_not_finite_and_drops_it(tmp_path):
+    path = tmp_path / "walls.json"
+    path.write_text('[{"start": [0, 0, NaN], "end": [4, 0, null]}]')
+    np.testing.assert_array_equal(Plan.from_json(path).segments, [[[0, 0], [4, 0]]])
+
+
+@pytest.mark.parametrize("content", [b"\xff[]", b"[" * 200_000 + b"]" * 200_000, b"[{]"])
+def test_from_json_refuses_a_file_that_is_not_json_and_names_both_formats(tmp_path, content):
+    """A file that is not UTF-8 used to raise a UnicodeDecodeError, and one nested 200,000
+    deep a RecursionError."""
+    path = tmp_path / "walls.json"
+    path.write_bytes(content)
+    with pytest.raises(ValueError, match=r"the plan .*walls\.json is not JSON \(.*\): it must "
+                                         r'hold a list of records \{"start"'):
         Plan.from_json(path)
 
 

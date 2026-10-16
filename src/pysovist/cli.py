@@ -205,38 +205,21 @@ def _read_points(path: Path, eye_height: float | None, dims: int) -> np.ndarray:
 
 
 def _read_plan(path: Path):
-    from .plan import Plan
+    from .plan import Plan, _plan_file_segments
 
     path = Path(path)
     if path.suffix.lower() == ".csv":
         segs = _columns(_read_table(path, "plan"), ["x0", "y0", "x1", "y1"], path, "plan")
         plan = Plan(segs.reshape(-1, 2, 2))
     else:
-        _check_records(path)
-        plan = Plan.from_json(path)
+        try:
+            segments = _plan_file_segments(path)
+        except ValueError as e:
+            raise SystemExit(str(e)) from None
+        plan = Plan(segments)
     if len(plan) == 0:
         raise SystemExit(f"the plan {path} holds no wall of positive length")
     return plan
-
-
-def _check_records(path: Path) -> None:
-    """Refuse a JSON plan that holds neither format of ``Plan.from_json``, or a bad coordinate."""
-    from .plan import _json_formats, _json_segments
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
-        raise SystemExit(f"the plan {path} is not JSON ({e}): it must hold "
-                         f"{_json_formats()}") from None
-    try:
-        segments = _json_segments(data, name=f"the plan {path}", first=1)
-    except ValueError as e:
-        raise SystemExit(str(e)) from None
-    bad = ~np.isfinite(segments[:, :, :2]).all(axis=(1, 2))
-    if bad.any():
-        kind = "record" if isinstance(data[0], dict) else "segment"
-        raise SystemExit(f"{kind} {int(np.flatnonzero(bad)[0]) + 1} of the plan {path} has a "
-                         "missing or non-finite coordinate")
 
 
 def _check_closing(plan, ring, path) -> None:

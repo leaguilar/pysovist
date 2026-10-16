@@ -102,10 +102,10 @@ class Plan:
             When the file holds anything else, such as a record that lacks
             one of ``keys``, a list of points, rows of ``x0, y0, x1, y1`` or
             the two formats mixed (the message names both formats), when it
-            is not JSON, or when a coordinate is not finite.
+            is not JSON in UTF-8, or when an x or y is missing or not finite
+            (the message names the record or segment, counted from 1).
         """
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls(_json_segments(data, keys, name=f"the plan {path}"))
+        return cls(_plan_file_segments(path, keys))
 
     @classmethod
     def from_ifc(cls, path, height: float, *, classes="walls", storey=None) -> Plan:
@@ -311,13 +311,33 @@ def _json_formats(keys=("start", "end")) -> str:
             f"segments [[x0, y0], [x1, y1]], with an optional z in each point")
 
 
-def _json_segments(data, keys=("start", "end"), name: str = "a plan file",
-                   first: int = 0) -> np.ndarray:
+def _plan_file_segments(path, keys=("start", "end")) -> np.ndarray:
+    """Segments of a JSON plan file, for ``Plan.from_json`` and the command line alike.
+
+    A file that is not JSON in UTF-8, or is nested too deep to parse, raises a ValueError that
+    names it and both formats. A missing file raises ``FileNotFoundError``.
+    """
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError) as e:
+        raise ValueError(f"the plan {path} is not JSON ({e}): it must hold "
+                         f"{_json_formats(keys)}") from None
+    return _json_segments(data, keys, name=f"the plan {path}")
+
+
+def _short(value, width: int = 80) -> str:
+    """The repr of ``value``, cut to ``width`` characters for a message."""
+    text = repr(value)
+    return text if len(text) <= width else text[:width - 3] + "..."
+
+
+def _json_segments(data, keys=("start", "end"), name: str = "a plan file") -> np.ndarray:
     """Segments of shape (n, 2, 2) or (n, 2, 3) from the content of a plan file.
 
     ``data`` is a list of records with the endpoint fields ``keys`` or a list of segments.
-    Anything else raises a ValueError that names ``name`` and both formats, and counts records
-    from ``first``. Coordinates are not checked for finite values here.
+    Anything else raises a ValueError that names ``name`` and both formats, and so does an x
+    or y that is missing or not finite. Records and segments are counted from 1. A z may be
+    anything numeric, as it is dropped.
     """
     formats = _json_formats(keys)
     if not isinstance(data, list):
@@ -334,10 +354,10 @@ def _json_segments(data, keys=("start", "end"), name: str = "a plan file",
             except (KeyError, TypeError, ValueError):
                 ends = None
             if ends is None or ends.shape != (2, 2):
-                raise ValueError(f"record {i + first} of {name} is not a wall: {r!r}. A plan "
+                raise ValueError(f"record {i + 1} of {name} is not a wall: {_short(r)}. A plan "
                                  f"file holds {formats}")
             segments.append(ends)
-        return np.array(segments)
+        return _finite(np.array(segments), "record", name)
     if any(isinstance(r, dict) for r in data):
         raise ValueError(f"{name} must hold {formats}, not records and segments mixed")
     try:
@@ -347,7 +367,18 @@ def _json_segments(data, keys=("start", "end"), name: str = "a plan file",
     if s is None or s.ndim != 3 or s.shape[1] != 2 or s.shape[2] not in (2, 3):
         shape = "lists of mixed lengths" if s is None else f"an array of shape {s.shape}"
         raise ValueError(f"{name} must hold {formats}, not {shape}")
-    return s
+    return _finite(s, "segment", name)
+
+
+def _finite(segments: np.ndarray, kind: str, name: str) -> np.ndarray:
+    """``segments``, refused with the record or segment, counted from 1, whose x or y is not
+    finite."""
+    bad = ~np.isfinite(segments[:, :, :2]).all(axis=(1, 2))
+    if bad.any():
+        k = int(np.flatnonzero(bad)[0])
+        raise ValueError(f"{kind} {k + 1} of {name} has a missing or non-finite coordinate: "
+                         f"{segments[k, :, :2].tolist()}. Give every point a finite x and y")
+    return segments
 
 
 def _point2d(value, name: str) -> np.ndarray:

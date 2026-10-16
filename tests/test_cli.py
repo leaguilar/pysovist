@@ -670,6 +670,26 @@ def test_a_plan_file_without_valid_walls_is_refused(square, tmp_path, capsys, na
     refused(["volume", "--plan", plan, "--points", pts, "--out", out], match, capsys, out)
 
 
+@pytest.mark.parametrize("content", [
+    b'[{"start": [0, 0], "end": [10, NaN]}]', b"[[[0, 0], [10, 0]], [[10, 0], [10, NaN]]]",
+    b'[{"start": [0, 0]}]', b"[[0, 0, 10, 0]]", b"{}", b"\xff[]",
+    b"[" * 200_000 + b"]" * 200_000,
+])
+def test_the_command_line_and_from_json_refuse_a_plan_file_with_one_message(square, tmp_path,
+                                                                            capsys, content):
+    """Reference: the ValueError of Plan.from_json on the same file. Records used to be counted
+    from 0 by the library and from 1 by the command line, and a file that is not UTF-8 or is
+    nested 200,000 deep ended the command with a traceback."""
+    _, pts = square
+    path = tmp_path / "bad.json"
+    path.write_bytes(content)
+    with pytest.raises(ValueError) as e:
+        Plan.from_json(path)
+    out = tmp_path / "out.csv"
+    msg = refused(["isovist", "--plan", path, "--points", pts, "--out", out], r".", capsys, out)
+    assert msg == str(e.value)
+
+
 def test_a_plan_file_may_list_segments_in_place_of_records(tmp_path):
     """Reference: the same walls as records, and isovist_field on the walls themselves. The
     list of segments, with or without z, gives the same table to the last bit."""

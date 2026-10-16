@@ -156,7 +156,7 @@ def assert_same(a, b):
 
 
 @pytest.mark.parametrize("name", FOV_CALLS)
-@pytest.mark.parametrize("fov", [120.0, 360.0, 2 * math.pi + 1e-9, INF])
+@pytest.mark.parametrize("fov", [7.0, 120.0, 360.0, INF])
 def test_a_field_of_view_above_a_full_turn_is_refused_as_degrees(name, fov):
     """fov=120, meant as degrees, used to return the full turn without a message."""
     with pytest.raises(ValueError, match=r"fov must be an angle in radians.*math\.radians"):
@@ -164,7 +164,19 @@ def test_a_field_of_view_above_a_full_turn_is_refused_as_degrees(name, fov):
 
 
 @pytest.mark.parametrize("name", FOV_CALLS)
-@pytest.mark.parametrize("fov", [2 * math.pi, math.radians(360), math.tau, 2 * math.pi + 1e-13])
+@pytest.mark.parametrize("fov", [2 * math.pi * (1 + 2e-6), 2 * math.pi + 1e-5, 6.5])
+def test_a_field_of_view_just_above_a_full_turn_is_refused_with_the_full_turn(name, fov):
+    """Below 7 a field of view reads as radians, so the advice is the full turn, not degrees."""
+    with pytest.raises(ValueError, match=r"fov must be an angle in radians of at most 2 pi, the "
+                                         r"full turn, got .*For the full turn, pass math\.tau"
+                       ) as e:
+        FOV_CALLS[name](fov=fov)
+    assert "math.radians" not in str(e.value)
+
+
+@pytest.mark.parametrize("name", FOV_CALLS)
+@pytest.mark.parametrize("fov", [2 * math.pi, math.radians(360), math.tau, 2 * math.pi + 1e-13,
+                                 np.float32(2 * math.pi), 2 * math.pi * (1 + 1e-6)])
 def test_a_full_turn_up_to_rounding_is_the_full_turn(name, fov):
     """Reference: the call with the default field of view, the full turn, to the last bit.
     Closed form for the isovist: the 10 m square has area 100 and perimeter 40."""
@@ -202,15 +214,19 @@ def test_a_direction_vector_gives_the_view_of_its_angle(name, vector):
 
 
 @pytest.mark.parametrize("name", [*DIRECTION_CALLS, "segment_ray_hits_ds"])
-@pytest.mark.parametrize("direction", [45.0, -90.0, 360.0, 2 * math.pi + 1e-9,
-                                       -2 * math.pi - 1e-9])
+@pytest.mark.parametrize("direction", [45.0, -90.0, 360.0, 6.5, 2 * math.pi * (1 + 2e-6),
+                                       -2 * math.pi - 1e-5])
 def test_a_direction_beyond_a_full_turn_is_refused_as_degrees(name, direction):
-    """direction=45, meant as degrees, used to give the view along 45 radians."""
+    """direction=45, meant as degrees, used to give the view along 45 radians. The message
+    gives both cures: degrees convert, and radians of more than a turn, as np.unwrap returns
+    them, wrap."""
     call = DIRECTION_CALLS.get(name) or (lambda d: segment_ray_hits(
         SQUARE, (4.0, 3.0), 36, fov=1.0, direction=d, layout="decodingspaces"))
     with pytest.raises(ValueError, match=r"direction must be an angle in radians, "
                                          r"counter-clockwise from \+x, between -2 pi and 2 pi, "
-                                         r"or a vector \(dx, dy\).*math\.radians"):
+                                         r"or a vector \(dx, dy\).*math\.radians\("
+                                         rf"{direction!r}\).*math\.remainder\({direction!r}, "
+                                         r"math\.tau\)"):
         call(direction)
 
 
@@ -219,7 +235,7 @@ def test_a_direction_beyond_a_full_turn_is_refused_as_degrees(name, direction):
 def test_a_direction_of_a_full_turn_is_taken(name, turns):
     """Closed form: a direction one full turn away looks the same way, so the visible areas,
     lengths and hits agree with those of direction 0 (to rounding, as the angles differ)."""
-    for d in (turns * 2 * math.pi, turns * (2 * math.pi + 1e-13)):
+    for d in (turns * 2 * math.pi, turns * (2 * math.pi + 1e-13), np.float32(turns * 2 * math.pi)):
         DIRECTION_CALLS[name](d)
     iso = isovist(SQUARE, (4.0, 3.0), fov=1.0, direction=turns * 2 * math.pi)
     ref = isovist(SQUARE, (4.0, 3.0), fov=1.0, direction=0.0)

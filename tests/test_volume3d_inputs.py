@@ -8,6 +8,7 @@ it returns a result the docstring defines.
 import math
 
 import numpy as np
+import pandas as pd
 import pytest
 
 o3d = pytest.importorskip("open3d")
@@ -362,9 +363,10 @@ FIELD_CALLS = {
 @pytest.mark.parametrize("kw, match", [
     ({"hfov": 120.0}, r"hfov must be an angle in radians in \(0, 2 pi\].*math\.radians\(120\.0\)"),
     ({"hfov": 360.0}, r"hfov must be an angle in radians in \(0, 2 pi\].*math\.radians\(360\.0\)"),
-    ({"hfov": 2 * math.pi + 1e-9}, r"hfov must be an angle in radians in \(0, 2 pi\]"),
+    ({"hfov": 7.0}, r"hfov must be an angle in radians in \(0, 2 pi\].*math\.radians\(7\.0\)"),
     ({"hfov": np.inf}, r"hfov must be an angle in radians in \(0, 2 pi\].*math\.radians"),
     ({"vfov": 60.0}, r"vfov must be an angle in radians in \(0, pi\].*math\.radians\(60\.0\)"),
+    ({"vfov": 6.5}, r"vfov must be an angle in radians in \(0, pi\].*math\.radians\(6\.5\)"),
 ])
 def test_a_field_of_view_in_degrees_is_refused_with_the_conversion(name, kw, match):
     """These were refused before, with a message that named neither radians nor the cure."""
@@ -372,6 +374,56 @@ def test_a_field_of_view_in_degrees_is_refused_with_the_conversion(name, kw, mat
         FIELD_CALLS[name](**kw)
     with pytest.raises(ValueError, match=match):
         check_field_of_view(kw.get("hfov", 1.0), kw.get("vfov", 1.0), 0.0)
+
+
+@pytest.mark.parametrize("name", FIELD_CALLS)
+@pytest.mark.parametrize("kw, match", [
+    ({"hfov": 2 * math.pi + 1e-5}, r"hfov must be an angle in radians in \(0, 2 pi\], got "
+                                   r".*For the full turn, pass math\.tau"),
+    ({"hfov": 6.5}, r"hfov .*For the full turn, pass math\.tau"),
+    ({"vfov": 2 * math.pi}, r"vfov must be an angle in radians in \(0, pi\], got .*Pole to pole "
+                            r"is pi: for the full height, pass math\.pi"),
+    ({"vfov": math.pi + 1e-5}, r"vfov .*Pole to pole is pi"),
+])
+def test_a_field_of_view_beyond_its_range_in_radians_gets_the_full_range(name, kw, match):
+    """A vertical field of view of 2 pi, pole to pole taken as a full turn, used to get the
+    advice to convert it from degrees, which gives 0.11 rad."""
+    for call in (lambda: FIELD_CALLS[name](**kw),
+                 lambda: check_field_of_view(kw.get("hfov", 1.0), kw.get("vfov", 1.0), 0.0)):
+        with pytest.raises(ValueError, match=match) as e:
+            call()
+        assert "math.radians" not in str(e.value)
+
+
+def same(a, b):
+    """Equal to the last bit, tables and view volumes included."""
+    if hasattr(a, "metrics"):
+        a, b = _volume(a), _volume(b)
+    if isinstance(a, pd.DataFrame):
+        pd.testing.assert_frame_equal(a, b, check_exact=True)
+    else:
+        np.testing.assert_equal(a, b)
+
+
+@pytest.mark.parametrize("name", FIELD_CALLS)
+@pytest.mark.parametrize("kw, ref", [
+    ({"hfov": np.float32(2 * math.pi)}, {}),
+    ({"hfov": 2 * 3.14159265359}, {}),
+    ({"hfov": 2 * math.pi * (1 + 1e-6), "vfov": 1.0}, {"vfov": 1.0}),
+    ({"vfov": np.float32(math.pi)}, {}),
+    ({"vfov": math.pi * (1 + 1e-6), "hfov": 1.0}, {"hfov": 1.0}),
+])
+def test_a_full_range_up_to_float32_rounding_is_the_full_range(name, kw, ref):
+    """Reference: the call with the exact limits 2 pi and pi, to the last bit. 0.2.1 refused
+    these values, so no earlier result changes."""
+    same(FIELD_CALLS[name](**kw), FIELD_CALLS[name](**ref))
+
+
+@pytest.mark.parametrize("elevation", [30.0, -45.0])
+def test_an_elevation_in_degrees_gets_the_conversion(elevation):
+    with pytest.raises(ValueError, match=r"between the poles.*math\.radians\("
+                                         rf"{elevation!r}\)"):
+        view_volume(BOX, (0, 0, 0), n_rays=256, vfov=0.5, elevation=elevation)
 
 
 def _volume(vv):
@@ -402,13 +454,22 @@ def test_a_direction_vector_gives_the_view_of_its_azimuth(name, vector):
 
 
 @pytest.mark.parametrize("name", DIRECTION_CALLS)
-@pytest.mark.parametrize("direction", [45.0, -90.0, 2 * math.pi + 1e-9])
+@pytest.mark.parametrize("direction", [45.0, -90.0, 2 * math.pi + 1e-5])
 def test_a_direction_in_degrees_is_refused(name, direction):
     """direction=45, meant as degrees, used to centre the view on 45 radians."""
     with pytest.raises(ValueError, match=r"direction must be an angle in radians, "
-                                         r"counter-clockwise from \+x, between -2 pi and 2 pi, "
-                                         r"or a vector \(dx, dy\).*math\.radians"):
+                                         r"counter-clockwise from \+x, between -2 pi and 2 pi"
+                                         r".*math\.radians.*math\.remainder"):
         DIRECTION_CALLS[name](direction)
+
+
+@pytest.mark.parametrize("name", DIRECTION_CALLS)
+@pytest.mark.parametrize("turns", [1, -1])
+def test_a_float32_full_turn_is_a_direction(name, turns):
+    """A float32 2 pi lies 1.75e-7 above 2 pi and was refused. It is taken as the float64
+    value it holds, as 0.2.1 took it."""
+    d = np.float32(turns * 2 * math.pi)
+    same(DIRECTION_CALLS[name](d), DIRECTION_CALLS[name](float(d)))
 
 
 @pytest.mark.parametrize("name", DIRECTION_CALLS)

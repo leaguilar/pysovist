@@ -157,7 +157,8 @@ def segment_visibility(
         unlimited, and rays that meet no wall add nothing.
     fov : float
         Field of view in radians, in (0, 2 pi], centred on ``direction``.
-        2 pi is the full turn, and so is a value less than 1e-12 above it.
+        2 pi is the full turn, and so is a value up to a relative 1e-6 above
+        it, such as 2 pi in float32.
         A larger value raises a ``ValueError``: an angle in degrees
         converts with ``math.radians``. Default: full turn.
     direction : float or (dx, dy)
@@ -299,8 +300,9 @@ def segment_visibility_field(
         raise TypeError(f"unexpected keyword arguments {sorted(unknown)}")
     if "direction" in kw:
         kw = {**kw, "direction": direction_angle(kw["direction"], loop="segment_visibility")}
-    _view_settings(kw.get("max_distance", np.inf), kw.get("fov", TWO_PI),
-                   kw.get("direction", 0.0), kw.get("eps", 1e-9))
+    R, fov, direction, eps = _view_settings(kw.get("max_distance", np.inf), kw.get("fov", TWO_PI),
+                                            kw.get("direction", 0.0), kw.get("eps", 1e-9))
+    kw = {**kw, "max_distance": R, "fov": fov, "direction": direction, "eps": eps}  # as checked
     n_jobs, chunk = _workers(n_jobs, chunk)
     starts = list(range(0, len(origins), chunk))
     parts = [origins[i:i + chunk] for i in starts]
@@ -387,7 +389,8 @@ def segment_ray_hits(
         is closer.
     fov : float
         Field of view in radians, in (0, 2 pi], centred on ``direction``.
-        2 pi is the full turn, and so is a value less than 1e-12 above it.
+        2 pi is the full turn, and so is a value up to a relative 1e-6 above
+        it, such as 2 pi in float32.
         A larger value raises a ``ValueError``: an angle in degrees
         converts with ``math.radians``. Default: full turn.
     direction : float or (x, y)

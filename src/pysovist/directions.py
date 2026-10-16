@@ -28,7 +28,7 @@ import math
 
 import numpy as np
 
-from ._angles import degrees_hint, direction_angle
+from ._angles import beyond, degrees_hint, direction_angle, full_turn_hint
 
 GOLDEN_ANGLE = np.pi * (3.0 - np.sqrt(5.0))
 
@@ -120,9 +120,11 @@ def check_field_of_view(hfov: float, vfov: float, elevation: float) -> tuple[flo
     Parameters
     ----------
     hfov : float
-        Horizontal field of view in radians, in (0, 2 pi].
+        Horizontal field of view in radians, in (0, 2 pi]. A value up to a
+        relative 1e-6 above 2 pi, such as 2 pi in float32, is the full turn.
     vfov : float
-        Vertical field of view in radians, in (0, pi].
+        Vertical field of view in radians, in (0, pi]. A value up to a
+        relative 1e-6 above pi is pole to pole.
     elevation : float
         Elevation of the centre of the field, in radians.
 
@@ -136,23 +138,35 @@ def check_field_of_view(hfov: float, vfov: float, elevation: float) -> tuple[flo
     ValueError
         When ``hfov`` is not in (0, 2 pi], ``vfov`` is not in (0, pi],
         ``elevation`` is not finite, or the vertical field reaches beyond a
-        pole. A field of view above its range, such as an angle in degrees,
-        gets a message that suggests ``math.radians``.
+        pole. A field of view of 7 or more, or a vertical one above 2 pi,
+        reads as degrees, and the message suggests ``math.radians``.
     """
+    _, _, lo, hi = _field_of_view(hfov, vfov, elevation)
+    return lo, hi
+
+
+def _field_of_view(hfov, vfov, elevation) -> tuple[float, float, float, float]:
+    """``hfov`` and ``vfov`` clamped to 2 pi and pi, and the elevations of the two edges."""
     hfov, vfov, elevation = float(hfov), float(vfov), float(elevation)
     if not math.isfinite(elevation):
         raise ValueError("elevation must be a finite angle in radians")
-    if not 0 < hfov <= 2 * np.pi:
-        hint = f" {degrees_hint(hfov)}" if hfov > 2 * np.pi else ""
+    if not (hfov > 0 and not beyond(hfov, 2 * np.pi)):
+        hint = f" {full_turn_hint(hfov)}" if hfov > 2 * np.pi else ""
         raise ValueError(f"hfov must be an angle in radians in (0, 2 pi], got {hfov}.{hint}")
-    if not 0 < vfov <= np.pi:
-        hint = f" {degrees_hint(vfov)}" if vfov > np.pi else ""
+    if not (vfov > 0 and not beyond(vfov, np.pi)):
+        hint = ""
+        if beyond(vfov, 2 * np.pi):
+            hint = f" {degrees_hint(vfov)}"
+        elif vfov > np.pi:
+            hint = " Pole to pole is pi: for the full height, pass math.pi."
         raise ValueError(f"vfov must be an angle in radians in (0, pi], got {vfov}.{hint}")
+    hfov, vfov = min(hfov, 2 * np.pi), min(vfov, np.pi)
     lo, hi = elevation - vfov / 2, elevation + vfov / 2
     if lo < -np.pi / 2 - 1e-12 or hi > np.pi / 2 + 1e-12:
+        hint = f". {degrees_hint(elevation)}" if abs(elevation) > np.pi / 2 else ""
         raise ValueError("the vertical field of view must lie between the poles: "
-                         "|elevation| + vfov / 2 <= pi / 2")
-    return max(lo, -np.pi / 2), min(hi, np.pi / 2)
+                         f"|elevation| + vfov / 2 <= pi / 2{hint}")
+    return hfov, vfov, max(lo, -np.pi / 2), min(hi, np.pi / 2)
 
 
 def in_field_of_view(directions, *, hfov: float = 2 * np.pi, vfov: float = np.pi,
@@ -258,7 +272,7 @@ def angle_grid(n_azimuth: int, n_elevation: int, *, hfov: float = 2 * np.pi,
         that [`in_field_of_view`][pysovist.directions.in_field_of_view] refuses.
     """
     na, ne = _count(n_azimuth, "n_azimuth"), _count(n_elevation, "n_elevation")
-    lo, hi = check_field_of_view(hfov, vfov, elevation)
+    hfov, _, lo, hi = _field_of_view(hfov, vfov, elevation)
     direction = direction_angle(direction)
     step = hfov / na
     az = direction - hfov / 2 + step * (np.arange(na) + 0.5)

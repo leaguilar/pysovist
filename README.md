@@ -5,7 +5,7 @@ Exact isovists and view volumes from floor plans, meshes and raw point clouds.
 An isovist is the region visible from one point. pysovist computes it in two settings:
 
 - **2D, from wall segments.** The visible polygon is computed exactly, with no ray count. Area, perimeter, occlusivity, radial statistics, drift and elongation follow in closed form, and so does convex deficiency without a range limit.
-- **3D, from a mesh or a point cloud.** The view volume is the volume visible from an eye point. Point clouds are used as scanned: every point is a small ball, so furniture, equipment and people occlude as they did on the day of the scan.
+- **3D, from a mesh or a point cloud.** The view volume is the volume visible from an eye point. Point clouds are used as scanned: every point is a small ball, so furniture, equipment and people occlude as they did on the day of the scan. With `shape=True`, the 3D counterparts of the 2D metrics follow: surface and occluding area, sphericity, drift, elongations and radial statistics.
 
 ## Install
 
@@ -79,7 +79,7 @@ software. GitHub's "Cite this repository" button gives the same reference from `
 @software{pysovist,
   author  = {Aguilar, Leonel and Tuncay, Bartu},
   title   = {pysovist: exact isovists and view volumes from floor plans, meshes and point clouds},
-  version = {0.2.1},
+  version = {0.3.0},
   year    = {2026},
   url     = {https://github.com/leaguilar/pysovist}
 }

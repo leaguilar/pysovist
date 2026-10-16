@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.3.0
 
 View volumes have shape metrics, the 3D counterparts of the 2D isovist metrics. `view_volume(..., shape=True)` adds them
 to the metrics and `view_volume_field(..., shape=True)` adds them as the last columns, in the order of

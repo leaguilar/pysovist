@@ -1,6 +1,17 @@
 # Changelog
 
-## 0.2.2 (unreleased)
+## 0.3.0 (unreleased)
+
+View volumes have shape metrics, the 3D counterparts of the 2D isovist metrics. `view_volume(..., shape=True)` adds them
+to the metrics and `view_volume_field(..., shape=True)` adds them as the last columns, in the order of
+`SHAPE_METRIC_NAMES`: the surface and occluding area, sphericity and jaggedness, the drift with its horizontal and
+vertical parts and its direction, two elongations, the convex deficiency, and the variance, skewness, mean absolute
+deviation and dispersion of the depth weighted by solid angle. They hold for fields of view and angle grids and follow
+the escape and inside policies. Neighbouring rays mark an occluding face where their inverse depth changes faster than
+any plane at the eye's clearance allows, so a wall seen at a grazing angle never counts as occluding, and `jump_factor`
+scales that bound. Each metric is tested against a closed form, the exact 2D isovist of a prism room or shadow faces
+built in the tests, and the surface and occluding areas converge with the ray count. Calls without `shape=True` return
+what 0.2.1 returns.
 
 Angles given in degrees by mistake now stop with a message, and plan files may list segments. A field of view above
 2 pi, such as `fov=120` meant as degrees, raises a `ValueError` that suggests `math.radians`, where 0.2.1 returned the

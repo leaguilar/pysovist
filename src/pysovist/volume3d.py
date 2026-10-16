@@ -53,6 +53,10 @@ Metrics
 - ``volume_up``, ``volume_down``: the parts of V above and below the eye's
   horizontal plane (directions in the plane count half to each).
 
+With ``shape=True`` the shape metrics of ``pysovist.shape3d`` follow: the
+surface and occluding area, sphericity, jaggedness, drift, elongation, convex
+deficiency and the radial statistics weighted by solid angle.
+
 Directed views
 --------------
 A field of view (``hfov``, ``vfov``, ``direction``, ``elevation``, see
@@ -98,6 +102,7 @@ from .directions import (
     solid_angle_weights,
 )
 from .results import Flags
+from .shape3d import SHAPE_METRIC_NAMES, shape_metrics, triangulate
 
 VOLUME_METRIC_NAMES = (
     "volume", "r_mean", "r_std", "r_min", "r_max", "equivalent_radius", "escape_fraction",
@@ -114,7 +119,7 @@ DIRECTION_SETS = ("fibonacci", "random")
 _CHUNK_RAYS = 1 << 22  # rays per batch of observers in view_volume_field
 _FIELD_KEYS = frozenset({"n_rays", "directions", "seed", "max_distance", "near_clip", "escape",
                          "inside", "eps", "radius", "hfov", "vfov", "direction", "elevation",
-                         "weights", "ground"})
+                         "weights", "ground", "shape", "jump_factor"})
 FACTOR_NAMES = ("sky_factor", "ground_factor", "object_factor")
 """Names of the view factors, in order.
 
@@ -160,7 +165,9 @@ class ViewVolume:
         True when ``near_clip`` is positive and the clearance lies below it.
     metrics : dict
         The metrics, keyed by the names of
-        [`VOLUME_METRIC_NAMES`][pysovist.VOLUME_METRIC_NAMES].
+        [`VOLUME_METRIC_NAMES`][pysovist.VOLUME_METRIC_NAMES], followed with
+        ``shape=True`` by those of
+        [`SHAPE_METRIC_NAMES`][pysovist.SHAPE_METRIC_NAMES].
     object_ids : ndarray of shape (n,) or None
         The object each ray hits within ``max_distance``, -1 for none. Set by
         ``view_volume(..., object_ids=True)``, else None. For a mesh it is the
@@ -277,6 +284,8 @@ def view_volume(
     elevation: float = 0.0,
     weights=None,
     object_ids: bool = False,
+    shape: bool = False,
+    jump_factor: float = 1.0,
 ) -> ViewVolume:
     """View volume of one eye point, over the full sphere or a field of view.
 
@@ -350,6 +359,23 @@ def view_volume(
         which [`ViewVolume.factors`][pysovist.ViewVolume.factors] and
         [`ViewVolume.hits_per_object`][pysovist.ViewVolume.hits_per_object] use.
         Default False.
+    shape : bool
+        Also compute the shape metrics: surface and occluding area,
+        sphericity, jaggedness, drift and its direction, elongation, convex
+        deficiency and the weighted radial statistics, keyed by
+        [`SHAPE_METRIC_NAMES`][pysovist.SHAPE_METRIC_NAMES] after the volume
+        metrics. Default False. They follow the escape and inside policies,
+        and a clipped ray ends at the range limit. Directions with weights
+        that cover part of the sphere need the field of view they cover. The
+        [metric definitions](../metrics.md#3d-shape-metrics) page defines
+        them.
+    jump_factor : float
+        Neighbouring rays ``i`` and ``j`` see a depth jump, the edge of an
+        occluding face, when ``|1/r_i - 1/r_j| > jump_factor |u_i - u_j| / c``,
+        with ``u`` their unit directions and ``c`` the clearance. Positive.
+        Default 1, at which no plane at least the clearance away from the eye
+        counts as occluding. A larger value leaves smaller jumps out. Used
+        with ``shape=True``.
 
     Returns
     -------
@@ -362,12 +388,18 @@ def view_volume(
         When the scene is empty (a mesh with no triangles, a point cloud with
         no points), the origin is not one finite point, an option lies outside
         the domain given above, or no direction lies inside the field of view.
+        With ``shape=True``, also when the weights of a full view do not sum
+        to 4 pi (give the field of view they cover), the directions leave a
+        gap wider than 10 ray spacings, or no three neighbouring directions
+        lie inside the field of view.
     TypeError
         When ``radius`` is given for a mesh.
     """
     occ = _occluder(occluders3d, radius)
     d = _directions(directions, n_rays, seed)
     R = _check(escape, inside, max_distance, near_clip, eps)
+    jump_factor = _jump_factor(jump_factor)
+    direction = direction_angle(direction)
     d, w = _field(d, weights, hfov, vfov, direction, elevation)
     o = _eye(origin)
     if object_ids:
@@ -380,6 +412,10 @@ def view_volume(
         metrics = _metrics(t, d[:, 2], R, escape, blocked, inside)
     else:
         metrics = _weighted_metrics(t, d[:, 2], w, R, escape, blocked, inside)
+    if shape:
+        surface, wt = _shape_surface(d, w, weights is not None, hfov, vfov, direction, elevation)
+        metrics.update(_shape(t, d, wt, R, escape, blocked, inside, metrics["volume"],
+                              np.array([clearance]), surface, jump_factor))
     hit = np.isfinite(t[0]) & (t[0] <= R)
     unbounded = bool(not blocked[0] and np.isinf(R) and not hit.all())
     flags = Flags(unbounded=unbounded, **{occ.block_flag: bool(blocked[0])})
@@ -409,12 +445,12 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
         the observers are batched into one kernel call per chunk.
     **kw
         Keyword arguments of [`view_volume`][pysovist.view_volume], including
-        a field of view and ``weights``, except ``object_ids``. Every origin
-        uses the same directions and the same ``direction``: one angle or one
-        vector, where a sequence of two numbers is always a vector
-        ``(dx, dy)``. For a direction per eye, call ``view_volume`` for each
-        eye in a loop. ``ground`` (the object ids that count as
-        ground, as in [`ViewVolume.factors`][pysovist.ViewVolume.factors])
+        a field of view, ``weights``, ``shape`` and ``jump_factor``, except
+        ``object_ids``. Every origin uses the same directions and the same
+        ``direction``: one angle or one vector, where a sequence of two numbers
+        is always a vector ``(dx, dy)``. For a direction per eye, call
+        ``view_volume`` for each eye in a loop. ``ground`` (the object ids that
+        count as ground, as in [`ViewVolume.factors`][pysovist.ViewVolume.factors])
         adds the view factors.
 
     Returns
@@ -425,7 +461,9 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
         ``clearance`` and the flags ``on_wall``, ``inside_occluder``,
         ``unbounded`` and ``near_clipped``. With ``ground``, the factors
         follow in the order of [`FACTOR_NAMES`][pysovist.volume3d.FACTOR_NAMES],
-        NaN for flagged rows.
+        NaN for flagged rows. With ``shape=True``, the shape metrics come last,
+        in the order of [`SHAPE_METRIC_NAMES`][pysovist.SHAPE_METRIC_NAMES].
+        They cost about 30 ms per eye at 16,384 rays, on one core.
 
     Raises
     ------
@@ -447,8 +485,14 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
     escape, inside = kw.get("escape", "clip"), kw.get("inside", "nan")
     near_clip, eps = kw.get("near_clip", 0.0), kw.get("eps", 1e-9)
     R = _check(escape, inside, kw.get("max_distance", np.inf), near_clip, eps)
-    d, w = _field(d, kw.get("weights"), kw.get("hfov", 2 * np.pi), kw.get("vfov", np.pi),
-                  kw.get("direction", 0.0), kw.get("elevation", 0.0), loop="view_volume")
+    jump_factor = _jump_factor(kw.get("jump_factor", 1.0))
+    # one angle for the field and for the shape surface, whether given as an angle or a vector
+    view = [kw.get("hfov", 2 * np.pi), kw.get("vfov", np.pi),
+            direction_angle(kw.get("direction", 0.0), loop="view_volume"), kw.get("elevation", 0.0)]
+    d, w = _field(d, kw.get("weights"), *view, loop="view_volume")
+    shape = bool(kw.get("shape", False))
+    if shape:
+        surface, wt = _shape_surface(d, w, kw.get("weights") is not None, *view)
     ground = kw.get("ground")
     ground_ids = None if ground is None else _ground_ids(ground, _n_objects(occ))
     o = _origins(origins)
@@ -458,6 +502,7 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
     blocked = occ.blocked(o, eps, near_clip)
     metrics = {k: np.full(len(o), np.nan) for k in VOLUME_METRIC_NAMES}
     factors = {k: np.full(len(o), np.nan) for k in FACTOR_NAMES}
+    shapes = {k: np.full(len(o), np.nan) for k in SHAPE_METRIC_NAMES}
     unbounded = np.zeros(len(o), dtype=bool)
     active = np.flatnonzero(~blocked)
     step = max(1, _CHUNK_RAYS // len(d))
@@ -476,11 +521,18 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
             part = _weighted_metrics(t, d[:, 2], w, R, escape, none, inside)
         for k in VOLUME_METRIC_NAMES:
             metrics[k][rows] = part[k]
+        if shape:
+            part = _shape(t, d, wt, R, escape, none, inside, part["volume"], clearance[rows],
+                          surface, jump_factor)
+            for k in SHAPE_METRIC_NAMES:
+                shapes[k][rows] = part[k]
         if np.isinf(R):
             unbounded[rows] = ~np.isfinite(t).all(axis=1)
     if inside == "zero":
         for k in VOLUME_METRIC_NAMES:
             metrics[k][blocked] = 0.0
+        for k in SHAPE_METRIC_NAMES:
+            shapes[k][blocked] = 0.0
 
     flags = {"on_wall": np.zeros(len(o), dtype=bool), "inside_occluder": np.zeros(len(o), bool)}
     flags[occ.block_flag] = blocked
@@ -489,6 +541,7 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
         **flags, "unbounded": unbounded,
         "near_clipped": (near_clip > 0) & (clearance < near_clip),
         **({} if ground_ids is None else factors),
+        **(shapes if shape else {}),
     })
 
 
@@ -520,6 +573,44 @@ def _metrics(t, dz, R, escape, blocked, inside) -> dict:
     for v in out.values():
         v[blocked] = value
     return out
+
+
+def _shape(t, d, w, R, escape, blocked, inside, volume, clearance, surface, jump_factor) -> dict:
+    """Shape metric arrays over the rows of first-hit distances ``t`` (m, n)."""
+    hit = np.isfinite(t) & (t <= R)
+    fill = {"clip": R, "zero": 0.0, "nan": np.nan}[escape]
+    r = np.where(hit, np.minimum(t, R), fill)
+    value = np.nan if inside == "nan" else 0.0
+    out = {k: np.full(len(r), value) for k in SHAPE_METRIC_NAMES}
+    free = ~np.asarray(blocked, dtype=bool)
+    if free.any():
+        part = shape_metrics(r[free], d, w, volume[free], clearance[free], surface, jump_factor)
+        for k in SHAPE_METRIC_NAMES:
+            out[k][free] = part[k]
+    return out
+
+
+def _jump_factor(value) -> float:
+    v = float(value)
+    if not v > 0:
+        raise ValueError("jump_factor must be a positive number: 1 (the default) flags no plane "
+                         "at least the clearance away, larger values flag fewer jumps")
+    return v
+
+
+def _shape_surface(d, w, weighted, hfov, vfov, direction, elevation):
+    """Triangulation of the directions for the shape metrics, and the solid angle of each ray."""
+    wt = _weights(w, len(d))
+    if hfov >= 2 * np.pi and vfov >= np.pi:
+        total = wt.sum()
+        if weighted and abs(total / (4 * np.pi) - 1) > 1e-6:
+            raise ValueError(
+                f"the weights sum to {total:.4g} sr, not the 4 pi sr of the sphere: give the "
+                "field of view the directions cover (hfov, vfov, direction, elevation), so that "
+                "the shape metrics can close the view along its edges")
+        return triangulate(d, wt), wt
+    field = {"hfov": hfov, "vfov": vfov, "direction": direction, "elevation": elevation}
+    return triangulate(d, wt, field), wt
 
 
 def _directions(directions, n_rays, seed) -> np.ndarray:

@@ -539,7 +539,9 @@ def test_vertical_isovist_needs_a_finite_eye_and_azimuth(eye, azimuth):
 @pytest.mark.parametrize("kw, match", [
     ({"fov": 0.0}, "fov"), ({"fov": -1.0}, "fov"), ({"fov": 7.0}, "fov"),
     ({"max_distance": -1.0}, "max_distance"), ({"max_distance": 0.0}, "max_distance"),
-    ({"eps": -1.0}, "eps"), ({"fov": 1.0, "elevation": np.nan}, "elevation"),
+    ({"eps": -1.0}, "eps must be a positive distance in metres"),
+    ({"eps": 0.0}, "eps must be a positive distance in metres"),
+    ({"fov": 1.0, "elevation": np.nan}, "elevation"),
 ])
 def test_vertical_isovist_refuses_inconsistent_options(kw, match):
     with pytest.raises(ValueError, match=match):

@@ -19,12 +19,14 @@ from pysovist import (
     isovist,
     isovist_field,
     path_isovists,
+    plane_to_world,
     sample_path,
     sampled_metrics,
     segment_ray_hits,
     segment_visibility,
     segment_visibility_field,
     vertical_isovist,
+    vertical_section,
 )
 
 from .geometry import rect
@@ -203,7 +205,13 @@ DIRECTION_CALLS = {
     "segment_visibility": lambda d: _visibility(segment_visibility(SQUARE, (4.0, 3.0), fov=1.0,
                                                                    direction=d)),
     "segment_ray_hits": lambda d: segment_ray_hits(SQUARE, (4.0, 3.0), 36, fov=1.0, direction=d),
+    # the azimuth of a vertical plane is a direction too, also when the field of view is a turn
+    "vertical_isovist": lambda d: _wedges(vertical_isovist(BOX, (4.0, 3.0, 1.6), d)),
+    "vertical_section": lambda d: vertical_section(BOX, (4.0, 3.0, 1.6), d).segments,
+    "plane_to_world": lambda d: plane_to_world([(1.0, 0.5), (2.0, 1.5)], (4.0, 3.0, 1.6), d),
 }
+ARGUMENT = {"vertical_isovist": "azimuth", "vertical_section": "azimuth",
+            "plane_to_world": "azimuth"}  # the name of the direction, "direction" elsewhere
 
 # The fields, which take one angle for every observer.
 FIELD_CALLS = {
@@ -222,6 +230,9 @@ TURN_CALLS = {
     "segment_ray_hits": DIRECTION_CALLS["segment_ray_hits"],
     "segment_ray_hits_ds": _ray_hits_ds,
     **FIELD_CALLS,
+    "vertical_isovist": lambda d: vertical_isovist(BOX, (4.0, 3.0, 1.6), d).metrics,
+    "vertical_section": DIRECTION_CALLS["vertical_section"],
+    "plane_to_world": DIRECTION_CALLS["plane_to_world"],
 }
 
 
@@ -267,9 +278,10 @@ def test_a_direction_beyond_a_full_turn_is_refused_as_degrees(name, direction):
     gives both cures: degrees convert, and radians of more than a turn, as np.unwrap returns
     them, wrap."""
     call = DIRECTION_CALLS.get(name, _ray_hits_ds)
-    with pytest.raises(ValueError, match=r"direction must be an angle in radians, "
-                                         r"counter-clockwise from \+x, between -2 pi and 2 pi, "
-                                         r"or a vector \(dx, dy\), got .*" + cures(direction)):
+    with pytest.raises(ValueError, match=rf"{ARGUMENT.get(name, 'direction')} must be an angle in "
+                                         r"radians, counter-clockwise from \+x, between -2 pi "
+                                         r"and 2 pi, or a vector \(dx, dy\), got .*"
+                                         + cures(direction)):
         call(direction)
 
 
@@ -301,19 +313,28 @@ def test_a_direction_of_a_full_turn_is_taken(name, turns):
 @pytest.mark.parametrize("vector", [(0.0, 0.0), (NAN, 1.0), (1.0, INF)])
 def test_a_direction_vector_without_a_direction_is_refused(name, vector):
     """atan2(0, 0) is 0, so the zero vector used to look along +x in the even layout."""
-    with pytest.raises(ValueError, match=r"direction as a vector \(dx, dy\) must be finite, "
-                                         r"with an x or y component"):
+    with pytest.raises(ValueError, match=rf"{ARGUMENT.get(name, 'direction')} as a vector "
+                                         r"\(dx, dy\) must be finite, with an x or y component"):
         DIRECTION_CALLS.get(name, _ray_hits_ds)(vector)
 
 
-@pytest.mark.parametrize("name", ["isovist", "segment_visibility", "segment_ray_hits"])
+@pytest.mark.parametrize("name", DIRECTION_CALLS)
 @pytest.mark.parametrize("direction", [np.array([0.1, 0.2, 0.3]).reshape(3, 1), np.zeros((2, 2)),
                                        np.array([0.5]), [[1.0, 0.0]]])
 def test_a_direction_of_another_shape_is_refused(name, direction):
-    """These used to fail with a TypeError that named no argument."""
-    with pytest.raises(ValueError, match=r"direction must be one angle in radians or one vector "
-                                         r"\(dx, dy\), got an array of shape"):
+    """These used to fail with a TypeError or a numpy error that named no argument."""
+    with pytest.raises(ValueError, match=rf"{ARGUMENT.get(name, 'direction')} must be one angle "
+                                         r"in radians or one vector \(dx, dy\), got an array "
+                                         r"of shape"):
         DIRECTION_CALLS[name](direction)
+
+
+def test_plane_to_world_takes_a_vector_for_two_points():
+    """Closed form: the azimuth (0, 1) is pi / 2, so (u, z) lands at (0, u, z) for an eye at the
+    origin. A vector used to broadcast against two points and gave [1.08, 1.68, 0] for the
+    second, without a message."""
+    world = plane_to_world([(1.0, 0.0), (2.0, 0.0)], (0.0, 0.0, 0.0), (0.0, 1.0))
+    np.testing.assert_allclose(world, [[0.0, 1.0, 0.0], [0.0, 2.0, 0.0]], atol=1e-15)
 
 
 @pytest.mark.parametrize("name", FIELD_CALLS)
@@ -357,8 +378,8 @@ def test_vertical_isovist_refuses_an_elevation_in_degrees():
 def test_a_direction_of_none_is_refused_by_name(name):
     """None used to read as NaN, so the message said "got nan"."""
     call = DIRECTION_CALLS.get(name) or FIELD_CALLS[name]
-    with pytest.raises(ValueError, match=r"direction must be an angle in radians, "
-                                         r"counter-clockwise from \+x.*, got None"):
+    with pytest.raises(ValueError, match=rf"{ARGUMENT.get(name, 'direction')} must be an angle "
+                                         r"in radians, counter-clockwise from \+x.*, got None"):
         call(None)
 
 

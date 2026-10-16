@@ -19,13 +19,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from ._angles import angle, field_of_view
+from ._angles import angle, direction_angle, field_of_view
 from .isovist2d import TWO_PI, isovist
 from .plan import Plan
 from .results import Isovist
 
 
-def vertical_section(mesh, eye, azimuth: float) -> Plan:
+def vertical_section(mesh, eye, azimuth: float | tuple[float, float]) -> Plan:
     """Section of a mesh by the vertical plane through ``eye`` along ``azimuth``.
 
     Every triangle that crosses the plane gives the segment along which it
@@ -43,9 +43,14 @@ def vertical_section(mesh, eye, azimuth: float) -> Plan:
     eye : (x, y, z)
         A point of the plane. Only its x and y place the plane, and they
         are the origin of ``u``.
-    azimuth : float
-        Horizontal direction of the plane, in radians counter-clockwise
-        from +x. It is the direction of +u.
+    azimuth : float or (dx, dy)
+        Horizontal direction of the plane, the direction of +u: an angle in
+        radians, counter-clockwise from +x, between -2 pi and 2 pi, or a
+        vector ``(dx, dy)`` that points along it, which gives the same
+        result as the angle ``atan2(dy, dx)``. A larger angle raises a
+        ``ValueError``: an angle in degrees converts with ``math.radians``,
+        and an angle in radians of more than a turn wraps with
+        ``math.remainder(a, math.tau)``.
 
     Returns
     -------
@@ -55,14 +60,14 @@ def vertical_section(mesh, eye, azimuth: float) -> Plan:
     Raises
     ------
     ValueError
-        When ``eye`` is not a finite point (x, y, z) or ``azimuth`` is not a
-        finite angle.
+        When ``eye`` is not a finite point (x, y, z), or ``azimuth`` is
+        neither a finite angle between -2 pi and 2 pi nor a finite vector
+        with an x or y component.
     """
     v = np.asarray(mesh.vertices, dtype=float)
     t = np.asarray(mesh.triangles, dtype=np.int64).reshape(-1, 3)
     e = _eye(eye)
-    if not np.isfinite(azimuth):
-        raise ValueError("azimuth must be a finite angle in radians")
+    azimuth = direction_angle(azimuth, "azimuth")
     c, s = np.cos(azimuth), np.sin(azimuth)
     rel = v[:, :2] - e[:2]
     uz = np.c_[rel[:, 0] * c + rel[:, 1] * s, v[:, 2]]
@@ -82,7 +87,7 @@ def vertical_section(mesh, eye, azimuth: float) -> Plan:
 def vertical_isovist(
     mesh,
     eye,
-    azimuth: float,
+    azimuth: float | tuple[float, float],
     *,
     elevation: float = 0.0,
     fov: float = TWO_PI,
@@ -101,9 +106,8 @@ def vertical_isovist(
         Triangle mesh in metres, z up.
     eye : (x, y, z)
         Eye position. Its z is an absolute coordinate of the scene.
-    azimuth : float
-        Horizontal direction of the plane, in radians counter-clockwise
-        from +x.
+    azimuth : float or (dx, dy)
+        Horizontal direction of the plane, as in ``vertical_section``.
     elevation : float
         Centre of the field of view in the plane, in radians above the
         forward horizontal, between -2 pi and 2 pi. Default 0. Used only when
@@ -120,7 +124,7 @@ def vertical_isovist(
         ``isovist``. Default ``"nan"``.
     eps : float
         Distance in metres below which the eye counts as standing on a
-        surface, non-negative. Default 1e-9.
+        surface, positive. Default 1e-9.
 
     Returns
     -------
@@ -132,23 +136,23 @@ def vertical_isovist(
     Raises
     ------
     ValueError
-        When the eye or the azimuth is not finite, an option lies outside
-        the domain given above, or ``on_wall="raise"`` and the eye stands on
-        a surface.
+        When the eye is not finite, the azimuth is one that
+        ``vertical_section`` refuses, an option lies outside the domain
+        given above, or ``on_wall="raise"`` and the eye stands on a surface.
     """
     e = _eye(eye)
     fov = field_of_view(fov)
     elevation = angle(elevation, "elevation", "above the forward horizontal")
     if not max_distance > 0:
         raise ValueError("max_distance must be positive")
-    if not eps >= 0:
-        raise ValueError("eps must be a non-negative distance in metres")
+    if not eps > 0:
+        raise ValueError("eps must be a positive distance in metres")
     section = vertical_section(mesh, e, azimuth)
     return isovist(section, (0.0, e[2]), max_distance=max_distance, fov=fov,
                    direction=elevation, on_wall=on_wall, eps=eps)
 
 
-def plane_to_world(points, eye, azimuth: float) -> np.ndarray:
+def plane_to_world(points, eye, azimuth: float | tuple[float, float]) -> np.ndarray:
     """Map points ``(u, z)`` of the vertical plane to scene coordinates (k, 3).
 
     The point ``(u, z)`` lies at ``(x_eye + u cos(azimuth),
@@ -160,15 +164,21 @@ def plane_to_world(points, eye, azimuth: float) -> np.ndarray:
         Points ``(u, z)`` of the plane, in metres.
     eye : (x, y, z)
         The eye that placed the plane. Only its x and y are used.
-    azimuth : float
-        Horizontal direction of the plane, in radians counter-clockwise
-        from +x.
+    azimuth : float or (dx, dy)
+        Horizontal direction of the plane, as in ``vertical_section``.
 
     Returns
     -------
     ndarray of shape (k, 3)
         The points in scene coordinates.
+
+    Raises
+    ------
+    ValueError
+        When ``azimuth`` is neither a finite angle between -2 pi and 2 pi
+        nor a finite vector with an x or y component.
     """
+    azimuth = direction_angle(azimuth, "azimuth")
     p = np.asarray(points, dtype=float).reshape(-1, 2)
     e = np.asarray(eye, dtype=float)
     return np.c_[e[0] + p[:, 0] * np.cos(azimuth), e[1] + p[:, 0] * np.sin(azimuth), p[:, 1]]

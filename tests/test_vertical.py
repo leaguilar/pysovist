@@ -121,7 +121,8 @@ def test_a_triangle_in_the_plane_gives_no_segment():
 
 @settings(max_examples=60, deadline=None)
 @given(plan=st.sampled_from([L_ROOM, PILLAR_ROOM]), fx=st.floats(0.01, 0.99),
-       fy=st.floats(0.01, 0.99), fz=st.floats(0.02, 0.98), azimuth=st.floats(-7, 7))
+       fy=st.floats(0.01, 0.99), fz=st.floats(0.02, 0.98),
+       azimuth=st.floats(-2 * math.pi, 2 * math.pi))
 def test_extruded_plan_gives_the_rectangle_of_the_two_plan_rays(plan, fx, fy, fz, azimuth):
     # Full-height walls hide everything behind the first wall in each direction, so the
     # vertical isovist is the rectangle between the plan's ray ahead and its ray behind.

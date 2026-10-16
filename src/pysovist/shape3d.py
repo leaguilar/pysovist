@@ -131,7 +131,7 @@ class Surface:
 
 
 _CACHE: OrderedDict = OrderedDict()
-_CACHE_SIZE = 8
+_CACHE_SIZE = 3  # triangulations kept: a few MB each at 65,536 rays, 0.2 GB at 2^20
 GAP_FACTOR = 10.0  # a triangle wider than this many ray spacings is a gap in the directions
 
 
@@ -143,7 +143,8 @@ def triangulate(d: np.ndarray, w: np.ndarray, field: dict | None = None) -> Surf
     (``field`` holds ``hfov``, ``vfov``, ``direction`` and ``elevation``) the
     hull also takes a Fibonacci set of the same density outside the field, and
     the triangles with a corner outside are dropped, so the surface ends at
-    the outermost rays. Results are cached for repeated calls with one set.
+    the outermost rays. The last three triangulations are kept, so that
+    repeated calls with one direction set triangulate it once.
 
     Raises
     ------

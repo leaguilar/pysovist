@@ -460,6 +460,22 @@ def test_field_rows_equal_single_eyes():
                 assert getattr(row, k) == pytest.approx(m[k], rel=1e-12, abs=1e-12), (eye, k)
 
 
+def test_field_rows_with_an_angle_grid_over_a_field_equal_single_eyes():
+    # Reference: view_volume of each eye alone, for directions and weights of an angle grid that
+    # covers a field of view, passed with that field.
+    mesh = Mesh.from_plan(PILLAR, 0.0, H)
+    eyes = [(3.0, 0.0, 1.2), (-2.5, 3.0, 2.0)]
+    field = dict(hfov=math.radians(120), vfov=math.radians(60), direction=3.0,
+                 elevation=math.radians(10))
+    d, w = angle_grid(120, 60, **field)
+    df = view_volume_field(mesh, eyes, directions=d, weights=w, shape=True, **field)
+    for row, eye in zip(df.itertuples(), eyes, strict=True):
+        m = view_volume(mesh, eye, directions=d, weights=w, shape=True, **field).metrics
+        for k in SHAPE_METRIC_NAMES:
+            assert getattr(row, k) == pytest.approx(m[k], rel=1e-12, abs=1e-12), (eye, k)
+    assert df["occluding_area"][0] > 0  # the first eye looks at the pillar
+
+
 def test_field_without_shape_keeps_its_columns():
     # Reference: the columns of 0.2.1, which the default call must keep.
     df = view_volume_field(far_triangle(), [(0.0, 0.0, 0.0)], n_rays=256, max_distance=2.0)

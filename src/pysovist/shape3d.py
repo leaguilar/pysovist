@@ -72,7 +72,11 @@ contour. In each, the occluding face is rebuilt from radial segments from the
 near surface to the far surface, in the direction halfway along each side
 across the jump. The depth of each surface there is extrapolated from the ray
 that sees it, by fitting ``1/r = a . u`` to the ray and its neighbours on the
-same surface, which is exact on a plane. The band follows the lattice of the
+same surface, which is exact on a plane. The extrapolated depth stays within
+the range of the depths the fit used, widened by that range on either side,
+so a fit tilted by neighbours on other surfaces (balls of a point cloud seen
+through gaps, from an eye close to a surface) cannot send a face out to an
+arbitrary depth. The band follows the lattice of the
 rays in steps, so each piece of a face counts with its vector area projected
 onto the mean vector area of the pieces within ``N^(-1/4)`` radians that the
 jump crosses in the same sense, with ``N = 4 pi / mean(w)``. The steps cancel,
@@ -299,8 +303,13 @@ def _ribbon(r, inv, d, surface: Surface, jump, band, vec):
     between the two rays. The depth of each surface there is extrapolated from
     the ray that sees it: the inverse depth of a plane is linear in the
     direction, ``1/r = a . u``, and ``a`` is fitted to the ray and its
-    neighbours on the same surface. A band triangle crossed by two such edges
-    holds the quadrilateral between their segments. A triangle crossed by one
+    neighbours on the same surface. The extrapolated depth stays within the
+    range of the depths the fit used, widened by that range on either side:
+    ``m`` lies half a side from the ray and the neighbours a full side, so a
+    linear trend along any neighbour within 60 degrees of the gradient stays
+    inside, while a fit tilted by a few neighbours on different surfaces
+    cannot send the face out to an arbitrary depth. A band triangle crossed
+    by two such edges holds the quadrilateral between their segments. A triangle crossed by one
     or three keeps its own vector area ``vec``.
     """
     e = surface.edges
@@ -310,12 +319,15 @@ def _ribbon(r, inv, d, surface: Surface, jump, band, vec):
     far = i + j - near
     m = d[i] + d[j]
     m /= np.linalg.norm(m, axis=1)[:, None]
-    planes = _inverse_depth_planes(inv, d, e, jump, np.unique(e[jumps]))
+    planes, lo, hi = _inverse_depth_planes(r, inv, d, e, jump, np.unique(e[jumps]))
     with np.errstate(divide="ignore", invalid="ignore"):
         q_near = np.einsum("ij,ij->i", planes[near], m)
         q_far = np.einsum("ij,ij->i", planes[far], m)
         r_near = np.where(np.isfinite(q_near) & (q_near > 0), 1 / q_near, r[near])
         r_far = np.where(np.isfinite(q_far) & (q_far > 0), 1 / q_far, r[far])
+    span = hi - lo
+    r_near = np.clip(r_near, lo[near] - span[near], hi[near] + span[near])
+    r_far = np.clip(r_far, lo[far] - span[far], hi[far] + span[far])
     r_near = np.minimum(r_near, r_far)
     lo, hi = r_near[:, None] * m, r_far[:, None] * m
 
@@ -338,10 +350,11 @@ def _ribbon(r, inv, d, surface: Surface, jump, band, vec):
     return out, across
 
 
-def _inverse_depth_planes(inv, d, e, jump, verts):
+def _inverse_depth_planes(r, inv, d, e, jump, verts):
     """Least-squares ``a`` with ``1/r = a . u`` around each ray of ``verts``, NaN elsewhere.
 
-    The fit takes the ray and its neighbours across edges without a jump.
+    The fit takes the ray and its neighbours across edges without a jump. The
+    smallest and largest depth among the rays of each fit come with it.
     """
     n = len(inv)
     index = np.full(n, -1)
@@ -349,10 +362,13 @@ def _inverse_depth_planes(inv, d, e, jump, verts):
     A = np.einsum("ni,nj->nij", d[verts], d[verts])
     with np.errstate(invalid="ignore"):
         b = d[verts] * inv[verts, None]
+    lo, hi = r.astype(float), r.astype(float)
     calm = ~jump
     with np.errstate(invalid="ignore"):  # a ray at depth 0 has 1/r = inf
         for s, t in ((e[:, 0], e[:, 1]), (e[:, 1], e[:, 0])):
             sel = calm & (index[s] >= 0)
+            np.minimum.at(lo, s[sel], r[t[sel]])
+            np.maximum.at(hi, s[sel], r[t[sel]])
             k, t = index[s[sel]], t[sel]
             np.add.at(A, k, np.einsum("ni,nj->nij", d[t], d[t]))
             np.add.at(b, k, d[t] * inv[t, None])
@@ -361,7 +377,7 @@ def _inverse_depth_planes(inv, d, e, jump, verts):
     ok = (lam[:, 0] > 1e-10 * lam[:, 2]) & np.isfinite(b).all(axis=1)
     coef = np.einsum("nji,nj->ni", vec[ok], b[ok]) / lam[ok]
     out[verts[ok]] = np.einsum("nij,nj->ni", vec[ok], coef)
-    return out
+    return out, lo, hi
 
 
 def _projected_area(vec, centres, across, window) -> float:

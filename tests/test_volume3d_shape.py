@@ -6,6 +6,8 @@ an integral evaluated by scipy.
 """
 
 import math
+import os
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -27,6 +29,7 @@ from pysovist import (  # noqa: E402
     view_volume,
     view_volume_field,
 )
+from pysovist.shape3d import shape_metrics, triangulate  # noqa: E402
 from pysovist.volume3d import FACTOR_NAMES, VOLUME_METRIC_NAMES  # noqa: E402
 
 from .geometry import polygon_walls, rect  # noqa: E402
@@ -216,6 +219,59 @@ def test_a_ball_sampled_box_room_lies_between_its_erosions():
     assert inner[2] * (1 - 1e-3) < m["elongation_12"] < outer[2] * (1 + 1e-3)
     assert 0 < m["occluding_area"] < 2e-2 * m["surface_area"]
     assert view_volume(cloud, eye, n_rays=16384, shape=True).metrics["occluding_area"] == 0.0
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_far_rays_seen_through_small_holes_keep_their_faces_bounded(seed):
+    # Reference: a bound from the geometry of the scene. A near cap at 0.25 m has 60 holes of
+    # three rays each, through which far surfaces are seen at random depths from 1 to 50 m, and
+    # the eye stands 2 cm from a surface, as in a scan seen from a seat. A far ray then has only
+    # the two other rays of its hole as neighbours on its own surface, so the plane fitted to
+    # them may tilt arbitrarily. Every occluding face is radial and ends no deeper than the
+    # deepest ray D, around each hole along a ring of at most three times the angular perimeter
+    # of its triangle, and along the cap edge of length 2 pi sin(0.5) between 0.25 m and 5 m.
+    n = 16384
+    d, w = fibonacci_sphere(n), np.full(n, 4 * math.pi / n)
+    surface = triangulate(d, w)
+    rng = np.random.default_rng(seed)
+    cap = d[:, 0] > math.cos(0.5)
+    r = np.where(cap, 0.25, 5.0)
+    inside = np.flatnonzero(cap[surface.triangles].all(axis=1))
+    holes = surface.triangles[rng.choice(inside, 60, replace=False)]
+    r[holes.ravel()] = rng.uniform(1.0, 50.0, holes.size)
+    sides = np.linalg.norm(d[holes] - d[np.roll(holes, 1, axis=1)], axis=2)
+    bound = (r.max() ** 2 / 2 * 3 * sides.sum()
+             + (5.0**2 - 0.25**2) / 2 * 2 * math.pi * math.sin(0.5) * 1.5)
+    volume = np.array([(w * r**3).sum() / 3])
+    m = shape_metrics(r[None], d, w, volume, np.array([0.02]), surface, 1.0)
+    assert 0 < m["occluding_area"][0] < bound
+
+
+SCAN_INPUTS = Path(os.environ.get(
+    "PYSOVIST_SCAN_INPUTS",
+    Path(__file__).resolve().parents[2] / "data" / "processed" / "euler_inputs"))
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not (SCAN_INPUTS / "scan_xyz.npz").exists()
+                    or not (SCAN_INPUTS / "roof_envelopes.npz").exists(),
+                    reason="the hospital scan and its roof envelope are not available")
+def test_seated_eyes_in_a_scanned_hospital_keep_their_faces_bounded():
+    # Reference: the area of the sphere through the deepest ray of each eye, which no view of the
+    # scan comes near. The scan's points and its roof envelope are balls of 5 cm, and three
+    # seated eyes (0.8 m) look through gaps between them at 262,144 rays. Extrapolating the depth
+    # of a far surface from a fit tilted by neighbours on other surfaces gave occluding areas of
+    # 412,325, 81,800 and 5,583 m2 for views of 26 to 131 m3, 3 to 150 times that sphere.
+    scan = np.load(SCAN_INPUTS / "scan_xyz.npz")
+    roof = np.load(SCAN_INPUTS / "roof_envelopes.npz")["env_roof"]
+    cloud = PointCloud(np.vstack([scan["xyz"][scan["in_footprint"]], roof]), radius=0.05)
+    eyes = np.c_[scan["query_xy"][[1555, 4875, 2958]], np.full(3, 0.8)]
+    df = view_volume_field(cloud, eyes, n_rays=262144, shape=True)
+    for row in df.itertuples():
+        deepest = view_volume(cloud, (row.x, row.y, row.z), n_rays=262144).distances.max()
+        assert row.occluding_area < 4 * math.pi * deepest**2
+        assert row.surface_area < 4 * math.pi * deepest**2
+        assert row.sphericity > 1e-3
 
 
 # --- prism rooms against the exact 2D isovist -------------------------------------------------

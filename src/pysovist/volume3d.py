@@ -375,8 +375,9 @@ def view_volume(
         nearer ray's surface, and the nearer ray in front of the planes of the
         farther ray's surface, each by more than ``jump_factor |u_i - u_j|``
         in relative depth, with ``u`` their unit directions. Positive.
-        Default 1. At any value, no plane and no edge where two planes meet
-        counts as occluding, however close to the eye or grazing. A larger
+        Default 1. At any value, no wall, floor or ceiling counts as
+        occluding, however close to the eye or grazing, and no edge where two
+        of them meet, unless one is seen as a strip one ray wide. A larger
         value leaves smaller jumps out. Used with ``shape=True``.
 
     Returns
@@ -465,7 +466,7 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
         follow in the order of [`FACTOR_NAMES`][pysovist.volume3d.FACTOR_NAMES],
         NaN for flagged rows. With ``shape=True``, the shape metrics come last,
         in the order of [`SHAPE_METRIC_NAMES`][pysovist.SHAPE_METRIC_NAMES].
-        They cost about 30 ms per eye at 16,384 rays, on one core.
+        Each row equals the shape metrics of its eye alone, to the last bit.
 
     Raises
     ------

@@ -29,10 +29,10 @@ from pysovist import (  # noqa: E402
     angle_grid,
     fibonacci_sphere,
     isovist,
+    shape3d,
     view_volume,
     view_volume_field,
 )
-from pysovist import shape3d  # noqa: E402
 from pysovist.shape3d import _boundary, shape_metrics, triangulate  # noqa: E402
 from pysovist.volume3d import FACTOR_NAMES, VOLUME_METRIC_NAMES  # noqa: E402
 
@@ -488,11 +488,12 @@ def test_a_triangle_crossed_by_one_or_three_jumps_between_equal_depths_holds_no_
     assert s == pytest.approx(plain, rel=1e-6)
 
 
+@pytest.mark.slow
 def test_surface_area_converges_with_the_ray_count():
     # Reference: 2 A + H P of the prism rooms, from their exact 2D isovists, and 108 m2 for the
     # box. The surface through the ray ends cuts the edges where two surfaces meet, so it falls
-    # short, and its error falls as N^(-1/2): measured slopes -0.48 to -0.51, and 0.29 % to
-    # 0.62 % short at 262,144 rays.
+    # short, and its error falls as N^(-1/2): measured slopes -0.49 to -0.58, and 0.29 % to
+    # 0.33 % short at 262,144 rays.
     ns = np.array([4096, 16384, 65536, 262144])
     views = [(rect(0, 0, 6, 4), (1.5, 1.2, 1.1)), *PRISM_VIEWS]
     for plan, eye in views:
@@ -504,7 +505,7 @@ def test_surface_area_converges_with_the_ray_count():
         slope = np.polyfit(np.log(ns), np.log(-err), 1)[0]
         assert np.all(err < 0), (eye, err)
         assert -0.6 < slope < -0.4, (eye, err)
-        assert -err[-1] < 8e-3, (eye, err)
+        assert -err[-1] < 5e-3, (eye, err)
 
 
 @pytest.mark.parametrize("n", [4096, 16384, 65536])
@@ -534,9 +535,9 @@ def test_a_wide_low_hall_has_one_large_elongation():
 @pytest.mark.slow
 def test_a_distant_pillar_is_found_as_far_as_its_width_allows():
     # Reference: H times the 2D occlusivity of a 60 x 40 x 6 m hall with a 2 m pillar 19 m from
-    # the eye, 1.6 m above the floor. At 4,096 rays the pillar spans two ray spacings, so its
-    # faces are found where the rays leave a triangle on its surface, within 25 %; at 262,144
-    # rays the occluding area lies within 2 %.
+    # the eye, 1.6 m above the floor. At 4,096 rays the pillar spans two ray spacings, so only
+    # part of its silhouette has a triangle of rays on the pillar itself, and the faces are found
+    # within 25 %. At 262,144 rays the occluding area lies within 2 %.
     plan, eye, h = np.concatenate([rect(-30, -20, 30, 20), rect(-1, -1, 1, 1)]), (20, 0, 1.6), 6
     exact = h * isovist(Plan(plan), eye[:2]).metrics["occlusivity"]
     mesh = Mesh.from_plan(plan, 0.0, h)

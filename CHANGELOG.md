@@ -7,11 +7,14 @@ to the metrics and `view_volume_field(..., shape=True)` adds them as the last co
 `SHAPE_METRIC_NAMES`: the surface and occluding area, sphericity and jaggedness, the drift with its horizontal and
 vertical parts and its direction, two elongations, the convex deficiency, and the variance, skewness, mean absolute
 deviation and dispersion of the depth weighted by solid angle. They hold for fields of view and angle grids and follow
-the escape and inside policies. Neighbouring rays mark an occluding face where their inverse depth changes faster than
-any plane at the eye's clearance allows, so a wall seen at a grazing angle never counts as occluding, and `jump_factor`
-scales that bound. Each metric is tested against a closed form, the exact 2D isovist of a prism room or shadow faces
-built in the tests, and the surface and occluding areas converge with the ray count. Calls without `shape=True` return
-what 0.2.1 returns.
+the escape and inside policies. Neighbouring rays mark an occluding face where the far ray ends behind the planes of the
+near surface and the near ray in front of those of the far surface, each by more than `jump_factor` times the angle
+between the rays in relative depth. A plane predicts its own rays exactly, so no wall, floor or ceiling counts as
+occluding, however close to the eye or grazing, and the eye's distance to its nearest surface plays no part: an eye 1 cm
+from a wall finds the faces of a pillar as an eye 1 m from it does. Each metric is tested against a closed form, the
+exact 2D isovist of a prism room or shadow faces built in the tests. The surface area converges with the ray count. The
+occluding area comes within 0.6 % of the exact faces from 65,536 rays on and settles less than 0.5 % below them, a
+floor that more rays do not remove. Calls without `shape=True` return what 0.2.1 returns.
 
 Angles given in degrees by mistake now stop with a message, and plan files may list segments. A field of view above
 2 pi, such as `fov=120` meant as degrees, raises a `ValueError` that suggests `math.radians`, where 0.2.1 returned the

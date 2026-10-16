@@ -876,10 +876,16 @@ def test_the_messages_the_verification_page_quotes_are_those_raised():
         assert str(e.value) == message
 
 
-def test_the_software_reference_cites_the_version_of_the_package():
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    bibtex = re.search(r"@software\{pysovist,.*?\n\}", readme, re.S)
+@pytest.mark.parametrize("page", ["README.md", "docs/cite.md"])
+def test_the_software_reference_cites_the_version_of_the_package(page):
+    text = (ROOT / page).read_text(encoding="utf-8")
+    bibtex = re.search(r"@software\{pysovist,.*?\n\}", text, re.S)
     assert f"version = {{{pysovist.__version__}}}" in re.sub(r" +", " ", bibtex.group(0))
+
+
+def test_the_citation_file_cites_the_version_of_the_package():
+    text = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
+    assert re.search(r"^version: (\S+)$", text, re.M).group(1) == pysovist.__version__
 
 
 # --- the harness itself ---------------------------------------------------------------------------

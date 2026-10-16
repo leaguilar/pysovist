@@ -1,6 +1,7 @@
 """The plan: segments, vertices, bounds, grid and the JSON reader, against closed forms."""
 
 import json
+import re
 
 import numpy as np
 import pytest
@@ -130,6 +131,16 @@ def test_from_json_refuses_a_file_that_is_not_json_and_names_both_formats(tmp_pa
     with pytest.raises(ValueError, match=r"the plan .*walls\.json is not JSON \(.*\): it must "
                                          r'hold a list of records \{"start"'):
         Plan.from_json(path)
+
+
+def test_from_json_cuts_a_long_record_in_its_message(tmp_path):
+    """A record with 10,000 numbers used to be printed whole."""
+    path = tmp_path / "walls.json"
+    path.write_text(json.dumps([{"start": list(range(10_000))}]))
+    with pytest.raises(ValueError) as e:
+        Plan.from_json(path)
+    shown = re.search(r"is not a wall: (.*)\. A plan file holds", str(e.value)).group(1)
+    assert len(shown) == 80 and shown.endswith("...")
 
 
 def test_from_json_reads_an_empty_list_as_a_plan_without_walls(tmp_path):

@@ -107,7 +107,7 @@ iso.area                                 # 24.926...
 
 The plane runs along the lower wing, 9 m ahead of the eye and 1 m behind it, from the floor to the ceiling: 27 m². The table fills 0.75 m² of it. The sight line over its far edge, 4 m ahead at a height of 0.75 m, meets the floor 1.6 × 4 / 0.85 = 7.53 m ahead of the eye, and the triangle below that line is hidden: 1.32 m². The isovist is 27 - 0.75 - 1.32 = 24.93 m².
 
-Results are in plane coordinates (u, z). The coordinate u is the horizontal distance from the eye along the azimuth, negative behind the eye, and z is the height of the scene. The eye stands at (0, z_eye). Angles in the plane are elevations, counter-clockwise from the forward horizontal: 0 looks ahead and π/2 up. `elevation=` centres a field of view, and `plane_to_world` maps points of the plane back to the scene.
+The azimuth, the horizontal direction of the plane, is an angle in radians counter-clockwise from +x or a vector `(dx, dy)`, with the rules of a [direction](conventions.md#range-field-of-view-and-direction). Results are in plane coordinates (u, z). The coordinate u is the horizontal distance from the eye along the azimuth, negative behind the eye, and z is the height of the scene. The eye stands at (0, z_eye). Angles in the plane are elevations, counter-clockwise from the forward horizontal: 0 looks ahead and π/2 up. `elevation=` centres a field of view, and `plane_to_world` maps points of the plane back to the scene.
 
 ```python
 down = vertical_isovist(mesh, eye, 0.0, elevation=np.radians(-30), fov=np.radians(60))

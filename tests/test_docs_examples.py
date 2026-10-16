@@ -300,6 +300,16 @@ SENTENCES = [
      r"every (\d+) cm", ["100 * s"]),
     # conventions
     ("docs/conventions.md", 1, r"# True: ([\d.]+) m seals the surfaces", ["cloud.radius"]),
+    ("docs/conventions.md", 1, r"A value up to a relative ([\d.e-]+) above its limit is the limit",
+     ["pysovist._angles.FULL_TURN_TOL"]),
+    ("docs/conventions.md", 1, r"in float32, ([\d.e-]+) and ([\d.e-]+) above them, are the full",
+     ["float(np.float32(2 * np.pi)) - 2 * np.pi", "float(np.float32(np.pi)) - np.pi",
+      "assert pysovist.isovist([[(0, 0), (1, 0)]], (0, 1), fov=np.float32(2 * np.pi)).fov "
+      "== 2 * np.pi"]),
+    ("docs/conventions.md", 1, r"A horizontal field of view of (\d+) or more, such as `fov=120`",
+     ["pysovist._angles.DEGREES_FROM"]),
+    ("docs/conventions.md", 1, r"one between \\\(2\\pi\\\) and (\d+) to pass `math\.tau`",
+     ["pysovist._angles.DEGREES_FROM"]),
     # metric definitions
     ("docs/metrics.md", 1, r"The surface area falls (\d+) % short at 65,536 rays",
      ["100 * (1 - m['surface_area'] / (2 * 70 + 3 * (34 + 2 * math.sqrt(45))))"]),

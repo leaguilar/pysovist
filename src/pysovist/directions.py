@@ -187,11 +187,14 @@ def in_field_of_view(directions, *, hfov: float = 2 * np.pi, vfov: float = np.pi
         Unit vectors, to 1e-9.
     hfov : float
         Horizontal field of view in radians, in (0, 2 pi], centred on
-        ``direction``. Default: full turn. A larger value raises a
-        ``ValueError``: an angle in degrees converts with ``math.radians``.
+        ``direction``. Default: full turn. A value up to a relative 1e-6
+        above 2 pi, such as 2 pi in float32, is the full turn. A larger
+        value raises a ``ValueError``: an angle in degrees converts with
+        ``math.radians``.
     vfov : float
         Vertical field of view in radians, in (0, pi], centred on
-        ``elevation``. Default: pole to pole.
+        ``elevation``. Default: pole to pole, which a value up to a relative
+        1e-6 above pi is too.
     direction : float or (dx, dy)
         Azimuth of the centre of the field: an angle in radians,
         counter-clockwise from +x, between -2 pi and 2 pi, or a horizontal

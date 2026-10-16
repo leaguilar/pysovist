@@ -4,7 +4,7 @@ A full view volume counts everything an eye can see in every direction. Many que
 
 ## A view within a field of view
 
-A field of view is a band of directions. Its azimuths lie within `hfov / 2` of the view `direction` (radians counter-clockwise from +x, or a vector `(dx, dy)`), and its elevations lie within `vfov / 2` of the centre `elevation` (radians above the eye's horizontal plane). The centre elevation is the vertical offset of the view. The band must lie between the poles. Its solid angle is
+A field of view is a band of directions. Its azimuths lie within `hfov / 2` of the view `direction` (radians counter-clockwise from +x, or for one eye a vector `(dx, dy)`), and its elevations lie within `vfov / 2` of the centre `elevation` (radians above the eye's horizontal plane). The centre elevation is the vertical offset of the view. The band must lie between the poles. Its solid angle is
 
 $$
 \Omega = h\,(\sin e_1 - \sin e_0),

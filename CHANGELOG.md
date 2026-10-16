@@ -20,20 +20,21 @@ raises a `ValueError`. From 7 on, such as `fov=120` meant as degrees, the messag
 returned the full turn in `isovist`, `segment_visibility`, `segment_ray_hits`, `path_isovists` and the fields. Below 7
 it says to pass `math.tau` for the full turn, and a `vfov` up to 2 pi is told that pole to pole is pi. A value up to a
 relative 1e-6 above its limit is the limit, so 2 pi and pi in float32 are the full turn and pole to pole, in 2D and in
-3D, where 0.2.1 refused them in 3D. A direction, an azimuth or the elevation of `vertical_isovist` beyond 2 pi in size
-raises with two cures, `math.radians` for degrees and `math.remainder(a, math.tau)` for radians of more than a turn,
-where 0.2.1 took any finite value, also a direction that a full turn leaves unused. Every `direction` and `azimuth` of
-one observer also takes a vector `(dx, dy)`, which gives the result of the angle `atan2(dy, dx)` to the last bit, so a
-caller who knows a target point needs no angle convention. The DeCodingSpaces layout of `segment_ray_hits` is the one
-exception: its vector gives the plugin's rays bit for bit, and the angle may move the last ray across the far edge of
-the view. `isovist_field`, `segment_visibility_field` and `view_volume_field` take one angle for every observer. A
-vector or a list of angles, which two observers cannot tell apart, raises a `ValueError` that names `math.atan2(dy, dx)`
-and the loop to write, where 0.2.1 raised an error that named neither the argument nor the loop. `Plan.from_json` and
-the command line read a list of segments `[[x0, y0], [x1, y1]]` as well as records, and refuse a file with one message.
-Any other content, a file that is not JSON in UTF-8, and an x or y that is missing or not finite raise a `ValueError`
-that names the file, both formats or the record counted from 1. In 0.2.1, `Plan.from_json` raised errors that named no
-format and read `{}` as an empty plan, and the command line ended with a traceback on a file that is not UTF-8 or is
-nested too deep to parse.
+3D. 0.2.1 refused them in 3D, and in `vertical_isovist` it refused any field of view above 2 pi but 2 pi in float32. A
+direction, an azimuth or the elevation of `vertical_isovist` beyond 2 pi in size raises with two cures, `math.radians`
+for degrees and `math.remainder(a, math.tau)` for radians of more than a turn, where 0.2.1 took any finite value, also a
+direction that a full turn leaves unused. Every `direction` and `azimuth` of one observer also takes a vector `(dx,
+dy)`, which gives the result of the angle `atan2(dy, dx)` to the last bit, so a caller who knows a target point needs no
+angle convention. The DeCodingSpaces layout of `segment_ray_hits` is the one exception: its vector gives the plugin's
+rays bit for bit, and the angle may move the last ray across the far edge of the view. `isovist_field`,
+`segment_visibility_field` and `view_volume_field` take one angle for every observer. A vector or a list of angles,
+which two observers cannot tell apart, raises a `ValueError` that names `math.atan2(dy, dx)` and the loop to write,
+where 0.2.1 raised an error that named neither the argument nor the loop. `Plan.from_json` and the command line read a
+list of segments `[[x0, y0], [x1, y1]]` as well as records, and refuse a file with one message. Any other content, a
+file that is not JSON in UTF-8, and an x or y that is missing or not finite raise a `ValueError` that names the file,
+both formats or the record counted from 1. In 0.2.1, `Plan.from_json` raised errors that named no format and read `{}`
+as an empty plan, and the command line ended with a traceback on a file that is not UTF-8 or is nested too deep to
+parse.
 
 Four other inputs of 0.2.1 give another result. `segment_visibility_field` given 2 pi in float32 counts the visible
 angle of each wall over the full turn once, where 0.2.1 counted a sliver of 1.75e-7 rad twice. `segment_ray_hits`

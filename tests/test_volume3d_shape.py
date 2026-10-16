@@ -7,6 +7,9 @@ an integral evaluated by scipy.
 
 import math
 import os
+import threading
+import time
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
@@ -29,7 +32,8 @@ from pysovist import (  # noqa: E402
     view_volume,
     view_volume_field,
 )
-from pysovist.shape3d import shape_metrics, triangulate  # noqa: E402
+from pysovist import shape3d  # noqa: E402
+from pysovist.shape3d import _boundary, shape_metrics, triangulate  # noqa: E402
 from pysovist.volume3d import FACTOR_NAMES, VOLUME_METRIC_NAMES  # noqa: E402
 
 from .geometry import polygon_walls, rect  # noqa: E402
@@ -122,7 +126,7 @@ def test_box_seen_from_an_interior_eye():
     assert m["elongation_12"] == pytest.approx(1.5, rel=1e-3)
     assert 0.0 <= m["convex_deficiency"] < 1e-3
     assert m["sphericity"] == pytest.approx(36 * math.pi * 72.0**2 / 108.0**3, rel=3e-2)
-    assert m["sphericity"] * m["jaggedness"] == pytest.approx(36 * math.pi, rel=1e-12)
+    assert m["jaggedness"] == pytest.approx(108.0**3 / 72.0**2, rel=3e-2)
 
 
 # --- radial statistics ------------------------------------------------------------------------
@@ -189,10 +193,10 @@ def test_a_ball_sampled_box_room_lies_between_its_erosions():
     # Reference: closed forms of the 6 x 4 x 3 m box, sampled every s = 4 cm by balls of radius
     # r = 3 cm, through the ball ray caster, which shares no code with the mesh caster. The balls
     # seal a surface that lies between the box eroded by r and the box eroded by
-    # sqrt(r^2 - s^2 / 2), and both erosions keep the box centre. The surface through the ray
-    # ends falls up to 1 % short, as for a mesh. Once neighbouring rays come closer than the
-    # spacing of the balls, the grooves between them count as occluding faces: none at 16,384
-    # rays, under 2 % of the surface at 65,536.
+    # sqrt(r^2 - s^2 / 2), and both erosions keep the box centre. The grooves between the balls
+    # are concave, so the far side of a groove lies in front of the plane of the near side and
+    # no groove counts as an occluding face: none at 16,384 rays, under 1e-3 of the surface at
+    # 65,536, where neighbouring rays come closer than the spacing of the balls.
     s, r = 0.04, 0.03
     size = np.array([6.0, 4.0, 3.0])
     axes = [np.linspace(0, a, int(round(a / s)) + 1) for a in size]
@@ -214,22 +218,50 @@ def test_a_ball_sampled_box_room_lies_between_its_erosions():
     outer, inner = eroded(r), eroded(math.sqrt(r * r - s * s / 2))
     m = view_volume(cloud, eye, n_rays=65536, shape=True).metrics
     assert m["drift"] == pytest.approx(np.linalg.norm(size / 2 - eye), rel=1e-3)
-    assert outer[0] * (1 - 1e-2) < m["surface_area"] < inner[0]
+    assert outer[0] < m["surface_area"] < inner[0]
     assert inner[1] * (1 - 1e-3) < m["elongation"] < outer[1] * (1 + 1e-3)
     assert inner[2] * (1 - 1e-3) < m["elongation_12"] < outer[2] * (1 + 1e-3)
-    assert 0 < m["occluding_area"] < 2e-2 * m["surface_area"]
+    assert 0 <= m["occluding_area"] < 1e-3 * m["surface_area"]
     assert view_volume(cloud, eye, n_rays=16384, shape=True).metrics["occluding_area"] == 0.0
+
+
+def test_near_clip_gives_the_shape_of_the_scene_the_cast_keeps():
+    # Reference: the same room without the ball that near_clip ignores. A ball 1 cm from the eye
+    # contains it, and near_clip=0.05 drops it from the cast, so every ray sees the room alone:
+    # every metric equals that of the room without the ball, to the last bit.
+    s, r = 0.04, 0.03
+    size = np.array([6.0, 4.0, 3.0])
+    axes = [np.linspace(0, a, int(round(a / s)) + 1) for a in size]
+    faces = []
+    for k in range(3):
+        i, j = [q for q in range(3) if q != k]
+        u, v = (g.ravel() for g in np.meshgrid(axes[i], axes[j], indexing="ij"))
+        for level in (0.0, size[k]):
+            p = np.empty((len(u), 3))
+            p[:, i], p[:, j], p[:, k] = u, v, level
+            faces.append(p)
+    room = np.unique(np.concatenate(faces), axis=0)
+    eye = np.array([1.5, 1.2, 1.1])
+    alone = view_volume(PointCloud(room, radius=r), eye, n_rays=4096, shape=True).metrics
+    kept = view_volume(PointCloud(np.vstack([room, eye + (0.01, 0.0, 0.0)]), radius=r), eye,
+                       n_rays=4096, near_clip=0.05, shape=True).metrics
+    for k in VOLUME_METRIC_NAMES + SHAPE_METRIC_NAMES:
+        assert kept[k] == alone[k], k
 
 
 @pytest.mark.parametrize("seed", range(6))
 def test_far_rays_seen_through_small_holes_keep_their_faces_bounded(seed):
     # Reference: a bound from the geometry of the scene. A near cap at 0.25 m has 60 holes of
-    # three rays each, through which far surfaces are seen at random depths from 1 to 50 m, and
-    # the eye stands 2 cm from a surface, as in a scan seen from a seat. A far ray then has only
-    # the two other rays of its hole as neighbours on its own surface, so the plane fitted to
-    # them may tilt arbitrarily. Every occluding face is radial and ends no deeper than the
-    # deepest ray D, around each hole along a ring of at most three times the angular perimeter
-    # of its triangle, and along the cap edge of length 2 pi sin(0.5) between 0.25 m and 5 m.
+    # three rays each, through which far surfaces are seen at random depths from 1 to 50 m, as
+    # in a scan seen from a seat. A far ray then has only the two other rays of its hole as
+    # neighbours on its own surface, so the plane fitted to them may tilt arbitrarily. The depth
+    # extrapolated from such a fit is clamped to the depths the fit used, widened by their range,
+    # so a face ends no deeper than R = 2 max - min of the depths within one ray of the
+    # triangle that holds it. Each face piece is radial and lies between two directions at most
+    # half the longest side s of its triangle apart, inside the wedge of radius R between them:
+    # its area is at most R^2 s / 4. A triangle holds one piece, or three when all its sides
+    # cross a jump, which only a triangle of three hole rays can. Without the clamp, the faces
+    # of seed 2 exceed this bound two and a half times.
     n = 16384
     d, w = fibonacci_sphere(n), np.full(n, 4 * math.pi / n)
     surface = triangulate(d, w)
@@ -239,11 +271,21 @@ def test_far_rays_seen_through_small_holes_keep_their_faces_bounded(seed):
     inside = np.flatnonzero(cap[surface.triangles].all(axis=1))
     holes = surface.triangles[rng.choice(inside, 60, replace=False)]
     r[holes.ravel()] = rng.uniform(1.0, 50.0, holes.size)
-    sides = np.linalg.norm(d[holes] - d[np.roll(holes, 1, axis=1)], axis=2)
-    bound = (r.max() ** 2 / 2 * 3 * sides.sum()
-             + (5.0**2 - 0.25**2) / 2 * 2 * math.pi * math.sin(0.5) * 1.5)
+    e = surface.edges
+    deep, shallow = r.copy(), r.copy()  # deepest and shallowest depth within one ray
+    np.maximum.at(deep, e[:, 0], r[e[:, 1]])
+    np.maximum.at(deep, e[:, 1], r[e[:, 0]])
+    np.minimum.at(shallow, e[:, 0], r[e[:, 1]])
+    np.minimum.at(shallow, e[:, 1], r[e[:, 0]])
+    t = surface.triangles
+    R = 2 * deep[t].max(axis=1) - shallow[t].min(axis=1)
+    s = np.linalg.norm(d[t] - d[np.roll(t, 1, axis=1)], axis=2).max(axis=1)
+    in_hole = np.isin(t, holes)
+    pieces = (cap[t].any(axis=1) & ~cap[t].all(axis=1)) | in_hole.any(axis=1)
+    pieces = pieces + 2 * in_hole.all(axis=1)
+    bound = (pieces * R**2 * s / 4).sum()
     volume = np.array([(w * r**3).sum() / 3])
-    m = shape_metrics(r[None], d, w, volume, np.array([0.02]), surface, 1.0)
+    m = shape_metrics(r[None], d, w, volume, surface, 1.0)
     assert 0 < m["occluding_area"][0] < bound
 
 
@@ -284,7 +326,7 @@ def test_prism_room_against_the_exact_2d_isovist(plan, eye):
     # faces are the occluding edges times H, the centroid lies at c and mid-height, and the hull
     # is the extruded 2D hull. The exact isovist shares no code with ray casting on the sphere.
     # The surface through the ray ends cuts the edges where walls meet floor and ceiling, which
-    # costs 1.1 % at 65,536 rays and falls as N^(-1/2) (see the convergence test).
+    # costs about half a percent at 65,536 rays and falls as N^(-1/2) (see the convergence test).
     iso = isovist(Plan(plan), eye[:2]).metrics
     m = view_volume(Mesh.from_plan(plan, 0.0, H), eye, n_rays=65536, shape=True).metrics
     assert m["surface_area"] == pytest.approx(2 * iso["area"] + H * iso["perimeter"], rel=1.5e-2)
@@ -298,8 +340,8 @@ def test_prism_room_against_the_exact_2d_isovist(plan, eye):
 def test_l_room_seen_whole_from_the_square_of_both_arms():
     # Reference: from the square where the arms of the L overlap the eye sees both boxes, 4 m
     # wide arms of 10 m, so V = 64 H, and the hull of the L is the 10 x 10 square without the
-    # 6 x 6 / 2 corner triangle, 82 H: convex deficiency (82 - 64) / 82. No wall plane passes
-    # nearer to the eye than its clearance, so no edge is flagged and the occluding area is 0.
+    # 6 x 6 / 2 corner triangle, 82 H: convex deficiency (82 - 64) / 82. Every edge where two
+    # surfaces meet is concave, so no edge is flagged and the occluding area is 0.
     plan = polygon_walls([(0, 0), (10, 0), (10, 4), (4, 4), (4, 10), (0, 10)])
     m = view_volume(Mesh.from_plan(plan, 0.0, H), (2.0, 2.0, 1.5), n_rays=65536,
                     shape=True).metrics
@@ -332,11 +374,9 @@ def test_pillar_shadow_faces(eye):
     # H high. The silhouette corners are found by the side of each face the eye stands on.
     e = np.asarray(eye[:2])
     corners = [np.array(c, float) for c in ((1, 1), (-1, 1), (-1, -1), (1, -1))]
-    normals = [np.array(v, float) for v in ((1, 0), (0, 1), (-1, 0), (0, -1))]
     faces = list(zip(corners, corners[1:] + corners[:1], strict=True))  # counter-clockwise
     seen = [np.dot(e - a, nrm) > 0 for (a, _), nrm in zip(faces, [(0, 1), (-1, 0), (0, -1),
                                                                  (1, 0)], strict=True)]
-    del normals
     room = rect(-5, -5, 5, 5)
     total = 0.0
     for k, c in enumerate(corners):  # corner k joins face k - 1 and face k
@@ -372,15 +412,80 @@ def test_cube_in_empty_space_with_a_range_limit():
 
 # --- convergence with the ray count -----------------------------------------------------------
 
-def test_occluding_area_converges_with_the_ray_count():
-    # Reference: H times the exact 2D occlusivity of the prism rooms, as above.
+@pytest.mark.slow
+def test_occluding_area_settles_within_0_6_percent():
+    # Reference: H times the exact 2D occlusivity of the prism rooms, as above. From 65,536 rays
+    # on the occluding area lies within 0.6 % of the exact faces, and at 262,144 it lies below
+    # them by less than 0.5 %: the error settles there, and more rays do not remove it.
     bounds = {4096: 0.10, 16384: 0.015, 65536: 0.006, 262144: 0.006}
     for plan, eye in PRISM_VIEWS:
         exact = H * isovist(Plan(plan), eye[:2]).metrics["occlusivity"]
         mesh = Mesh.from_plan(plan, 0.0, H)
         for n, bound in bounds.items():
-            m = view_volume(mesh, eye, n_rays=n, shape=True).metrics
-            assert abs(m["occluding_area"] / exact - 1) < bound, (eye, n)
+            err = view_volume(mesh, eye, n_rays=n, shape=True).metrics["occluding_area"] / exact - 1
+            assert abs(err) < bound, (eye, n, err)
+        assert -5e-3 < err < 0, (eye, err)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("x", [4.99, 4.95, 4.8, 4.0])
+def test_the_occluding_area_does_not_follow_the_distance_to_the_nearest_wall(x):
+    # Reference: H times the exact 2D occlusivity of the room with a pillar, which barely moves
+    # as the eye approaches the wall x = 5 (37.11 m2 at 1 cm, 37.95 m2 at 1 m). The eye's
+    # distance to its nearest surface does not enter the jump test, so the eye 1 cm from the
+    # wall finds the pillar's faces as the eye 1 m from it does, within the bounds of the
+    # convergence test.
+    exact = H * isovist(Plan(PILLAR), (x, 0.0)).metrics["occlusivity"]
+    mesh = Mesh.from_plan(PILLAR, 0.0, H)
+    for n, bound in {16384: 0.015, 65536: 0.006, 262144: 0.006}.items():
+        err = view_volume(mesh, (x, 0.0, 1.2), n_rays=n, shape=True).metrics["occluding_area"]
+        assert abs(err / exact - 1) < bound, (n, err, exact)
+
+
+def step(n, near, far):
+    """Depths of a step between two spheres: radius near below the equator, far above it."""
+    d = fibonacci_sphere(n)
+    return d, np.full(n, 4 * math.pi / n), np.where(d[:, 2] < 0, near, far)
+
+
+def test_a_step_between_two_spheres_closes_its_boundary():
+    # Reference: closed forms. Below the equator the rays end on a sphere of radius 2 m, above it
+    # on one of 5 m, so the boundary is the two hemispheres, 2 pi (2^2 + 5^2), joined by the
+    # flat annulus between radii 2 and 5, pi (5^2 - 2^2), which is the occluding face. The
+    # triangles along the equator hold the face and the pieces of both hemispheres that lie
+    # between their rays and the face, and all three count.
+    n, near, far = 65536, 2.0, 5.0
+    d, w, r = step(n, near, far)
+    surface = triangulate(d, w)
+    m = shape_metrics(r[None], d, w, np.array([(w * r**3).sum() / 3]), surface, 1.0)
+    annulus = math.pi * (far**2 - near**2)
+    assert m["occluding_area"][0] == pytest.approx(annulus, rel=2e-3)
+    assert m["surface_area"][0] == pytest.approx(2 * math.pi * (near**2 + far**2) + annulus,
+                                                 rel=2e-3)
+
+
+@pytest.mark.parametrize("crossed", [1, 3])
+def test_a_triangle_crossed_by_one_or_three_jumps_between_equal_depths_holds_no_face(crossed):
+    # Reference: the ball of radius 2 m seen from its centre, which has no occluding face, and
+    # its surface through the ray ends, the sum of the areas of the triangles. Marking one side
+    # of a triangle as a jump leaves its third ray continuous with both others, so the triangle
+    # stays surface. Marking all three sides of a triangle builds a face from each side to the
+    # triangle's centre, which between equal depths has no area beyond the curvature of the ball
+    # within half a ray spacing, under 1e-5 of the surface. Counted whole as occluding faces,
+    # the marked triangles would give 2e-4 of it.
+    n = 4096
+    d, w = fibonacci_sphere(n), np.full(n, 4 * math.pi / n)
+    surface = triangulate(d, w)
+    r = np.full(n, 2.0)
+    p = d * r[:, None]
+    t = surface.triangles
+    plain = 0.5 * np.linalg.norm(np.cross(p[t[:, 1]] - p[t[:, 0]], p[t[:, 2]] - p[t[:, 0]]),
+                                 axis=1).sum()
+    jump = np.zeros(len(surface.edges), dtype=bool)
+    jump[surface.sides[100, :crossed]] = True
+    s, occluding = _boundary(r, d, surface, jump)
+    assert 0.0 <= occluding < 1e-5 * plain
+    assert s == pytest.approx(plain, rel=1e-6)
 
 
 def test_surface_area_converges_with_the_ray_count():
@@ -404,24 +509,39 @@ def test_surface_area_converges_with_the_ray_count():
 
 @pytest.mark.parametrize("n", [4096, 16384, 65536])
 def test_a_corridor_has_no_occluding_face(n):
-    # Reference: a convex room has no occluding face. Every surface of the 40 x 2 x 3 m corridor
-    # lies at least the clearance (1 m) from the eye, and one plane at distance p changes 1/r by
-    # at most |u_i - u_j| / p between two rays, so no edge is flagged, however grazing the far
-    # walls are.
+    # Reference: a convex room has no occluding face. Seen from inside, every edge where two
+    # surfaces of the 40 x 2 x 3 m corridor meet is concave, so the far side lies in front of the
+    # plane of the near side, and each plane predicts its own rays exactly, however grazing the
+    # far walls are: no edge is flagged. A box of sides a >= b >= c has the elongations a / c
+    # and a / b: 20 and 13.3 for the corridor.
     m = view_volume(box_room(40.0, 2.0, 3.0), (1.0, 1.0, 1.6), n_rays=n, shape=True).metrics
     assert m["occluding_area"] == 0.0
     assert m["convex_deficiency"] < 1e-3
+    if n == 65536:
+        assert m["elongation"] == pytest.approx(40 / 2, rel=5e-3)
+        assert m["elongation_12"] == pytest.approx(40 / 3, rel=5e-3)
 
 
-def test_a_distant_jump_appears_once_the_rays_resolve_it():
+def test_a_wide_low_hall_has_one_large_elongation():
+    # Reference: closed forms of the 20 x 20 x 3 m hall seen from its centre, the box whose
+    # principal second moments are V a^2 / 12: elongation 20 / 3 and elongation_12 1.
+    m = view_volume(box_room(20.0, 20.0, 3.0), (10.0, 10.0, 1.5), n_rays=65536,
+                    shape=True).metrics
+    assert m["elongation"] == pytest.approx(20 / 3, rel=5e-3)
+    assert m["elongation_12"] == pytest.approx(1.0, rel=5e-3)
+
+
+@pytest.mark.slow
+def test_a_distant_pillar_is_found_as_far_as_its_width_allows():
     # Reference: H times the 2D occlusivity of a 60 x 40 x 6 m hall with a 2 m pillar 19 m from
-    # the eye. From the pillar to the wall behind it 1/r changes by 1/19 - 1/50, which two
-    # neighbouring rays resolve once they are closer than that times the clearance, 1.6 m:
-    # at 4,096 rays they are not, at 262,144 the occluding area lies within 2 %.
+    # the eye, 1.6 m above the floor. At 4,096 rays the pillar spans two ray spacings, so its
+    # faces are found where the rays leave a triangle on its surface, within 25 %; at 262,144
+    # rays the occluding area lies within 2 %.
     plan, eye, h = np.concatenate([rect(-30, -20, 30, 20), rect(-1, -1, 1, 1)]), (20, 0, 1.6), 6
     exact = h * isovist(Plan(plan), eye[:2]).metrics["occlusivity"]
     mesh = Mesh.from_plan(plan, 0.0, h)
-    assert view_volume(mesh, eye, n_rays=4096, shape=True).metrics["occluding_area"] == 0.0
+    m = view_volume(mesh, eye, n_rays=4096, shape=True).metrics
+    assert m["occluding_area"] == pytest.approx(exact, rel=0.25)
     m = view_volume(mesh, eye, n_rays=262144, shape=True).metrics
     assert m["occluding_area"] == pytest.approx(exact, rel=2e-2)
 
@@ -485,8 +605,8 @@ def test_directed_view_of_an_empty_scene_is_a_spherical_sector(field, how):
 
 def test_a_ground_plane_below_a_raised_view_is_not_occluding():
     # Reference: a single ground plane hides nothing. The view looks 10 degrees up with a 60
-    # degree vertical field, so the nearest ground it sees lies 5 m away, but the threshold
-    # takes the clearance, 1.7 m, the distance of the ground plane itself.
+    # degree vertical field, so the nearest ground it sees lies 5 m away from an eye 1.7 m above
+    # it, and the ground meets the range sphere of 50 m along a concave edge.
     ground = Mesh([(-200, -200, 0), (200, -200, 0), (200, 200, 0), (-200, 200, 0)],
                   [(0, 1, 2), (0, 2, 3)])
     vv = view_volume(ground, (0.0, 0.0, 1.7), n_rays=65536, max_distance=50.0, shape=True,
@@ -513,7 +633,21 @@ def test_field_rows_equal_single_eyes():
         for row, eye in zip(df.itertuples(), eyes, strict=True):
             m = view_volume(mesh, eye, n_rays=4096, shape=True, **single).metrics
             for k in SHAPE_METRIC_NAMES:
-                assert getattr(row, k) == pytest.approx(m[k], rel=1e-12, abs=1e-12), (eye, k)
+                assert getattr(row, k) == m[k], (eye, k)
+
+
+def test_a_field_of_sixteen_eyes_gives_each_eye_its_single_result_to_the_last_bit():
+    # Reference: view_volume of each eye alone. The rows are computed together in one chunk, and
+    # every sum over the rays of a row runs in the same order as for the eye alone.
+    mesh = Mesh.from_plan(PILLAR, 0.0, H)
+    rng = np.random.default_rng(3)
+    eyes = np.c_[rng.uniform(1.5, 4.5, 16) * rng.choice([-1, 1], 16), rng.uniform(-4.5, 4.5, 16),
+                 rng.uniform(0.3, 2.7, 16)]
+    df = view_volume_field(mesh, eyes, n_rays=4096, shape=True)
+    for row, eye in zip(df.itertuples(), eyes, strict=True):
+        m = view_volume(mesh, eye, n_rays=4096, shape=True).metrics
+        for k in SHAPE_METRIC_NAMES:
+            assert getattr(row, k) == m[k], (eye, k)
 
 
 def test_field_rows_with_an_angle_grid_over_a_field_equal_single_eyes():
@@ -528,7 +662,7 @@ def test_field_rows_with_an_angle_grid_over_a_field_equal_single_eyes():
     for row, eye in zip(df.itertuples(), eyes, strict=True):
         m = view_volume(mesh, eye, directions=d, weights=w, shape=True, **field).metrics
         for k in SHAPE_METRIC_NAMES:
-            assert getattr(row, k) == pytest.approx(m[k], rel=1e-12, abs=1e-12), (eye, k)
+            assert getattr(row, k) == m[k], (eye, k)
     assert df["occluding_area"][0] > 0  # the first eye looks at the pillar
 
 
@@ -589,6 +723,26 @@ def test_rays_that_escape_with_zero_depth_end_at_the_eye():
 
 # --- inputs -----------------------------------------------------------------------------------
 
+def test_jump_factor_scales_the_bound_a_jump_must_pass():
+    # Reference: the exact faces of the pillar, H times its 2D occlusivity. From (3, 0, 1.2) the
+    # far ray past each silhouette edge ends about three times as deep as the near ray, a
+    # relative depth step near 2, and the jump test asks for more than jump_factor times the
+    # angle between the rays, 0.028 rad at 16,384 rays. Factors from 0.25 to 4 keep the faces;
+    # a factor of 1,000 asks for a step of 28 and drops them. No factor makes the walls of the
+    # convex corridor occluding.
+    exact = H * isovist(Plan(PILLAR), (3.0, 0.0)).metrics["occlusivity"]
+    mesh = Mesh.from_plan(PILLAR, 0.0, H)
+    corridor = box_room(40.0, 2.0, 3.0)
+    for k in (0.25, 1.0, 4.0):
+        m = view_volume(mesh, (3.0, 0.0, 1.2), n_rays=16384, shape=True, jump_factor=k).metrics
+        assert m["occluding_area"] == pytest.approx(exact, rel=1.5e-2), k
+        m = view_volume(corridor, (1.0, 1.0, 1.6), n_rays=16384, shape=True,
+                        jump_factor=k).metrics
+        assert m["occluding_area"] == 0.0, k
+    m = view_volume(mesh, (3.0, 0.0, 1.2), n_rays=16384, shape=True, jump_factor=1000.0).metrics
+    assert m["occluding_area"] == 0.0
+
+
 @pytest.mark.parametrize("bad", [0.0, -1.0, math.nan])
 def test_jump_factor_must_be_positive(bad):
     with pytest.raises(ValueError, match="jump_factor"):
@@ -623,9 +777,10 @@ def test_directions_that_leave_a_gap_are_refused():
 
 
 def test_a_direction_vector_gives_the_shape_metrics_of_its_angle():
-    """Reference: the same field of view given by its angle atan2(dy, dx), to the last bit, for
-    one eye and for a field of eyes. The vector reaches both the field of view and the surface
-    that closes it along its edges."""
+    """Reference: the same field of view given by its angle atan2(dy, dx), to the last bit. The
+    vector reaches both the field of view and the surface that closes it along its edges. A field
+    of eyes with the angle gives each eye its single shape metrics to the last bit, and its volume
+    metrics to 1e-12, as for directed fields."""
     room = box_room(6.0, 4.0, 3.0)
     eyes = np.array([[2.0, 1.5, 1.2], [4.5, 2.5, 1.6]])
     view = {"hfov": math.radians(120), "vfov": math.radians(60), "n_rays": 4096, "shape": True}
@@ -635,6 +790,49 @@ def test_a_direction_vector_gives_the_shape_metrics_of_its_angle():
     assert one_vec.keys() == one_ang.keys()
     for k in one_ang:
         assert np.array_equal(one_vec[k], one_ang[k], equal_nan=True), k
-    pd_vec = view_volume_field(room, eyes, direction=vec, **view)
-    pd_ang = view_volume_field(room, eyes, direction=ang, **view)
-    assert pd_vec.equals(pd_ang)
+    df = view_volume_field(room, eyes, direction=ang, **view)
+    for row, eye in zip(df.itertuples(), eyes, strict=True):
+        m = view_volume(room, eye, direction=ang, **view).metrics
+        for k in SHAPE_METRIC_NAMES:
+            assert np.array_equal(getattr(row, k), m[k], equal_nan=True), (eye, k)
+        for k in VOLUME_METRIC_NAMES:
+            assert getattr(row, k) == pytest.approx(m[k], rel=1e-12), (eye, k)
+
+
+def test_the_triangulation_cache_serves_threads(monkeypatch):
+    # Reference: the triangulation of each direction set computed alone. Eight threads ask for
+    # more direction sets than the cache keeps, in turn, and each lookup that finds a set waits
+    # 5 ms before it marks the set as recently used, so other threads evict sets during the
+    # wait. Every call returns the triangulation of its own directions, without an error. An
+    # angle given as a numpy float shares the entry of the same angle given as a float.
+    class SlowCache(OrderedDict):
+        def move_to_end(self, key, last=True):
+            time.sleep(0.005)
+            super().move_to_end(key, last=last)
+
+    sets = [fibonacci_sphere(n) for n in range(200, 206)]
+    weights = [np.full(len(d), 4 * math.pi / len(d)) for d in sets]
+    expected = [triangulate(d, w).triangles.copy() for d, w in zip(sets, weights, strict=True)]
+    monkeypatch.setattr(shape3d, "_CACHE", SlowCache())
+    errors = []
+    barrier = threading.Barrier(8)
+
+    def work(k):
+        try:
+            barrier.wait()
+            for i in range(40):
+                j = (k + i) % len(sets)
+                if not np.array_equal(triangulate(sets[j], weights[j]).triangles, expected[j]):
+                    errors.append(f"set {j}: another triangulation")
+        except Exception as exc:  # noqa: BLE001 - any failure of a thread is a finding
+            errors.append(repr(exc))
+
+    threads = [threading.Thread(target=work, args=(k,)) for k in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors, errors[:3]
+    field = {"hfov": 1.0, "vfov": 0.5, "direction": 0.5, "elevation": 0.0}
+    d, w = sets[0], weights[0]
+    assert triangulate(d, w, field) is triangulate(d, w, {**field, "direction": np.float64(0.5)})

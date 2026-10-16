@@ -371,11 +371,13 @@ def view_volume(
         them.
     jump_factor : float
         Neighbouring rays ``i`` and ``j`` see a depth jump, the edge of an
-        occluding face, when ``|1/r_i - 1/r_j| > jump_factor |u_i - u_j| / c``,
-        with ``u`` their unit directions and ``c`` the clearance. Positive.
-        Default 1, at which no plane at least the clearance away from the eye
-        counts as occluding. A larger value leaves smaller jumps out. Used
-        with ``shape=True``.
+        occluding face, when the farther ray ends behind the planes of the
+        nearer ray's surface, and the nearer ray in front of the planes of the
+        farther ray's surface, each by more than ``jump_factor |u_i - u_j|``
+        in relative depth, with ``u`` their unit directions. Positive.
+        Default 1. At any value, no plane and no edge where two planes meet
+        counts as occluding, however close to the eye or grazing. A larger
+        value leaves smaller jumps out. Used with ``shape=True``.
 
     Returns
     -------
@@ -414,8 +416,8 @@ def view_volume(
         metrics = _weighted_metrics(t, d[:, 2], w, R, escape, blocked, inside)
     if shape:
         surface, wt = _shape_surface(d, w, weights is not None, hfov, vfov, direction, elevation)
-        metrics.update(_shape(t, d, wt, R, escape, blocked, inside, metrics["volume"],
-                              np.array([clearance]), surface, jump_factor))
+        metrics.update(_shape(t, d, wt, R, escape, blocked, inside, metrics["volume"], surface,
+                              jump_factor))
     hit = np.isfinite(t[0]) & (t[0] <= R)
     unbounded = bool(not blocked[0] and np.isinf(R) and not hit.all())
     flags = Flags(unbounded=unbounded, **{occ.block_flag: bool(blocked[0])})
@@ -522,8 +524,8 @@ def view_volume_field(occluders3d, origins, *, n_jobs: int = -1, **kw) -> pd.Dat
         for k in VOLUME_METRIC_NAMES:
             metrics[k][rows] = part[k]
         if shape:
-            part = _shape(t, d, wt, R, escape, none, inside, part["volume"], clearance[rows],
-                          surface, jump_factor)
+            part = _shape(t, d, wt, R, escape, none, inside, part["volume"], surface,
+                          jump_factor)
             for k in SHAPE_METRIC_NAMES:
                 shapes[k][rows] = part[k]
         if np.isinf(R):
@@ -575,7 +577,7 @@ def _metrics(t, dz, R, escape, blocked, inside) -> dict:
     return out
 
 
-def _shape(t, d, w, R, escape, blocked, inside, volume, clearance, surface, jump_factor) -> dict:
+def _shape(t, d, w, R, escape, blocked, inside, volume, surface, jump_factor) -> dict:
     """Shape metric arrays over the rows of first-hit distances ``t`` (m, n)."""
     hit = np.isfinite(t) & (t <= R)
     fill = {"clip": R, "zero": 0.0, "nan": np.nan}[escape]
@@ -584,7 +586,7 @@ def _shape(t, d, w, R, escape, blocked, inside, volume, clearance, surface, jump
     out = {k: np.full(len(r), value) for k in SHAPE_METRIC_NAMES}
     free = ~np.asarray(blocked, dtype=bool)
     if free.any():
-        part = shape_metrics(r[free], d, w, volume[free], clearance[free], surface, jump_factor)
+        part = shape_metrics(r[free], d, w, volume[free], surface, jump_factor)
         for k in SHAPE_METRIC_NAMES:
             out[k][free] = part[k]
     return out
@@ -593,8 +595,8 @@ def _shape(t, d, w, R, escape, blocked, inside, volume, clearance, surface, jump
 def _jump_factor(value) -> float:
     v = float(value)
     if not v > 0:
-        raise ValueError("jump_factor must be a positive number: 1 (the default) flags no plane "
-                         "at least the clearance away, larger values flag fewer jumps")
+        raise ValueError("jump_factor must be a positive number: 1 is the default, and larger "
+                         "values flag fewer jumps")
     return v
 
 

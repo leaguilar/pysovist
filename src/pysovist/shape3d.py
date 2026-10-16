@@ -98,6 +98,7 @@ occluding faces.
 from __future__ import annotations
 
 import hashlib
+import threading
 from collections import OrderedDict
 from dataclasses import dataclass
 
@@ -132,10 +133,13 @@ class Surface:
     rim_centres: np.ndarray  # (F, 3) unit vectors through the midpoints of the rim sides
     rim_out: np.ndarray  # (F, 3) direction from the inside of the field across each rim side
     window: float  # chord radius of the window over which occluding faces are smoothed
+    fans: np.ndarray  # (n, D) triangles around each ray, -1 after the last
+    wings: np.ndarray  # (E, 4) triangles next to the two triangles of each edge, see _wings
 
 
 _CACHE: OrderedDict = OrderedDict()
-_CACHE_SIZE = 3  # triangulations kept: a few MB each at 65,536 rays, 0.2 GB at 2^20
+_CACHE_SIZE = 3  # triangulations kept: a few MB each at 65,536 rays, 0.3 GB at 2^20
+_LOCK = threading.Lock()
 GAP_FACTOR = 10.0  # a triangle wider than this many ray spacings is a gap in the directions
 
 
@@ -148,7 +152,8 @@ def triangulate(d: np.ndarray, w: np.ndarray, field: dict | None = None) -> Surf
     hull also takes a Fibonacci set of the same density outside the field, and
     the triangles with a corner outside are dropped, so the surface ends at
     the outermost rays. The last three triangulations are kept, so that
-    repeated calls with one direction set triangulate it once.
+    repeated calls with one direction set triangulate it once. Calls from
+    several threads share the kept triangulations.
 
     Raises
     ------
@@ -156,14 +161,18 @@ def triangulate(d: np.ndarray, w: np.ndarray, field: dict | None = None) -> Surf
         When the directions leave a gap wider than ``GAP_FACTOR`` ray spacings,
         or no triangle lies inside the field of view.
     """
-    key = hashlib.blake2b(d.tobytes() + w.tobytes() + repr(field).encode()).hexdigest()
-    if key in _CACHE:
-        _CACHE.move_to_end(key)
-        return _CACHE[key]
-    surface = _triangulate(d, w, field)
-    _CACHE[key] = surface
-    if len(_CACHE) > _CACHE_SIZE:
-        _CACHE.popitem(last=False)
+    view = None if field is None else {k: float(v) for k, v in field.items()}
+    key = hashlib.blake2b(d.tobytes() + w.tobytes() + repr(view).encode()).hexdigest()
+    with _LOCK:
+        surface = _CACHE.get(key)
+        if surface is not None:
+            _CACHE.move_to_end(key)
+            return surface
+    surface = _triangulate(d, w, view)
+    with _LOCK:
+        _CACHE[key] = surface
+        while len(_CACHE) > _CACHE_SIZE:
+            _CACHE.popitem(last=False)
     return surface
 
 
@@ -199,6 +208,7 @@ def _triangulate(d, w, field) -> Surface:
     directed = np.stack([tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [2, 0]]], axis=1).reshape(-1, 2)
     edges, inverse, count = np.unique(np.sort(directed, axis=1), axis=0, return_inverse=True,
                                       return_counts=True)
+    sides = inverse.reshape(-1, 3)
     once = count[inverse] == 1
     rim = directed[once]
     third = tri[:, [2, 0, 1]].reshape(-1)[once]  # the corner of the rim side's triangle opposite it
@@ -208,17 +218,58 @@ def _triangulate(d, w, field) -> Surface:
     rim_centres = d[rim].sum(axis=1)
     rim_centres /= np.linalg.norm(rim_centres, axis=1)[:, None]
     rho = (4 * np.pi / w.mean()) ** -0.25
-    return Surface(triangles=tri, edges=edges, sides=inverse.reshape(-1, 3),
+    return Surface(triangles=tri, edges=edges, sides=sides,
                    chords=np.linalg.norm(d[edges[:, 0]] - d[edges[:, 1]], axis=1),
                    centres=centres, rim=rim, rim_centres=rim_centres, rim_out=rim_out,
-                   window=2 * np.sin(rho / 2))
+                   window=2 * np.sin(rho / 2), fans=_fans(tri, n), wings=_wings(tri, edges, sides))
 
 
-def shape_metrics(r, d, w, volume, clearance, surface: Surface, jump_factor: float) -> dict:
+def _fans(tri, n):
+    """(n, D) the triangles around each ray, padded with -1."""
+    ray = tri.reshape(-1)
+    order = np.argsort(ray, kind="stable")
+    ray, t = ray[order], np.repeat(np.arange(len(tri)), 3)[order]
+    count = np.bincount(ray, minlength=n)
+    start = np.r_[0, np.cumsum(count)[:-1]]
+    fans = np.full((n, max(int(count.max()), 1)), -1, dtype=np.int32)
+    fans[ray, np.arange(len(ray)) - start[ray]] = t
+    return fans
+
+
+def _wings(tri, edges, sides):
+    """(E, 4) for each edge (i, j): the triangles across the sides (i, x) and (j, x) of its
+    first triangle (i, j, x), then those across (i, y) and (j, y) of its second (j, i, y), -1
+    where a triangle is missing."""
+    owner = np.full((len(edges), 2), -1)
+    s = sides.reshape(-1)
+    t = np.repeat(np.arange(len(tri)), 3)
+    order = np.argsort(s, kind="stable")
+    s, t = s[order], t[order]
+    first = np.r_[True, s[1:] != s[:-1]]
+    owner[s[first], 0] = t[first]
+    owner[s[~first], 1] = t[~first]
+    wings = np.full((len(edges), 4), -1, dtype=np.int32)
+    for col in (0, 1):
+        has = np.flatnonzero(owner[:, col] >= 0)
+        tt = owner[has, col]
+        corners = tri[tt]
+        for side, v in ((0, edges[has, 0]), (1, edges[has, 1])):
+            other = edges[has, 1 - side]
+            pv = np.argmax(corners == v[:, None], axis=1)
+            po = np.argmax(corners == other[:, None], axis=1)
+            px = 3 - pv - po  # the third corner
+            k = np.where((px - pv) % 3 == 1, pv, px)  # the side from corner k to corner k + 1
+            edge = sides[tt, k]
+            a, b = owner[edge, 0], owner[edge, 1]
+            wings[has, 2 * col + side] = np.where(a == tt, b, a)
+    return wings
+
+
+def shape_metrics(r, d, w, volume, surface: Surface, jump_factor: float) -> dict:
     """Shape metric arrays over the rows of depths ``r`` (m, n).
 
-    ``volume`` (m,) is the view volume of each row and ``clearance`` (m,) the
-    distance from its eye to the nearest occluder.
+    ``volume`` (m,) is the view volume of each row. Each row gives the result it
+    gives alone, to the last bit.
     """
     m = len(r)
     out = {k: np.full(m, np.nan) for k in SHAPE_METRIC_NAMES}
@@ -236,7 +287,9 @@ def shape_metrics(r, d, w, volume, clearance, surface: Surface, jump_factor: flo
         out["r_mad"] = (w * np.abs(dev)).sum(axis=1) / total
         out["dispersion"] = std / (shift[:, 0] + mean_x)
 
-        first = (w * r**4 / 4) @ d
+        # einsum sums each row in the same order whatever the number of rows, where a matrix
+        # product would take another path for one row than for several
+        first = np.einsum("mn,ni->mi", w * r**4 / 4, d)
         c = first / volume[:, None]
         horizontal = np.hypot(c[:, 0], c[:, 1])
         out["drift"] = np.linalg.norm(c, axis=1)
@@ -253,7 +306,7 @@ def shape_metrics(r, d, w, volume, clearance, surface: Surface, jump_factor: flo
             l3, l2, l1 = np.linalg.eigvalsh(central)
             out["elongation"][i] = np.sqrt(l1 / l3) if l3 > 0 else np.inf
             out["elongation_12"][i] = np.sqrt(l1 / l2) if l2 > 0 else np.inf
-        s, occluding, hull = _surface(r[i], d, surface, clearance[i], jump_factor)
+        s, occluding, hull = _surface(r[i], d, surface, jump_factor)
         out["surface_area"][i] = s
         out["occluding_area"][i] = occluding
         out["convex_deficiency"][i] = max(hull - volume[i], 0.0) / hull if hull > 0 else np.nan
@@ -269,85 +322,234 @@ def shape_metrics(r, d, w, volume, clearance, surface: Surface, jump_factor: flo
     return out
 
 
-def _surface(r, d, surface: Surface, clearance: float, jump_factor: float):
+def _surface(r, d, surface: Surface, jump_factor: float):
     """Surface area, occluding area and hull volume of one eye."""
     p = d * r[:, None]
-    tri = surface.triangles
-    a, b, c = p[tri[:, 0]], p[tri[:, 1]], p[tri[:, 2]]
-    vec = 0.5 * np.cross(b - a, c - a)
-    area = np.linalg.norm(vec, axis=1)
-    e = surface.edges
-    with np.errstate(divide="ignore", invalid="ignore"):
-        inv = 1.0 / r
-        jump = np.abs(inv[e[:, 0]] - inv[e[:, 1]]) > jump_factor * surface.chords / clearance
-    band = jump[surface.sides].any(axis=1)
-    occluding = 0.0
-    if band.any():
-        faces, up = _ribbon(r, inv, d, surface, jump, band, vec[band])
-        occluding = _projected_area(faces, surface.centres[band], up, surface.window)
-    rim = surface.rim
-    sides = _projected_area(0.5 * np.cross(p[rim[:, 1]], p[rim[:, 0]]), surface.rim_centres,
-                            surface.rim_out, surface.window)
+    t = surface.triangles
+    normals = np.cross(p[t[:, 1]] - p[t[:, 0]], p[t[:, 2]] - p[t[:, 0]])
+    jump = _jumps(r, d, surface, normals, jump_factor)
+    s, occluding = _boundary(r, d, surface, jump, normals)
     try:
         hull = ConvexHull(np.vstack([p, np.zeros((1, 3))])).volume
     except QhullError:
         hull = np.nan
-    return area[~band].sum() + occluding + sides, occluding, hull
+    return s, occluding, hull
 
 
-def _ribbon(r, inv, d, surface: Surface, jump, band, vec):
-    """Vector areas of the occluding faces inside the band triangles.
+# --- the depth-jump test --------------------------------------------------------------------------
 
-    On each edge that spans a jump, the occluding face is the radial segment
-    from the near surface to the far surface in the direction ``m`` halfway
-    between the two rays. The depth of each surface there is extrapolated from
-    the ray that sees it: the inverse depth of a plane is linear in the
-    direction, ``1/r = a . u``, and ``a`` is fitted to the ray and its
-    neighbours on the same surface. The extrapolated depth stays within the
-    range of the depths the fit used, widened by that range on either side:
-    ``m`` lies half a side from the ray and the neighbours a full side, so a
-    linear trend along any neighbour within 60 degrees of the gradient stays
-    inside, while a fit tilted by a few neighbours on different surfaces
-    cannot send the face out to an arbitrary depth. A band triangle crossed
-    by two such edges holds the quadrilateral between their segments. A triangle crossed by one
-    or three keeps its own vector area ``vec``.
+def _jumps(r, d, surface: Surface, normals, k: float) -> np.ndarray:
+    """Which edges of the surface span a depth jump, as a boolean array over ``surface.edges``.
+
+    A plane ``a . x = 1`` is seen at the inverse depth ``1/r = a . u``. Every triangle carries
+    the plane through its three ray ends. Of the two rays of an edge, the near one has the
+    larger inverse depth. A triangle around the near ray, without the far ray, whose three rays
+    lie nearer than the middle of the two inverse depths, is a plane of the near side; the planes
+    of the far side are the triangles around the far ray, without the near ray, whose rays lie
+    farther. The edge spans a jump when the far ray ends behind every plane of the near side, and
+    the near ray in front of every plane of the far side, each by more than ``k`` times the angle
+    between the rays in relative depth. A side without such a plane leaves the decision to the
+    other, and an edge with none on either side is calm. A plane predicts its own rays exactly,
+    so no plane is flagged at any angle or distance. Where two planes meet along a concave edge
+    (a corner of a room seen from inside) the far ray lies in front of the near plane, and along
+    a convex edge (a pillar's corner seen from outside) the near ray lies behind the far plane,
+    so no edge between two planes is flagged either. A second look clears a flagged edge when a
+    triangle around either ray, with no flagged side, still sees the other ray on the side of its
+    plane that a continuous surface would. A ray with depth 0 ends at the eye: an edge from it to
+    a ray with a positive depth spans a jump.
     """
-    e = surface.edges
-    jumps = np.flatnonzero(jump)
-    i, j = e[jumps, 0], e[jumps, 1]
-    near = np.where(r[i] <= r[j], i, j)
-    far = i + j - near
-    m = d[i] + d[j]
-    m /= np.linalg.norm(m, axis=1)[:, None]
-    planes, lo, hi = _inverse_depth_planes(r, inv, d, e, jump, np.unique(e[jumps]))
-    with np.errstate(divide="ignore", invalid="ignore"):
-        q_near = np.einsum("ij,ij->i", planes[near], m)
-        q_far = np.einsum("ij,ij->i", planes[far], m)
-        r_near = np.where(np.isfinite(q_near) & (q_near > 0), 1 / q_near, r[near])
-        r_far = np.where(np.isfinite(q_far) & (q_far > 0), 1 / q_far, r[far])
-    span = hi - lo
-    r_near = np.clip(r_near, lo[near] - span[near], hi[near] + span[near])
-    r_far = np.clip(r_far, lo[far] - span[far], hi[far] + span[far])
-    r_near = np.minimum(r_near, r_far)
-    lo, hi = r_near[:, None] * m, r_far[:, None] * m
+    tri, e = surface.triangles, surface.edges
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        q = 1.0 / r
+        plane = normals / np.einsum("ij,ij->i", normals, d[tri[:, 0]] * r[tri[:, 0], None])[:, None]
+    qt = q[tri]
+    qmin, qmax = qt.min(axis=1), qt.max(axis=1)
+    first_near = q[e[:, 0]] >= q[e[:, 1]]
+    near = np.where(first_near, e[:, 0], e[:, 1])
+    far = e[:, 0] + e[:, 1] - near
+    jump = np.zeros(len(e), dtype=bool)
+    zero = np.isinf(q[near])
+    jump[zero & np.isfinite(q[far])] = True
 
-    up = np.zeros((len(e), 3))
-    up[jumps] = d[far] - d[near]
-    across = up[surface.sides[band]].sum(axis=1)
+    def behind(t, ray, scale):
+        """Inverse depth of the planes ``t`` (m,) or (m, D) at ``ray`` (m,) less ``scale`` times
+        the ray's own: positive where the ray ends behind the plane by more than ``scale``. NaN
+        for a plane through the eye, which decides nothing."""
+        with np.errstate(invalid="ignore", over="ignore"):
+            if t.ndim == 1:
+                return np.einsum("ij,ij->i", plane[t], d[ray]) - q[ray] * scale
+            return np.einsum("ijk,ik->ij", plane[t], d[ray]) - (q[ray] * scale)[:, None]
 
-    index = np.full(len(e), -1)
-    index[jumps] = np.arange(len(jumps))
-    crossed = np.sort(index[surface.sides[band]], axis=1)
-    two = (crossed[:, 0] < 0) & (crossed[:, 1] >= 0)
-    k1, k2 = crossed[two, 1], crossed[two, 2]
-    quad = 0.5 * np.cross(hi[k2] - lo[k1], lo[k2] - hi[k1])
-    # The view lies on the far side of an occluding face: its outward normal points back
-    # across the jump, to the near side.
-    flip = np.einsum("ij,ij->i", quad, across[two]) > 0
+    idx = np.flatnonzero(~zero & np.isfinite(q[far]) & (q[near] > q[far]))
+    # a first pass over the triangles next to the edge's own two, the near side's first: one of
+    # them that sees the edge continue settles it as calm
+    for col_near, near_side in ((0, True), (2, True), (0, False), (2, False)):
+        first = first_near[idx]
+        # columns 0 and 2 hold the triangles at the edge's first ray, 1 and 3 at its second
+        at = first if near_side else ~first
+        t = np.where(at, surface.wings[idx, col_near], surface.wings[idx, col_near + 1])
+        nr, fr = near[idx], far[idx]
+        mid = 0.5 * (q[nr] + q[fr])
+        tau = k * surface.chords[idx]
+        has = t >= 0
+        t = np.where(has, t, 0)
+        if near_side:
+            calm = has & (qmin[t] > mid) & ~(behind(t, fr, 1 + tau) > 0)
+        else:
+            calm = has & (qmax[t] < mid) & ~(-behind(t, nr, 1 - tau) > 0)
+        idx = idx[~calm]
+    nr, fr = near[idx], far[idx]
+    mid = 0.5 * (q[nr] + q[fr])
+    tau = k * surface.chords[idx]
+    if len(idx):
+        fans_n, fans_f = surface.fans[nr], surface.fans[fr]
+        ok_n = fans_n >= 0
+        tn = np.where(ok_n, fans_n, 0)
+        ok_n &= (tri[tn] != fr[:, None, None]).all(axis=2) & (qmin[tn] > mid[:, None])
+        yes_n = np.where(ok_n, behind(tn, fr, 1 + tau) > 0, True).all(axis=1)
+        ok_f = fans_f >= 0
+        tf = np.where(ok_f, fans_f, 0)
+        ok_f &= (tri[tf] != nr[:, None, None]).all(axis=2) & (qmax[tf] < mid[:, None])
+        yes_f = np.where(ok_f, -behind(tf, nr, 1 - tau) > 0, True).all(axis=1)
+        jump[idx] = yes_n & yes_f & (ok_n.any(axis=1) | ok_f.any(axis=1))
+    # the second look
+    idx = np.flatnonzero(jump & ~zero)
+    if len(idx):
+        band = jump[surface.sides].any(axis=1)
+        nr, fr = near[idx], far[idx]
+        tau = k * surface.chords[idx]
+        clear = np.zeros(len(idx), dtype=bool)
+        for ray, other, near_side in ((nr, fr, True), (fr, nr, False)):
+            fan = surface.fans[ray]
+            ok = fan >= 0
+            t = np.where(ok, fan, 0)
+            ok &= ~band[t] & (tri[t] != other[:, None, None]).all(axis=2)
+            margin = (behind(t, other, 1 + tau) if near_side else -behind(t, other, 1 - tau))
+            clear |= (ok & ~(margin > 0)).any(axis=1)
+        jump[idx[clear]] = False
+    return jump
+
+
+# --- the boundary through the ray ends --------------------------------------------------------
+
+def _boundary(r, d, surface: Surface, jump, normals=None):
+    """Surface area and occluding area of one eye, given the edges that span a depth jump.
+
+    A triangle with no side across a jump, or one, is surface: with one, its third ray is
+    continuous with both others. In a triangle crossed on two sides, the occluding face is the
+    quadrilateral between the radial segments on those sides, and the pieces of the near and far
+    surfaces on either side of it are surface. In a triangle crossed on all three sides, each
+    side's segment joins the triangle's centre, where the three surfaces meet, and the piece of
+    each surface around its ray is surface.
+    """
+    p = d * r[:, None]
+    tri, sides = surface.triangles, surface.sides
+    if normals is None:
+        normals = np.cross(p[tri[:, 1]] - p[tri[:, 0]], p[tri[:, 2]] - p[tri[:, 0]])
+    area = 0.5 * np.linalg.norm(normals, axis=1)
+    crossed = jump[sides]
+    count = crossed.sum(axis=1)
+    s = float(area[count < 2].sum())
+    faces, centres, across = [], [], []
+    if (count >= 2).any():
+        seg = _Segments(r, d, surface, jump)
+        two = np.flatnonzero(count == 2)
+        if len(two):
+            calm = np.argmin(crossed[two], axis=1)  # side c joins corners c and c + 1
+            x = tri[two, (calm + 2) % 3]
+            y, z = tri[two, calm], tri[two, (calm + 1) % 3]
+            kxy, kxz = seg.index[sides[two, (calm + 2) % 3]], seg.index[sides[two, (calm + 1) % 3]]
+            quad = 0.5 * np.cross(seg.hi[kxz] - seg.lo[kxy], seg.lo[kxz] - seg.hi[kxy])
+            up = seg.up[kxy] + seg.up[kxz]
+            faces.append(_facing(quad, up))
+            centres.append(surface.centres[two])
+            across.append(up)
+            px = 0.5 * np.cross(seg.end(kxy, x) - p[x], seg.end(kxz, x) - p[x])
+            pyz = 0.5 * np.cross(p[z] - seg.end(kxy, y), seg.end(kxz, z) - p[y])
+            s += float(np.linalg.norm(px, axis=1).sum() + np.linalg.norm(pyz, axis=1).sum())
+        three = np.flatnonzero(count == 3)
+        if len(three):
+            c = surface.centres[three]
+            for k in range(3):
+                a, b = tri[three, k], tri[three, (k + 1) % 3]
+                kab, kca = seg.index[sides[three, k]], seg.index[sides[three, (k + 2) % 3]]
+                ca, cb = seg.at(a, c), seg.at(b, c)
+                quad = 0.5 * np.cross(cb - seg.end(kab, a), ca - seg.end(kab, b))
+                faces.append(_facing(quad, seg.up[kab]))
+                centres.append(c)
+                across.append(seg.up[kab])
+                piece = 0.5 * np.cross(ca - p[a], seg.end(kca, a) - seg.end(kab, a))
+                s += float(np.linalg.norm(piece, axis=1).sum())
+    occluding = 0.0
+    if faces:
+        occluding = _projected_area(np.concatenate(faces), np.concatenate(centres),
+                                    np.concatenate(across), surface.window)
+    rim = surface.rim
+    sides_of_field = _projected_area(0.5 * np.cross(p[rim[:, 1]], p[rim[:, 0]]),
+                                     surface.rim_centres, surface.rim_out, surface.window)
+    return s + occluding + sides_of_field, occluding
+
+
+def _facing(quad, up):
+    """The view lies on the far side of an occluding face: its outward normal points back
+    across the jump, to the near side."""
+    flip = np.einsum("ij,ij->i", quad, up) > 0
     quad[flip] *= -1
-    out = vec.copy()
-    out[two] = quad
-    return out, across
+    return quad
+
+
+class _Segments:
+    """The radial segment from the near surface to the far surface on each edge across a jump.
+
+    The segment lies in the direction ``m`` halfway between the two rays. The depth of each
+    surface there is extrapolated from the ray that sees it: the inverse depth of a plane is
+    linear in the direction, ``1/r = a . u``, and ``a`` is fitted to the ray and its neighbours
+    on the same surface. The extrapolated depth stays within the range of the depths the fit
+    used, widened by that range on either side: ``m`` lies half a side from the ray and the
+    neighbours a full side, so a linear trend in ``1/r`` along a neighbour within 60 degrees of
+    the gradient stays inside unless ``1/r`` falls by more than half per side toward the jump,
+    while a fit tilted by a few neighbours on different surfaces cannot send the face out to an
+    arbitrary depth.
+    """
+
+    def __init__(self, r, d, surface: Surface, jump):
+        e = surface.edges
+        jumps = np.flatnonzero(jump)
+        i, j = e[jumps, 0], e[jumps, 1]
+        self.r, self.d = r, d
+        with np.errstate(divide="ignore", invalid="ignore"):
+            inv = 1.0 / r
+        self.planes, lo, hi = _inverse_depth_planes(r, inv, d, e, jump, np.unique(e[jumps]))
+        span = hi - lo
+        self.lo_r, self.hi_r = lo - span, hi + span
+        near = np.where(r[i] <= r[j], i, j)
+        far = i + j - near
+        m = d[i] + d[j]
+        m /= np.linalg.norm(m, axis=1)[:, None]
+        r_far = self.depth(far, m)
+        r_near = np.minimum(self.depth(near, m), r_far)
+        self.lo, self.hi = r_near[:, None] * m, r_far[:, None] * m
+        self.up = d[far] - d[near]
+        self.first_near = near == i
+        self.edge_first = i
+        self.index = np.full(len(e), -1)
+        self.index[jumps] = np.arange(len(jumps))
+
+    def depth(self, v, u):
+        """Depth of the surface of ray ``v`` in the direction ``u``."""
+        with np.errstate(divide="ignore", invalid="ignore"):
+            q = np.einsum("ij,ij->i", self.planes[v], u)
+            rv = np.where(np.isfinite(q) & (q > 0), 1 / q, self.r[v])
+        return np.clip(rv, self.lo_r[v], self.hi_r[v])
+
+    def at(self, v, u):
+        """Point of the surface of ray ``v`` in the direction ``u``."""
+        return self.depth(v, u)[:, None] * u
+
+    def end(self, k, v):
+        """End of segment ``k`` on the surface of its ray ``v``."""
+        v_near = (v == self.edge_first[k]) == self.first_near[k]
+        return np.where(v_near[:, None], self.lo[k], self.hi[k])
 
 
 def _inverse_depth_planes(r, inv, d, e, jump, verts):

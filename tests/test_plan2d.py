@@ -122,7 +122,8 @@ def test_from_json_takes_a_z_that_is_not_finite_and_drops_it(tmp_path):
     np.testing.assert_array_equal(Plan.from_json(path).segments, [[[0, 0], [4, 0]]])
 
 
-@pytest.mark.parametrize("content", [b"\xff[]", b"[" * 200_000 + b"]" * 200_000, b"[{]"])
+@pytest.mark.parametrize("content", [
+    b"\xff[]", pytest.param(b"[" * 200_000 + b"]" * 200_000, id="nested-200000-deep"), b"[{]"])
 def test_from_json_refuses_a_file_that_is_not_json_and_names_both_formats(tmp_path, content):
     """A file that is not UTF-8 used to raise a UnicodeDecodeError, and one nested 200,000
     deep a RecursionError."""

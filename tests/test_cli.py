@@ -673,7 +673,7 @@ def test_a_plan_file_without_valid_walls_is_refused(square, tmp_path, capsys, na
 @pytest.mark.parametrize("content", [
     b'[{"start": [0, 0], "end": [10, NaN]}]', b"[[[0, 0], [10, 0]], [[10, 0], [10, NaN]]]",
     b'[{"start": [0, 0]}]', b"[[0, 0, 10, 0]]", b"{}", b"\xff[]",
-    b"[" * 200_000 + b"]" * 200_000,
+    pytest.param(b"[" * 200_000 + b"]" * 200_000, id="nested-200000-deep"),
 ])
 def test_the_command_line_and_from_json_refuse_a_plan_file_with_one_message(square, tmp_path,
                                                                             capsys, content):

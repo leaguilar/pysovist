@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pandas as pd
 import pytest
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from pysovist import METRIC_NAMES, Plan, isovist, isovist_field
@@ -105,7 +105,9 @@ def test_a_path_on_a_wall_keeps_its_rows_with_flags():
 @settings(max_examples=100, deadline=None)
 @given(st.lists(st.tuples(st.floats(-50, 50), st.floats(-50, 50)), min_size=2, max_size=8),
        st.floats(0.05, 20))
+@example(vertices=[(0.0, 0.0), (1e-9, 0.0), (1e-9, 8.3e-10)], spacing=20.0)  # 1.8e-9 m long
 def test_samples_lie_on_the_path_at_their_arc_length(vertices, spacing):
+    """A path shorter than 1e-9 spacing used to end at its first vertex, without its last."""
     v = np.array(vertices)
     piece = np.hypot(*np.diff(v, axis=0).T)  # hypot does not underflow on tiny steps
     if piece.sum() == 0:

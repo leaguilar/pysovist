@@ -73,9 +73,8 @@ def sample_path(path, spacing: float, *, endpoint: bool = True
 
     s = spacing * np.arange(int(np.floor(total / spacing + _TOL)) + 1)
     tol = _TOL * max(total, spacing)
-    if abs(total - s[-1]) <= tol:
-        if len(s) > 1:
-            s[-1] = total  # the last step reaches the end, up to rounding
+    if len(s) > 1 and abs(total - s[-1]) <= tol:
+        s[-1] = total  # the last step reaches the end, up to rounding
     elif endpoint:
         s = np.r_[s, total]
     k = np.clip(np.searchsorted(cum, s, side="right") - 1, 0, len(length) - 1)

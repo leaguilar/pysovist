@@ -22,7 +22,7 @@ above them gets the same advice. A direction beyond 2 pi in size raises in the s
 `segment_visibility_field` and `view_volume_field` given one direction per observer raise a `ValueError` that names the
 loop to write, where 0.2.1 ended with a `TypeError`. `Plan.from_json` and the command line read a list of segments
 `[[x0, y0], [x1, y1]]` as well as records, and any other content raises a `ValueError` that names both formats, where
-0.2.1 raised a `TypeError` or a `KeyError`. Every other result is that of 0.2.1.
+0.2.1 raised a `TypeError` or a `KeyError`. `sample_path` and `path_isovists` sample the last vertex of a path shorter than 1e-9 spacing, where 0.2.1 returned its first vertex alone. Every other result is that of 0.2.1.
 
 ## 0.2.1
 
